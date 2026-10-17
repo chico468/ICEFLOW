@@ -1,0 +1,30 @@
+# Render blueprint - deploys the whole system as ONE service.
+#
+# In the Render dashboard: New -> Blueprint, connect this repository, apply. Nothing else to
+# configure, no secrets, no environment variables to set.
+
+services:
+  - type: web
+    name: iceflow
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    region: singapore          # closest Render region to India
+    healthCheckPath: /api/v1/health
+    autoDeploy: true
+
+    envVars:
+      - key: PORT
+        value: 8000
+      # Skip the start-up route pre-plan. It costs about 30 seconds of CPU on boot, which is
+      # wasteful on a free instance that sleeps after inactivity and would pay it on every wake.
+      - key: POLARNAV_SKIP_WARM_PLAN
+        value: "1"
+
+    # Voyage history is written to SQLite at /app/data. Without a disk it is wiped on every
+    # redeploy, which is fine for a demonstration. Uncomment to keep it (needs a paid instance):
+    #
+    # disk:
+    #   name: ICEFLOW-data
+    #   mountPath: /app/data
+    #   sizeGB: 1

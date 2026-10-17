@@ -1,0 +1,177 @@
+# Query: POLAR-NAV AI
+# ContextLines: 1
+
+41 results - 24 files
+
+Dockerfile:
+  1: # ICEFLOW - single container serving both halves.
+  2  #
+
+README.md:
+   1: # ICEFLOW
+   2  
+
+  28  | **Department** | National Centre for Polar and Ocean Research (NCPOR) |
+  29: | **Solution name** | POLAR-NAV AI |
+  30  | **Team name** | _fill in_ |
+
+requirements.txt:
+  1: # POLAR-NAV AI backend dependencies.
+  2  # Everything here is CPU-only and installs without a compiler on Windows, macOS and Linux.
+
+start.ps1:
+   1: # ICEFLOW: start the whole prototype with one command (Windows / PowerShell).
+   2  #
+
+  21  Write-Host ""
+  22: Write-Host "  ICEFLOW  |  SIH 2026 PS-26059  |  MoES / NCPOR" -ForegroundColor White
+  23  Write-Host "  ---------------------------------------------------" -ForegroundColor DarkGray
+
+start.sh:
+   1  #!/usr/bin/env bash
+   2: # ICEFLOW: start the whole prototype with one command (macOS / Linux / Git Bash).
+   3  #
+
+  26  echo
+  27: printf '  ICEFLOW  |  SIH 2026 PS-26059  |  MoES / NCPOR\n'
+  28  printf '  \033[90m---------------------------------------------------\033[0m\n'
+
+docs/DEMO_SCRIPT.md:
+  1: # ICEFLOW: demonstration script
+  2  
+
+docs/DEPLOYMENT.md:
+  1: # ICEFLOW — Deployment Guide
+  2  
+  3: This guide describes how to deploy the ICEFLOW decision-support prototype (Smart India Hackathon 2026, Problem Statement 26059) to a public URL that anyone can access.
+  4  
+
+docs/POLAR_DATASETS_GUIDE.md:
+  2  
+  3: This guide details the exact open data sources used in the POLAR-NAV AI system.
+  4  
+
+docs/PROTOTYPE_BUILD_SPEC.md:
+  1: # ICEFLOW — End-to-End Prototype Build Specification
+  2  
+
+docs/SIH_26059_Solution_Blueprint.md:
+   1: # ICEFLOW: Decision Support System for Antarctic Sea-Ice, Iceberg Trajectory & Navigation
+   2  **Smart India Hackathon 2026 — Comprehensive Solution Blueprint & Technical Documentation**
+
+  58  * **Category:** Software
+  59: * **Proposed Solution Name:** **ICEFLOW** *(Polar Ocean Logistics, Iceberg-Tracking & Autonomous Routing Intelligence System)*
+  60  * **Organization:** Ministry of Earth Sciences (MoES) — National Centre for Polar and Ocean Research (NCPOR)
+
+docs/report/POLAR-NAV-AI-Prototype-Report.html:
+    1: <!doctype html><html lang="en"><head><meta charset="utf-8"><title>POLAR-NAV AI - Prototype Report</title><style>
+    2  @page { size: A4; margin: 16mm 14mm; }
+
+   45    <div class="meta">SMART INDIA HACKATHON 2026 &nbsp;|&nbsp; PROBLEM STATEMENT 26059</div>
+   46:   <h1>ICEFLOW</h1>
+   47    <div class="sub">AI-Enabled Antarctic Sea-Ice, Iceberg Trajectory and Navigation Decision Support System</div>
+
+  112  
+  113: <p>ICEFLOWI plans a route through that ice which is safe under the IMO Polar Code, and proves
+  114  the benefit by measuring it. The central design decision is this: <strong>the system plans two
+
+  500  <footer>
+  501: ICEFLOW v1.0.0 &middot; generated 08 September 2026, 13:17 UTC &middot;
+  502  Python 3.11.9 &middot; coastline: 97 polygons,
+
+frontend/package.json:
+  5    "type": "module",
+  6:   "description": "ICEFLOW bridge console - Antarctic navigation decision support (SIH 2026, PS-26059)",
+  7    "scripts": {
+
+frontend/README.md:
+  1: # ICEFLOW — bridge console
+  2  
+
+frontend/src/api/client.ts:
+  1  /**
+  2:  * Thin fetch client for the ICEFLOW service.
+  3   *
+
+frontend/src/api/types.ts:
+  1  /**
+  2:  * TypeScript shapes for the ICEFLOW API.
+  3   *
+
+presentation/SLIDE_CONTENT.md:
+  17  - **Organisation:** Ministry of Earth Sciences (MoES) — National Centre for Polar and Ocean Research (NCPOR)
+  18: - **Solution name:** **ICEFLOW**
+  19  - **Team name:** `[fill in]`
+
+  30  
+  31: **What ICEFLOW does.** It plans **two** routes and sails both through identical physics: the
+  32  route a ship would take with no ice information, and the route the system recommends. The
+
+scripts/make_report.py:
+  207    <div class="meta">SMART INDIA HACKATHON 2026 &nbsp;|&nbsp; PROBLEM STATEMENT 26059</div>
+  208:   <h1>ICEFLOW</h1>
+  209    <div class="sub">AI-Enabled Antarctic Sea-Ice, Iceberg Trajectory and Navigation Decision Support System</div>
+
+  350  
+  351: <p>ICEFLOW plans a route through that ice which is safe under the IMO Polar Code, and proves
+  352  the benefit by measuring it. The central design decision is this: <strong>the system plans two
+
+  911  <footer>
+  912: ICEFLOW v{e(d['version'])} &middot; generated {e(d['generated'])} &middot;
+  913  Python {e(d['python'])} &middot; coastline: {d['coast']['polygons']} polygons,
+
+  921          "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
+  922:         "<title>ICEFLOW - Prototype Report</title>"
+  923          f"<style>{CSS}</style></head><body>{body}</body></html>"
+
+  975  def main(argv: Optional[List[str]] = None) -> int:
+  976:     parser = argparse.ArgumentParser(description="Generate the ICEFLOW prototype report.")
+  977      parser.add_argument("--no-pdf", action="store_true", help="Write HTML only")
+
+scripts/train.py:
+  386  def main(argv: List[str] | None = None) -> int:
+  387:     parser = argparse.ArgumentParser(description="Train the ICEFLOW machine-learning layer.")
+  388      parser.add_argument("--quick", action="store_true", help="small smoke run, well under a minute")
+
+  403      print("=" * 92)
+  404:     print("ICEFLOW  -  machine-learning layer training")
+  405      print("=" * 92)
+
+  425      payload = {
+  426:         "system": "ICEFLOW",
+  427          "problem_statement": "26059",
+
+src/__init__.py:
+  1: """ICEFLOW backend package."""
+  2  __version__ = "1.0.0"
+
+src/cli.py:
+    1  """
+    2: ICEFLOW command-line console.
+    3  
+
+  268          prog="polarnav",
+  269:         description="ICEFLOW Antarctic navigation decision-support console.",
+  270      )
+
+src/api/main.py:
+  1  """
+  2: ICEFLOW REST and WebSocket service.
+  3  
+
+src/core/constants.py:
+   1  """
+   2: ICEFLOW: physical constants, unit conversions and provenance metadata.
+   3  
+
+  11  # --------------------------------------------------------------------------------------
+  12: SYSTEM_NAME = "ICEFLOW"
+  13  SYSTEM_VERSION = "1.0.0"
+
+src/data/antarctica_coast.json:
+  1: {"type":"FeatureCollection","attribution":"Natural Earth 1:50m physical land (public domain), simplified for POLAR-NAV AI","crs_note":"WGS84 lon/lat; render in EPSG:3031 Antarctic Polar Stereographic","features":[{"type":"Feature","properties":{"kind":"land","rank":0,"points":952},"geometry":{"type":"Polygon","coordinates":[[[-57.0207,-63.3729],[-56.7818,-63.5717],[-56.8348,-63.6313],[-57.1192,-63.6378],[-57.1522,-63.4791],[-57.4606,-63.5136],[-58.263,-63.7634],[-58.839,-64.1868],[-59.0053,-64.1949],[-58.7993,-64.2927],[-58.9051,-64.3521],[-58.7861,-64.5242],[-59.4607,-64.3456],[-59.6122,-64.4401],[-59.646,-64.5837],[-59.765,-64.4514],[-59.9631,-64.4313],[-60.3405,-64.5506],[-61.0599,-64.9813],[-61.7031,-64.9872],[-61.5774,-65.1856],[-61.9479,-65.1923],[-62.1453,-65.3317],[-61.756,-65.5692],[-61.9914,-65.5892],[-62.305,-65.8404],[-62.005,-66.1129],[-60.9128,-65.9209],[-60.5654,-65.9794],[-60.744,-66.1051],[-61.0093,-66.1105],[-60.9027,-66.191],[-61.0284,-66.3365],[-61.1498,-66.2117],[-61.4319,-66.1447],[-61.6756,-66.2495],[-61.756,-66.4292],[-62.1165,-66.209],[-62.682,-66.2373],[-62.7548,-66.
+
+src/ml/__init__.py:
+  1  """
+  2: Trained machine-learning layer for ICEFLOW.
+  3  

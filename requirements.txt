@@ -1,0 +1,24 @@
+# ICEFLOW backend dependencies.
+# Everything here is CPU-only and installs without a compiler on Windows, macOS and Linux.
+# There is no GPU requirement anywhere: the target hardware is a rugged PC on a ship's bridge.
+
+# --- Web service -------------------------------------------------------------------
+fastapi>=0.110.0
+uvicorn[standard]>=0.28.0
+pydantic>=2.6.0
+websockets>=12.0            # WebSocket transport for the live voyage stream
+httpx>=0.27.0               # used by fastapi.testclient
+
+# --- Numerics ----------------------------------------------------------------------
+numpy>=1.26.0
+scipy>=1.12.0               # cKDTree for distance-to-coast over the coastline vertices
+
+# --- Machine learning --------------------------------------------------------------
+# Deliberately scikit-learn rather than a deep-learning framework: the trained models are
+# tabular, they fit in seconds on a CPU, and a bridge PC has no GPU. See docs/ML_MODELS.md.
+scikit-learn>=1.3.0
+pandas>=2.0.0
+joblib>=1.3.0
+
+# --- Testing -----------------------------------------------------------------------
+pytest>=8.0.0

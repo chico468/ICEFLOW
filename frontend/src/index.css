@@ -1,0 +1,174 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ------------------------------------------------------------------------------------------
+   Tokens. RGB triplets so Tailwind can apply opacity. Mirrored in src/map/palette.ts.
+
+   Palette idea: a daylight chart. Cool ice-white paper, white instrument cards, deep ICEFLOWy
+   ink, one polar blue for actions, and orange kept for the planned route and for hazard, so
+   anything warm on screen means something.
+   ------------------------------------------------------------------------------------------ */
+@layer base {
+  :root {
+    color-scheme: light;
+
+    --c-ground: 237 242 244; /* #EDF2F4  paper */
+    --c-panel: 255 255 255; /* #FFFFFF  cards */
+    --c-panel-2: 244 247 248; /* #F4F7F8  inputs, raised rows */
+    --c-panel-3: 232 239 242; /* #E8EFF2  hover */
+    --c-hair: 211 221 226; /* #D3DDE2  rules */
+    --c-hair-2: 174 190 198; /* #AEBEC6  input borders */
+
+    --c-ink: 14 36 51; /* #0E2433  primary text */
+    --c-ink-2: 61 86 102; /* #3D5666 */
+    --c-ink-3: 88 115 131; /* #587383  5:1 on white */
+
+    --c-accent: 11 92 142; /* #0B5C8E  polar blue: actions, focus */
+    --c-accent-2: 8 74 115; /* #084A73 */
+    --c-on-accent: 255 255 255;
+    --c-route: 194 65 12; /* #C2410C  the planned route */
+    --c-teal: 15 118 110; /* #0F766E  stations */
+    --c-ok: 31 122 77; /* #1F7A4D */
+    --c-caution: 161 98 7; /* #A16207 */
+    --c-warn: 180 83 9; /* #B45309 */
+    --c-danger: 179 38 30; /* #B3261E */
+    --c-violet: 91 63 209; /* #5B3FD1  icebergs */
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    @apply bg-ground font-sans text-ink antialiased;
+    margin: 0;
+    overscroll-behavior: none;
+    font-size: 14px;
+    line-height: 1.45;
+  }
+
+  /* Figures never reflow, and they do not need a monospace face to achieve it. */
+  .num,
+  .tabular {
+    font-variant-numeric: tabular-nums lining-nums;
+    letter-spacing: 0;
+  }
+  .display {
+    font-family: theme('fontFamily.display');
+    font-weight: 600;
+    letter-spacing: -0.005em;
+  }
+
+  :focus-visible {
+    outline: 2px solid rgb(var(--c-accent));
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: rgb(var(--c-hair-2) / 0.8);
+    border-radius: 8px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgb(var(--c-ink-3) / 0.7);
+    background-clip: content-box;
+  }
+
+  input[type='range'] {
+    -webkit-appearance: none;
+    appearance: none;
+    height: 4px;
+    background: rgb(var(--c-hair-2));
+    border-radius: 2px;
+    outline-offset: 6px;
+  }
+  input[type='range']::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: rgb(var(--c-accent));
+    border: 3px solid rgb(var(--c-panel));
+    box-shadow: 0 0 0 1px rgb(var(--c-accent));
+    cursor: pointer;
+  }
+  input[type='range']::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: rgb(var(--c-accent));
+    border: 3px solid rgb(var(--c-panel));
+    box-shadow: 0 0 0 1px rgb(var(--c-accent));
+    cursor: pointer;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+@layer components {
+  /* An instrument card: white on paper, ruled, with a contact shadow. */
+  .panel {
+    @apply rounded-xl border border-hair bg-panel shadow-card;
+  }
+  /* A card that floats over the chart. */
+  .float {
+    @apply rounded-2xl border border-hair bg-panel/95 shadow-float backdrop-blur-sm;
+  }
+  .panel-head {
+    @apply flex items-center justify-between gap-2 border-b border-hair px-4 py-2.5;
+  }
+  .hairline {
+    @apply border-hair;
+  }
+
+  .btn {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-lg border border-hair-2 bg-panel px-3 py-1.5
+      text-xs text-ink-2 transition-colors hover:border-accent hover:text-accent disabled:pointer-events-none disabled:opacity-40;
+  }
+  /* The one loud control on a screen. */
+  .btn-accent {
+    @apply border-accent bg-accent font-semibold text-on-accent hover:border-accent-2 hover:bg-accent-2 hover:text-on-accent;
+  }
+  .btn-danger {
+    @apply border-danger/60 bg-danger/10 text-danger hover:bg-danger/20 hover:text-danger;
+  }
+  .btn-icon {
+    @apply inline-flex h-9 w-9 items-center justify-center rounded-lg border border-hair-2 bg-panel text-ink-2
+      shadow-card transition-colors hover:border-accent hover:text-accent disabled:pointer-events-none disabled:opacity-40;
+  }
+
+  .field {
+    @apply h-9 w-full rounded-lg border border-hair-2 bg-panel-2 px-2.5 text-sm text-ink outline-none transition-colors
+      hover:border-ink-3 focus:border-accent;
+  }
+
+  .chip {
+    @apply inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-2xs;
+  }
+
+  .grid-lines {
+    background-image: linear-gradient(rgb(var(--c-accent) / 0.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgb(var(--c-accent) / 0.05) 1px, transparent 1px);
+    background-size: 34px 34px;
+  }
+}

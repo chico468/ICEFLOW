@@ -1,0 +1,14 @@
+.venv/
+.venv312/
+node_modules/
+dist/
+__pycache__/
+*.pyc
+.vite/
+.env
+.env.*
+!.env.example
+*.db
+*.db-wal
+*.db-shm
+.DS_Store
