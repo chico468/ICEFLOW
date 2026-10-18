@@ -5,6 +5,12 @@
  * polar chart is never unmounted: its pan, zoom and fitted route survive a trip to the regional view
  * and back, which is how the rest of the app treats screens too. While the regional view is up, the
  * polar chart is told it is inactive, so its particle overlay stops rather than animating unseen.
+ *
+ * VISIBILITY RULE (do not break). App hides an inactive screen with `visibility: hidden` on the screen
+ * wrapper. CSS visibility is inherited, but a descendant that sets `visibility: visible` explicitly escapes
+ * its hidden ancestor and paints over whatever screen is showing. So a view that is ACTIVE must set nothing
+ * (it inherits), and only an inactive view sets `hidden`. Never write `visibility: 'visible'` below the
+ * screen wrapper; tests/visibility-rule.test.ts fails the build if anyone does.
  */
 import { useState } from 'react';
 import { MapCanvas, type MapCanvasHandle } from '../map/MapCanvas';
@@ -16,6 +22,8 @@ import { ScreenActiveContext, useScreenActive } from './screenActive';
 import { useStageInsets } from './stageInsets';
 
 type View = 'antarctic' | 'regional';
+
+const HIDDEN = { visibility: 'hidden' } as const;
 
 const VIEWS: { id: View; label: string; hint: string }[] = [
   { id: 'antarctic', label: 'Antarctic chart', hint: 'Polar stereographic navigation chart (EPSG:3031)' },
@@ -42,7 +50,7 @@ export function ChartViews({
     <div className="relative h-full w-full">
       <div
         className="absolute inset-0"
-        style={{ visibility: view === 'antarctic' ? 'visible' : 'hidden' }}
+        style={view === 'antarctic' ? undefined : HIDDEN}
         aria-hidden={view !== 'antarctic'}
       >
         <ScreenActiveContext.Provider value={screenActive && view === 'antarctic'}>
@@ -52,7 +60,7 @@ export function ChartViews({
 
       <div
         className="absolute inset-0"
-        style={{ visibility: view === 'regional' ? 'visible' : 'hidden' }}
+        style={view === 'regional' ? undefined : HIDDEN}
         aria-hidden={view !== 'regional'}
       >
         <RegionalMap
