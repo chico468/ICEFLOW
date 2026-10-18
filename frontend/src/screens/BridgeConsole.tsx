@@ -91,7 +91,7 @@ export function BridgeConsole(): JSX.Element {
         )}
 
         {!started && !busy && (
-          <div className="pointer-events-none absolute inset-x-0 top-3 p-3">
+          <div className="pointer-events-none absolute inset-x-0 bottom-9 p-3">
             <div className="pointer-events-auto mx-auto max-w-md rounded border border-hair-2 bg-panel/95 p-3 text-center">
               <div className="text-xs text-ink-2">
                 No voyage under way. Start one to see the ship sail the planned track.

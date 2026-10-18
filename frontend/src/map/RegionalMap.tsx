@@ -17,9 +17,10 @@
  * Nothing animates here. It paints once per change (pan, zoom, new data, becoming visible), coalesced
  * on one animation frame, and the frame is cancelled on unmount.
  */
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react';
 import { Maximize2, Minus, Plus } from 'lucide-react';
 import { useRegionalContext } from '../api/queries';
+import { MapToolbar, ToolButton } from '../components/MapToolbar';
 import { useStageInsets } from '../components/stageInsets';
 import type { MapEngine, MapScene } from './MapEngine';
 import { RegionViewport, graticuleStep, splitAtAntimeridian, viewOutline, type RegionBounds } from './mercator';
@@ -36,9 +37,11 @@ interface Props {
   polarEngine: MapEngine | null;
   originId: string;
   destinationId: string;
+  /** A first row for the toolbar, e.g. the Polar / Regional switch. */
+  toolbarLead?: ReactNode;
 }
 
-export function RegionalMap({ scene, visible, polarEngine, originId, destinationId }: Props): JSX.Element {
+export function RegionalMap({ scene, visible, polarEngine, originId, destinationId, toolbarLead }: Props): JSX.Element {
   const hostRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const insets = useStageInsets();
@@ -377,17 +380,22 @@ export function RegionalMap({ scene, visible, polarEngine, originId, destination
         onPointerLeave={onUp}
       />
 
-      <div className="absolute z-10 flex flex-col gap-1.5" style={{ top: Math.max(12, insets.top), right: insets.right + 16 }}>
-        <button className="btn-icon" title="Zoom in" aria-label="Zoom in" onClick={() => zoomBy(1.4)}>
-          <Plus size={16} />
-        </button>
-        <button className="btn-icon" title="Zoom out" aria-label="Zoom out" onClick={() => zoomBy(1 / 1.4)}>
-          <Minus size={16} />
-        </button>
-        <button className="btn-icon" title="Fit to route" aria-label="Fit to route" onClick={fit}>
-          <Maximize2 size={16} />
-        </button>
-      </div>
+      <MapToolbar
+        lead={toolbarLead}
+        groups={[
+          <>
+            <ToolButton label="Zoom in" onClick={() => zoomBy(1.4)}>
+              <Plus size={15} />
+            </ToolButton>
+            <ToolButton label="Zoom out" onClick={() => zoomBy(1 / 1.4)}>
+              <Minus size={15} />
+            </ToolButton>
+            <ToolButton label="Fit to route" onClick={fit}>
+              <Maximize2 size={15} />
+            </ToolButton>
+          </>,
+        ]}
+      />
 
       {context.isLoading && (
         <Note title="Loading regional coastline…" />

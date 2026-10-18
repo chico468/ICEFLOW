@@ -312,7 +312,7 @@ export function VoyagePlanner(): JSX.Element {
       </header>
 
       {trayOpen && (
-        <div className="grid max-h-[46vh] gap-x-6 gap-y-4 overflow-y-auto border-t border-hair px-5 py-4 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,0.85fr)_minmax(0,2fr)]">
+        <div className="grid gap-x-6 gap-y-4 overflow-y-auto border-t border-hair px-5 py-4 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,0.85fr)_minmax(0,2fr)]">
             <p className="self-start rounded-lg border border-hair bg-panel-2 p-3 text-xs2 leading-relaxed text-ink-2">
               <strong className="text-ink">In plain terms: </strong>
               the recommended route is{' '}

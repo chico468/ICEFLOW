@@ -19,15 +19,15 @@ import { RegionalMap } from '../map/RegionalMap';
 import type { LatLon } from '../map/projection';
 import { useAppStore } from '../store/useAppStore';
 import { ScreenActiveContext, useScreenActive } from './screenActive';
-import { useStageInsets } from './stageInsets';
+import { Segmented } from './MapToolbar';
 
 type View = 'antarctic' | 'regional';
 
 const HIDDEN = { visibility: 'hidden' } as const;
 
 const VIEWS: { id: View; label: string; hint: string }[] = [
-  { id: 'antarctic', label: 'Antarctic chart', hint: 'Polar stereographic navigation chart (EPSG:3031)' },
-  { id: 'regional', label: 'Regional context', hint: 'Mercator map of the voyage region: ports, coasts and countries' },
+  { id: 'antarctic', label: 'Polar', hint: 'Antarctic navigation chart (polar stereographic, EPSG:3031)' },
+  { id: 'regional', label: 'Regional', hint: 'Mercator map of the voyage region: ports, coasts and countries' },
 ];
 
 export function ChartViews({
@@ -42,9 +42,10 @@ export function ChartViews({
   const [view, setView] = useState<View>('antarctic');
   const [polar, setPolar] = useState<MapCanvasHandle | null>(null);
   const screenActive = useScreenActive();
-  const insets = useStageInsets();
   const originId = useAppStore((s) => s.planner.originId);
   const destinationId = useAppStore((s) => s.planner.destinationId);
+
+  const lead = <Segmented label="Chart view" value={view} options={VIEWS} onChange={setView} />;
 
   return (
     <div className="relative h-full w-full">
@@ -54,7 +55,7 @@ export function ChartViews({
         aria-hidden={view !== 'antarctic'}
       >
         <ScreenActiveContext.Provider value={screenActive && view === 'antarctic'}>
-          <MapCanvas scene={scene} fitTargets={fitTargets} onClickPoint={onClickPoint} onReady={setPolar} />
+          <MapCanvas scene={scene} fitTargets={fitTargets} onClickPoint={onClickPoint} onReady={setPolar} toolbarLead={lead} />
         </ScreenActiveContext.Provider>
       </div>
 
@@ -69,28 +70,10 @@ export function ChartViews({
           polarEngine={polar?.engine ?? null}
           originId={originId}
           destinationId={destinationId}
+          toolbarLead={lead}
         />
       </div>
 
-      <div
-        role="group"
-        aria-label="Chart view"
-        className="float absolute left-1/2 z-20 flex -translate-x-1/2 gap-1 p-1"
-        style={{ top: Math.max(12, insets.top) }}
-      >
-        {VIEWS.map((v) => (
-          <button
-            key={v.id}
-            type="button"
-            title={v.hint}
-            aria-pressed={view === v.id}
-            className={`btn ${view === v.id ? 'btn-accent' : ''}`}
-            onClick={() => setView(v.id)}
-          >
-            {v.label}
-          </button>
-        ))}
-      </div>
     </div>
   );
 }

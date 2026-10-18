@@ -96,7 +96,7 @@ export function App(): JSX.Element {
       </header>
 
       <div className="flex min-h-0 flex-1">
-        <nav aria-label="Views" className="flex w-[88px] shrink-0 flex-col items-stretch gap-1.5 border-r border-hair bg-panel px-2.5 py-3">
+        <nav aria-label="Views" className="flex w-[72px] shrink-0 flex-col items-stretch gap-1 border-r border-hair bg-panel px-2 py-2.5">
           {visibleTabs.map(({ id, label, icon: Icon }) => {
             const active = activeScreen === id;
             return (
@@ -105,13 +105,13 @@ export function App(): JSX.Element {
                 type="button"
                 onClick={() => setScreen(id)}
                 aria-current={active ? 'page' : undefined}
-                className={`flex flex-col items-center gap-1.5 rounded-xl px-1 py-3 text-xs transition-colors ${
+                className={`flex flex-col items-center gap-1 rounded-lg px-1 py-2.5 text-2xs transition-colors ${
                   active
                     ? 'bg-accent font-semibold text-on-accent shadow-card'
                     : 'text-ink-2 hover:bg-panel-3 hover:text-ink'
                 }`}
               >
-                <Icon size={22} aria-hidden />
+                <Icon size={20} aria-hidden />
                 <span>{label}</span>
               </button>
             );

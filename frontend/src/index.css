@@ -132,7 +132,7 @@
   }
   /* A card that floats over the chart. */
   .float {
-    @apply rounded-2xl border border-hair bg-panel/95 shadow-float backdrop-blur-sm;
+    @apply rounded-lg border border-hair bg-panel shadow-card;
   }
   .panel-head {
     @apply flex items-center justify-between gap-2 border-b border-hair px-4 py-2.5;
@@ -151,6 +151,19 @@
   }
   .btn-danger {
     @apply border-danger/60 bg-danger/10 text-danger hover:bg-danger/20 hover:text-danger;
+  }
+  /* A button inside the map toolbar: 32 px, joined to its neighbours by the group's dividers. */
+  .map-tool {
+    @apply flex h-8 w-8 items-center justify-center text-ink-2 transition-colors
+      hover:bg-panel-2 hover:text-accent disabled:pointer-events-none disabled:opacity-40;
+  }
+  .map-tool-on {
+    @apply bg-accent text-on-accent hover:bg-accent-2 hover:text-on-accent;
+  }
+  .map-tool:focus-visible,
+  .btn:focus-visible,
+  .btn-icon:focus-visible {
+    @apply outline outline-2 outline-offset-1 outline-accent;
   }
   .btn-icon {
     @apply inline-flex h-9 w-9 items-center justify-center rounded-lg border border-hair-2 bg-panel text-ink-2

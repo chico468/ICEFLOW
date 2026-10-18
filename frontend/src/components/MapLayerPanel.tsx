@@ -11,7 +11,6 @@ import type { LayerToggles } from '../map/MapEngine';
 import type { RasterMode } from '../map/layers';
 import { useAppStore } from '../store/useAppStore';
 import { Slider, Toggle } from './ui';
-import { useStageInsets } from './stageInsets';
 
 const RASTER_MODES: { mode: RasterMode; label: string; hint: string }[] = [
   { mode: 'concentration', label: 'Concentration', hint: 'Continuous ramp, 0 to 100 percent' },
@@ -60,8 +59,6 @@ const GROUPS: { title: string; rows: Row[] }[] = [
 ];
 
 export function MapLayerPanel({ open, onClose }: { open: boolean; onClose: () => void }): JSX.Element | null {
-  const insets = useStageInsets();
-
   const layers = useAppStore((s) => s.layers);
   const toggleLayer = useAppStore((s) => s.toggleLayer);
   const rasterMode = useAppStore((s) => s.rasterMode);
@@ -88,7 +85,7 @@ export function MapLayerPanel({ open, onClose }: { open: boolean; onClose: () =>
       role="dialog"
       aria-label="Chart layers"
       className="float absolute z-20 max-h-[calc(100%-24px)] w-[280px] overflow-y-auto px-3 py-3"
-      style={{ top: Math.max(12, insets.top), right: insets.right + 64 }}
+      style={{ top: 12, right: 56 }}
     >
       <div className="mb-3">
         <div className="mb-1.5 text-2xs font-medium text-ink">Ice display</div>

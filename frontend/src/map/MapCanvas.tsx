@@ -5,13 +5,14 @@
  * zooming never round-trip through React state. Only the tooltip text is React state,
  * and it is throttled to animation frames.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Crosshair, Maximize2, Minus, Plus, SlidersHorizontal } from 'lucide-react';
 import { FlowOverlay } from './FlowOverlay';
 import { MapEngine, type MapScene } from './MapEngine';
 import type { LatLon } from './projection';
 import { MapLayerPanel } from '../components/MapLayerPanel';
 import { MapLegend } from '../components/MapLegend';
+import { MapToolbar, ToolButton } from '../components/MapToolbar';
 import { useStageInsets } from '../components/stageInsets';
 import { useAppStore } from '../store/useAppStore';
 
@@ -28,6 +29,8 @@ interface Props {
   onReady?: (handle: MapCanvasHandle) => void;
   className?: string;
   showControls?: boolean;
+  /** A first row for the toolbar, e.g. the Polar / Regional switch. */
+  toolbarLead?: ReactNode;
 }
 
 export function MapCanvas({
@@ -37,6 +40,7 @@ export function MapCanvas({
   onReady,
   className,
   showControls = true,
+  toolbarLead,
 }: Props): JSX.Element {
   const hostRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -212,51 +216,48 @@ export function MapCanvas({
       )}
 
       {showControls && (
-        <div
-          className="absolute z-10 flex flex-col gap-1.5"
-          style={{ top: Math.max(12, insets.top), right: insets.right + 16 }}
-        >
-          <button className="btn-icon" title="Zoom in" aria-label="Zoom in" onClick={() => zoomBy(1 / 1.4)}>
-            <Plus size={16} />
-          </button>
-          <button className="btn-icon" title="Zoom out" aria-label="Zoom out" onClick={() => zoomBy(1.4)}>
-            <Minus size={16} />
-          </button>
-          <button
-            className="btn-icon"
-            title="Fit to route"
-            aria-label="Fit to route"
-            onClick={() => fitTargets && fitTo(fitTargets)}
-            disabled={!fitTargets || fitTargets.length < 2}
-          >
-            <Maximize2 size={16} />
-          </button>
-          <button
-            className={`btn-icon ${layersOpen ? 'btn-accent' : ''}`}
-            title="Layers and legend settings"
-            aria-label="Layers and legend settings"
-            aria-expanded={layersOpen}
-            aria-controls="map-layer-panel"
-            onClick={() => setLayersOpen((v) => !v)}
-          >
-            <SlidersHorizontal size={16} />
-          </button>
-          <button
-            className="btn-icon"
-            title="Frame the Antarctic sector"
-            aria-label="Frame the Antarctic sector"
-            onClick={() =>
-              fitTo([
-                { lat: -78, lon: -30 },
-                { lat: -78, lon: 120 },
-                { lat: -45, lon: -30 },
-                { lat: -45, lon: 120 },
-              ])
-            }
-          >
-            <Crosshair size={16} />
-          </button>
-        </div>
+        <MapToolbar
+          lead={toolbarLead}
+          groups={[
+            <>
+              <ToolButton label="Zoom in" onClick={() => zoomBy(1 / 1.4)}>
+                <Plus size={15} />
+              </ToolButton>
+              <ToolButton label="Zoom out" onClick={() => zoomBy(1.4)}>
+                <Minus size={15} />
+              </ToolButton>
+              <ToolButton
+                label="Fit to route"
+                onClick={() => fitTargets && fitTo(fitTargets)}
+                disabled={!fitTargets || fitTargets.length < 2}
+              >
+                <Maximize2 size={15} />
+              </ToolButton>
+              <ToolButton
+                label="Frame the Antarctic sector"
+                onClick={() =>
+                  fitTo([
+                    { lat: -78, lon: -30 },
+                    { lat: -78, lon: 120 },
+                    { lat: -45, lon: -30 },
+                    { lat: -45, lon: 120 },
+                  ])
+                }
+              >
+                <Crosshair size={15} />
+              </ToolButton>
+            </>,
+            <ToolButton
+              label="Layers and legend settings"
+              pressed={layersOpen}
+              expanded={layersOpen}
+              controls="map-layer-panel"
+              onClick={() => setLayersOpen((v) => !v)}
+            >
+              <SlidersHorizontal size={15} />
+            </ToolButton>,
+          ]}
+        />
       )}
 
       {showControls && <MapLegend scene={scene} leadHours={leadHours} />}

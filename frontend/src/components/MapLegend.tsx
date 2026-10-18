@@ -12,7 +12,6 @@ import type { IceField, ObservedIcebergsResponse } from '../api/types';
 import type { MapScene } from '../map/MapEngine';
 import { FLOW_KINDS } from '../map/flow';
 import { CHANGE_DEADBAND, ICE_BANDS, MAP_COLORS, bandCss, changeCss, concentrationCss, thicknessCss } from '../map/palette';
-import { useStageInsets } from './stageInsets';
 
 const KM_PER_DEG = 111.2;
 
@@ -45,9 +44,33 @@ export function observedSummary(o: ObservedIcebergsResponse): string {
   return `Observed ${formatObservedDate(o.observed_date)}, ${o.age_days} days old${o.stale ? ' (STALE)' : ''}`;
 }
 
+/**
+ * One line saying what the chart is showing, for the collapsed legend. It carries the honesty flags
+ * (simulated, stale) so the chip alone cannot be mistaken for a statement about live conditions.
+ */
+export function legendSummary(scene: MapScene, leadHours: number): string {
+  const L = scene.layers;
+  const parts: string[] = [];
+  if (L.iceRaster) {
+    const name =
+      scene.rasterMode === 'thickness'
+        ? 'Ice thickness'
+        : scene.rasterMode === 'change'
+          ? `Ice change +${leadHours} h`
+          : scene.rasterMode === 'classes'
+            ? 'Ice classes'
+            : 'Ice concentration';
+    parts.push(scene.iceField?.is_synthetic ? `${name} (simulated)` : name);
+  }
+  if (L.windFlow) parts.push('Wind (simulated)');
+  if (L.currentFlow) parts.push('Current (simulated)');
+  if (L.observedBergs && scene.observed?.available) parts.push(scene.observed.stale ? 'Observed bergs (stale)' : 'Observed bergs');
+  if (L.icebergs) parts.push('Bergs (simulated)');
+  return parts.join(' · ');
+}
+
 export function MapLegend({ scene, leadHours }: { scene: MapScene; leadHours: number }): JSX.Element | null {
-  const insets = useStageInsets();
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false);
   const L = scene.layers;
   const st = scene.status;
 
@@ -58,22 +81,26 @@ export function MapLegend({ scene, leadHours }: { scene: MapScene; leadHours: nu
 
   return (
     <section
-      className="float absolute z-10 w-[268px] overflow-y-auto px-3 py-2.5"
+      className={`float absolute z-10 overflow-y-auto px-3 py-2 ${open ? 'w-[268px]' : 'max-w-[min(360px,60%)]'}`}
       style={{
-        top: Math.max(12, insets.top),
-        left: insets.left + 16,
-        maxHeight: `calc(100% - ${Math.max(12, insets.top) + insets.bottom + 16}px)`,
+        top: 12,
+        left: 12,
+        maxHeight: 'calc(100% - 24px)',
       }}
       aria-label="Chart legend"
     >
       <button
         type="button"
-        className="flex w-full items-center justify-between text-left"
+        className="flex w-full items-center justify-between gap-2 text-left"
         aria-expanded={open}
+        title={open ? 'Collapse the legend' : 'Expand the legend'}
         onClick={() => setOpen((v) => !v)}
       >
-        <span className="display text-[13px] text-ink">Legend</span>
-        {open ? <ChevronUp size={14} aria-hidden /> : <ChevronDown size={14} aria-hidden />}
+        <span className="min-w-0">
+          <span className="display block text-[13px] leading-tight text-ink">Legend</span>
+          {!open && <span className="block truncate text-2xs text-ink-3">{legendSummary(scene, leadHours)}</span>}
+        </span>
+        {open ? <ChevronUp size={14} aria-hidden className="shrink-0" /> : <ChevronDown size={14} aria-hidden className="shrink-0" />}
       </button>
 
       {open && (
