@@ -259,6 +259,43 @@ walkthrough with the numbers, the order to show them in, and the questions worth
 
 ---
 
+## Map layers added in Stage A: regional context, wind and current, observed bergs
+
+**Regional context map.** The Plan and Sail charts have a switch between the Antarctic chart and a Mercator
+*Regional context* map showing Africa, India and Australia, the ports, stations and the same route, with an
+outline of what the polar chart is showing. Its land comes from Natural Earth (public domain), clipped to the
+voyage region and simplified to about 4 km. **It is drawing data only**: it is never read by the land mask,
+coastal clearance or the route optimiser. Build it once, on a machine with network access:
+
+```bash
+python -m scripts.build_regional_context
+```
+
+Certificate verification is never disabled. If the download fails on a certificate error the script prints
+the fix (on a python.org Mac build, run `Install Certificates.command`). With no network, download
+`ne_50m_land.geojson` and `ne_110m_admin_0_countries.geojson` in a browser and run
+`python -m scripts.build_regional_context --land-file <path> --countries-file <path>`. Until the file exists,
+the map says "Regional coastline not built" and still draws ports, stations and the route.
+Commit `src/data/regional_context.json` if the demonstration machine will have no network.
+
+**Wind and ocean-current particles.** Open the layer button (sliders icon) on any chart. The particles
+animate the `u10/v10` and `current_u/current_v` fields from `/api/v1/env/field`. Those fields are
+**simulated**, and the legend says so from the response's own `is_synthetic` flag. Colour is true speed; the
+particle speed is a visual scale and differs between wind and current. The layers stop when their screen or
+the browser tab is hidden, and show a still picture when the system asks for reduced motion.
+
+**Sea ice.** The legend gives units, the five display classes and the grid-cell size. The layer panel adds
+opacity, visibility, a *Classes* mode, a *Change vs +0 h* mode and the forecast time. A failed or missing ice
+field is reported as missing, never as open water.
+
+**Observed icebergs.** `data/raw/iceberg/AntarcticIcebergs_YYYYMMDD.csv` (the newest is used) is served at
+`/api/v1/icebergs/observed` and drawn as a separate, hollow, dashed layer with its observation date and age.
+Older than 7 days is flagged STALE. It is **not** merged into the simulated catalogue, not drifted forward, and
+not used by routing or alerts. Its origin is not recorded in the repository, so it is labelled "USNIC-format".
+
+Tests: `pytest tests/test_observed_icebergs.py tests/test_regional_context.py tests/test_stage_a_api.py`, and
+`cd frontend && npm run test:unit` (Node 22.18 or newer; no extra dependency).
+
 ## How to check the prototype is actually working
 
 Six checks, in order. Each one prints something you can compare against the expected result, so

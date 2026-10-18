@@ -18,12 +18,13 @@ import {
   YAxis,
 } from 'recharts';
 import { getIcebergRisk } from '../api/client';
-import { useIcebergDrift, useIcebergs } from '../api/queries';
+import { useIcebergDrift, useIcebergs, useObservedIcebergs } from '../api/queries';
 import { MapCanvas } from '../map/MapCanvas';
 import { MapStage } from '../components/MapStage';
 import { Badge, EmptyState, ErrorNote, KeyValue, Panel, Slider, Spinner } from '../components/ui';
 import { useScene } from '../hooks/useScene';
 import { num } from '../lib/format';
+import { formatObservedDate } from '../components/MapLegend';
 import { threatColor } from '../map/palette';
 import { useAppStore } from '../store/useAppStore';
 import type { ClosestApproach } from '../api/types';
@@ -40,6 +41,7 @@ export function IcebergTracker(): JSX.Element {
   const plan = useAppStore((s) => s.plan);
 
   const catalogue = useIcebergs(leadHours);
+  const observed = useObservedIcebergs();
   const drift = useIcebergDrift(selectedBergId, bergForecastHours, 12);
 
   const [approaches, setApproaches] = useState<ClosestApproach[] | null>(null);
@@ -126,6 +128,68 @@ export function IcebergTracker(): JSX.Element {
               <p className="mt-1 text-2xs text-ink-3">
                 Click a berg to run a 12-member ensemble drift forecast and draw it on the chart.
               </p>
+            </div>
+          )}
+        </Panel>
+
+        <Panel
+          title="Observed snapshot"
+          subtitle="USNIC-format file, not a live feed"
+          right={
+            observed.data?.available ? (
+              <Badge tone={observed.data.stale ? 'caution' : 'ok'}>
+                {observed.data.stale ? 'STALE' : 'Current'} · {observed.data.age_days} d
+              </Badge>
+            ) : undefined
+          }
+        >
+          {observed.isLoading ? (
+            <Spinner label="Loading observed snapshot" />
+          ) : observed.error ? (
+            <ErrorNote
+              message={observed.error instanceof Error ? observed.error.message : String(observed.error)}
+              onRetry={() => void observed.refetch()}
+            />
+          ) : !observed.data?.available ? (
+            <EmptyState
+              title="No observed snapshot"
+              detail={`${observed.data?.reason ?? 'Not available.'} ${observed.data?.setup ?? ''}`}
+            />
+          ) : (
+            <div>
+              <p className={`mb-2 text-2xs ${observed.data.stale ? 'text-caution' : 'text-ink-2'}`}>
+                {observed.data.stale_note}
+              </p>
+              <div className="max-h-44 overflow-auto">
+                <table className="w-full text-2xs">
+                  <thead className="text-ink-3">
+                    <tr>
+                      <th className="text-left font-normal">Berg</th>
+                      <th className="text-right font-normal">L × W (nm)</th>
+                      <th className="text-right font-normal">Position at {formatObservedDate(observed.data.observed_date)}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {observed.data.icebergs.map((b) => (
+                      <tr key={b.id} className="border-t border-hair/60 text-ink-2">
+                        <td className="py-1 font-sans">{b.id}</td>
+                        <td className="num py-1 text-right">
+                          {num(b.length_nm, 0)} × {num(b.width_nm, 0)}
+                        </td>
+                        <td className="num py-1 text-right text-ink-3">
+                          {num(b.latitude, 2)}, {num(b.longitude, 2)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <ul className="mt-2 list-disc space-y-0.5 pl-4 text-2xs text-ink-3">
+                {(observed.data.limitations ?? []).map((l) => (
+                  <li key={l}>{l}</li>
+                ))}
+                <li>{observed.data.source}</li>
+              </ul>
             </div>
           )}
         </Panel>

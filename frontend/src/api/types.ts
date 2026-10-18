@@ -711,3 +711,80 @@ export interface BandwidthReport {
   method: string;
   link: string;
 }
+
+
+// ----------------------------------------------------------------- Stage A: flow, observed, regional
+
+/**
+ * Gridded wind and current from /env/field. Every grid is [lat][lon] with ascending axes.
+ * `is_synthetic` is true for every field this service produces today, and the interface labels
+ * the flow layers from it rather than from a hard-coded string.
+ */
+export interface EnvField extends SyntheticFlagged {
+  lats: number[];
+  lons: number[];
+  valid_time_hours: number;
+  u10: number[][];
+  v10: number[][];
+  wind_speed_ms: number[][];
+  current_u: number[][];
+  current_v: number[][];
+  current_speed_ms: number[][];
+  sig_wave_height_m: number[][];
+}
+
+export interface ObservedIceberg {
+  id: string;
+  latitude: number;
+  longitude: number;
+  length_nm: number;
+  width_nm: number;
+  area_sqnm: number;
+  area_sqkm: number;
+  observed_date: string;
+}
+
+/** The observed iceberg snapshot. When `available` is false only `reason` and `setup` are meaningful. */
+export interface ObservedIcebergsResponse {
+  available: boolean;
+  kind: 'observed';
+  reason?: string;
+  setup?: string;
+  source?: string;
+  file?: string;
+  observed_date?: string;
+  age_days?: number;
+  stale?: boolean;
+  stale_after_days?: number;
+  stale_note?: string;
+  position_uncertainty?: string;
+  used_for_routing: boolean;
+  count: number;
+  rejected?: { id: string; reason: string }[];
+  warnings?: string[];
+  limitations?: string[];
+  icebergs: ObservedIceberg[];
+}
+
+/** Flat [lon, lat, lon, lat, ...] rings; the first ring of a polygon is its exterior. */
+export type FlatRing = number[];
+
+export interface RegionalCountry {
+  name: string;
+  label: [number, number];
+  label_rank: number;
+  polygons: FlatRing[][];
+}
+
+export interface RegionalContext {
+  available: boolean;
+  reason?: string;
+  setup?: string[];
+  region: { lon_min: number; lon_max: number; lat_min: number; lat_max: number };
+  attribution?: string;
+  accuracy_note?: string;
+  generated_utc?: string;
+  sources?: { layer: string; dataset: string; source: string; sha256: string; retrieved_utc: string }[];
+  land: FlatRing[][];
+  countries: RegionalCountry[];
+}

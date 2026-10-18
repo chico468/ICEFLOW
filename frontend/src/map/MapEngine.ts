@@ -7,9 +7,11 @@
  */
 import type {
   CoastlineFeature,
+  EnvField,
   IceField,
   IcebergForecast,
   IcebergProfile,
+  ObservedIcebergsResponse,
   Port,
   RadarSweep,
   Station,
@@ -26,6 +28,7 @@ import {
   drawIcebergs,
   drawInspectMarker,
   drawLand,
+  drawObservedIcebergs,
   drawRadarRings,
   drawRoute,
   drawScaleBar,
@@ -45,6 +48,11 @@ export interface LayerToggles {
   land: boolean;
   drift: boolean;
   icebergs: boolean;
+  /** Observed (USNIC-format) snapshot, drawn apart from the simulated catalogue. */
+  observedBergs: boolean;
+  /** Animated wind and surface-current particles. Off by default: they are an overlay, not the chart. */
+  windFlow: boolean;
+  currentFlow: boolean;
   baselineRoute: boolean;
   optimisedRoute: boolean;
   track: boolean;
@@ -61,6 +69,9 @@ export const DEFAULT_LAYERS: LayerToggles = {
   land: true,
   drift: true,
   icebergs: true,
+  observedBergs: true,
+  windFlow: false,
+  currentFlow: false,
   baselineRoute: true,
   optimisedRoute: true,
   track: true,
@@ -69,11 +80,47 @@ export const DEFAULT_LAYERS: LayerToggles = {
   labels: true,
 };
 
+/**
+ * What the data layers are doing right now, so the legend can say "loading", "failed" or
+ * "showing the previous lead time" instead of letting an empty or out-of-date chart pass as an answer.
+ * An absent ice field is NOT open water, and the legend says so.
+ */
+export interface SceneStatus {
+  iceLoading: boolean;
+  /** A new lead time is loading and the chart still shows the previous one. */
+  iceUpdating: boolean;
+  iceError: string | null;
+  baseLoading: boolean;
+  baseError: string | null;
+  flowLoading: boolean;
+  flowError: string | null;
+  observedLoading: boolean;
+  observedError: string | null;
+}
+
+export const IDLE_STATUS: SceneStatus = {
+  iceLoading: false,
+  iceUpdating: false,
+  iceError: null,
+  baseLoading: false,
+  baseError: null,
+  flowLoading: false,
+  flowError: null,
+  observedLoading: false,
+  observedError: null,
+};
+
 export interface MapScene {
   coastline: CoastlineFeature[];
   stations: Station[];
   ports: Port[];
   iceField: IceField | null;
+  /** The +0 h field on the same grid, present only while the raster is in 'change' mode. */
+  iceFieldBase: IceField | null;
+  /** Wind and current vectors for the particle overlay; null until a flow layer is on. */
+  envField: EnvField | null;
+  observed: ObservedIcebergsResponse | null;
+  status: SceneStatus;
   icebergs: IcebergProfile[];
   selectedBergId: string | null;
   bergDrift: IcebergForecast | null;
@@ -95,6 +142,10 @@ export function emptyScene(): MapScene {
     stations: [],
     ports: [],
     iceField: null,
+    iceFieldBase: null,
+    envField: null,
+    observed: null,
+    status: { ...IDLE_STATUS },
     icebergs: [],
     selectedBergId: null,
     bergDrift: null,
@@ -109,6 +160,13 @@ export function emptyScene(): MapScene {
     rioColoredRoute: false,
     layers: { ...DEFAULT_LAYERS },
   };
+}
+
+/** Short on-chart tag for the observed layer, e.g. "obs 20 Aug, STALE". Never omits the staleness. */
+function observedTag(o: ObservedIcebergsResponse): string {
+  const d = o.observed_date ? new Date(`${o.observed_date}T00:00:00Z`) : null;
+  const when = d ? d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' }) : '?';
+  return `obs ${when}${o.stale ? ' STALE' : ''}`;
 }
 
 export class MapEngine {
@@ -190,13 +248,16 @@ export class MapEngine {
 
     drawBackground(ctx, vp);
     if (L.graticule) drawGraticule(ctx, vp);
-    if (L.iceRaster && s.iceField) drawIceRaster(ctx, vp, s.iceField, s.rasterMode, s.rasterOpacity);
+    if (L.iceRaster && s.iceField) drawIceRaster(ctx, vp, s.iceField, s.rasterMode, s.rasterOpacity, s.iceFieldBase);
     if (L.iceEdge && s.iceField) drawIceEdge(ctx, vp, s.iceField.lons, s.iceField.ice_edge_lat);
     if (L.compression && s.iceField) drawCompression(ctx, vp, s.iceField);
     if (L.land) drawLand(ctx, vp, s.coastline);
     if (L.drift && s.iceField) drawDriftField(ctx, vp, s.iceField);
     if (L.icebergs && s.bergDrift) drawIcebergDrift(ctx, vp, s.bergDrift);
     if (L.icebergs) drawIcebergs(ctx, vp, s.icebergs, s.selectedBergId);
+    if (L.observedBergs && s.observed?.available) {
+      drawObservedIcebergs(ctx, vp, s.observed.icebergs, Boolean(s.observed.stale), observedTag(s.observed));
+    }
     if (L.baselineRoute && s.baselineRoute.length > 1)
       drawRoute(ctx, vp, s.baselineRoute, { dashed: true, color: MAP_COLORS.routeBaseline, width: 1.5 });
     if (L.optimisedRoute && s.optimisedRoute.length > 1)

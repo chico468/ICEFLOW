@@ -10,6 +10,7 @@ from src.core.geo import from_epsg3031, haversine_nm, to_epsg3031
 from src.data.expedition import programme_context
 from src.data.icebergs import get_iceberg_catalogue
 from src.data.landmask import coast_clearance_nm, get_land_mask, is_land
+from src.data.regional_context import load_regional
 from src.data.stations import default_voyage_legs, get_ports, get_stations, get_waypoint
 
 router = APIRouter(prefix="/api/v1/geo", tags=["geography"])
@@ -28,6 +29,18 @@ def coastline() -> Dict[str, Any]:
     doc["stats"] = mask.stats()
     doc["provenance"] = DATA_PROVENANCE["coastline"]
     return doc
+
+
+@router.get("/regional")
+def regional_context() -> Dict[str, Any]:
+    """
+    Land, country borders and label points for the voyage region (Natural Earth, simplified).
+
+    Drawing data only. It is kept separate from the land mask above and is never used by the
+    route optimiser. When the file has not been built the response says so (`available: false`)
+    and lists the build command, so the client can show a setup message instead of a blank map.
+    """
+    return load_regional()
 
 
 @router.get("/stations")

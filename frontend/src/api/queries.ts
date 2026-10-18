@@ -10,6 +10,7 @@ import * as api from './client';
 import type {
   BandwidthReport,
   CoastlineResponse,
+  EnvField,
   Endpoint,
   ForecastSkillResponse,
   HealthResponse,
@@ -17,7 +18,9 @@ import type {
   IceState,
   IcebergForecast,
   IcebergsResponse,
+  ObservedIcebergsResponse,
   RadarSweep,
+  RegionalContext,
   RiskMatrixResponse,
   SpeedPowerResponse,
   StationsResponse,
@@ -32,6 +35,10 @@ export function useHealth(): UseQueryResult<HealthResponse> {
 
 export function useCoastline(): UseQueryResult<CoastlineResponse> {
   return useQuery({ queryKey: ['coastline'], queryFn: api.getCoastline, ...FOREVER });
+}
+
+export function useRegionalContext(): UseQueryResult<RegionalContext> {
+  return useQuery({ queryKey: ['regional-context'], queryFn: api.getRegionalContext, ...FOREVER });
 }
 
 export function useStations(): UseQueryResult<StationsResponse> {
@@ -125,6 +132,41 @@ export function useIceField(p: IceFieldParams | null): UseQueryResult<IceField> 
     enabled: Boolean(p),
     staleTime: Infinity,
     placeholderData: (prev) => prev,
+  });
+}
+
+export interface EnvFieldParams {
+  latMin: number;
+  latMax: number;
+  lonMin: number;
+  lonMax: number;
+  resolutionDeg: number;
+  tHours: number;
+}
+
+/**
+ * Wind and current vectors for the particle layers. Fetched only while a flow layer is on, so
+ * a user who never opens one never pays for it. The previous grid is kept while a new time loads,
+ * and the grid carries its own valid time, which is what the legend reports.
+ */
+export function useEnvField(p: EnvFieldParams | null): UseQueryResult<EnvField> {
+  return useQuery({
+    queryKey: ['env-field', p?.latMin, p?.latMax, p?.lonMin, p?.lonMax, p?.resolutionDeg, p?.tHours],
+    queryFn: () => api.getEnvField(p as EnvFieldParams),
+    enabled: Boolean(p),
+    staleTime: Infinity,
+    placeholderData: (prev) => prev,
+  });
+}
+
+/** The observed iceberg snapshot. A file, not a feed, so it is fetched once per session. */
+export function useObservedIcebergs(enabled = true): UseQueryResult<ObservedIcebergsResponse> {
+  return useQuery({
+    queryKey: ['observed-icebergs'],
+    queryFn: api.getObservedIcebergs,
+    enabled,
+    staleTime: 10 * 60_000,
+    retry: 1,
   });
 }
 

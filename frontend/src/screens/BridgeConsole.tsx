@@ -8,7 +8,7 @@
  */
 import { useEffect, useMemo } from 'react';
 import { AlertTriangle, Pause, Play, RotateCcw, SkipForward, Square } from 'lucide-react';
-import { MapCanvas } from '../map/MapCanvas';
+import { ChartViews } from '../components/ChartViews';
 import { MapStage } from '../components/MapStage';
 import { RadarScope } from '../components/RadarScope';
 import {
@@ -73,7 +73,7 @@ export function BridgeConsole(): JSX.Element {
       id="sail"
       map={
         <>
-        <MapCanvas scene={scene} fitTargets={fitTargets} onClickPoint={(ll) => setInspect(ll)} />
+        <ChartViews scene={scene} fitTargets={fitTargets} onClickPoint={(ll) => setInspect(ll)} />
 
         {busy && (
           <ComputeOverlay

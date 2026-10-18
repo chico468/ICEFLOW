@@ -23,6 +23,7 @@ from src.core.route_optimizer import (
     RouteWeights,
 )
 from src.data.icebergs import get_iceberg_profiles, get_profile
+from src.data.observed_icebergs import load_snapshot as load_observed_icebergs
 from src.data.stations import resolve_endpoint
 
 router = APIRouter(prefix="/api/v1", tags=["navigation"])
@@ -98,6 +99,18 @@ def predict_drift(req: IcebergDriftRequest) -> IcebergForecastResult:
         ice_concentration=req.ice_concentration,
         apply_melt=req.apply_melt,
     )
+
+
+@router.get("/icebergs/observed")
+def observed_icebergs() -> Dict[str, Any]:
+    """
+    The observed USNIC-format iceberg snapshot, exactly as dated in the file.
+
+    This is an observation, not a live feed and not a forecast: the response carries the
+    observation date, its age and a `stale` flag. It is not merged with the simulated catalogue
+    and is not used by routing or alerts (`used_for_routing` is false).
+    """
+    return load_observed_icebergs()
 
 
 @router.get("/icebergs/{berg_id}/drift", response_model=IcebergForecastResult)

@@ -7,9 +7,16 @@
  * half-degree resolution is tens of thousands of cells the user cannot see.
  */
 import { useMemo } from 'react';
-import { useCoastline, useIceField, useIcebergs, useStations } from '../api/queries';
-import type { IceFieldParams } from '../api/queries';
-import { emptyScene, type MapScene } from '../map/MapEngine';
+import {
+  useCoastline,
+  useEnvField,
+  useIceField,
+  useIcebergs,
+  useObservedIcebergs,
+  useStations,
+} from '../api/queries';
+import type { EnvFieldParams, IceFieldParams } from '../api/queries';
+import { emptyScene, type MapScene, type SceneStatus } from '../map/MapEngine';
 import { latestTick, useAppStore } from '../store/useAppStore';
 
 /** Padding around the planned route, in degrees, so the chart has context around the track. */
@@ -21,6 +28,10 @@ export interface SceneOptions {
   showBergDrift?: boolean;
   /** Override the forecast lead time used for the ice field. */
   leadHoursOverride?: number;
+}
+
+function errorText(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }
 
 export function useScene(options: SceneOptions = {}): {
@@ -85,6 +96,65 @@ export function useScene(options: SceneOptions = {}): {
   const iceField = useIceField(iceParams);
   const icebergs = useIcebergs(leadHours);
 
+  // 'change' mode subtracts the +0 h field, which must be on the very same grid. It is requested only
+  // in that mode and only when there is a later lead time to compare against.
+  const baseParams: IceFieldParams | null = useMemo(
+    () => (rasterMode === 'change' && leadHours > 0 && iceParams ? { ...iceParams, leadHours: 0 } : null),
+    [rasterMode, leadHours, iceParams],
+  );
+  const iceBase = useIceField(baseParams);
+
+  // Wind and current for the particle overlay. The box covers the whole route, including the ocean
+  // north of the ice domain, but stops at 28 S: the synthetic fields are defined for the Southern Ocean
+  // and have no land mask for continents, so drawing them further north would animate flow over land.
+  const flowOn = layers.windFlow || layers.currentFlow;
+  const flowParams: EnvFieldParams | null = useMemo(() => {
+    if (!flowOn) return null;
+    const lats = fitTargets.map((p) => p.lat);
+    const lons = fitTargets.map((p) => p.lon);
+    const latMin = Math.max(-78, Math.min(...lats) - PAD_LAT);
+    const latMax = Math.min(-28, Math.max(...lats) + 2);
+    const lonMin = Math.max(-180, Math.min(...lons) - PAD_LON);
+    const lonMax = Math.min(180, Math.max(...lons) + PAD_LON);
+    if (!(latMax > latMin && lonMax > lonMin)) return null;
+    let resolutionDeg = 1.0;
+    for (const candidate of [1.0, 1.5, 2.0, 3.0]) {
+      const cells = ((latMax - latMin) / candidate) * ((lonMax - lonMin) / (candidate * 2));
+      resolutionDeg = candidate;
+      if (cells <= 5_000) break;
+    }
+    return { latMin, latMax, lonMin, lonMax, resolutionDeg, tHours: leadHours };
+  }, [flowOn, fitTargets, leadHours]);
+  const envField = useEnvField(flowParams);
+
+  const observed = useObservedIcebergs(layers.observedBergs);
+
+  const status: SceneStatus = useMemo(
+    () => ({
+      iceLoading: iceField.isLoading,
+      iceUpdating: iceField.isPlaceholderData && iceField.isFetching,
+      iceError: iceField.error ? errorText(iceField.error) : null,
+      baseLoading: iceBase.isLoading,
+      baseError: iceBase.error ? errorText(iceBase.error) : null,
+      flowLoading: envField.isLoading,
+      flowError: envField.error ? errorText(envField.error) : null,
+      observedLoading: observed.isLoading,
+      observedError: observed.error ? errorText(observed.error) : null,
+    }),
+    [
+      iceField.isLoading,
+      iceField.isPlaceholderData,
+      iceField.isFetching,
+      iceField.error,
+      iceBase.isLoading,
+      iceBase.error,
+      envField.isLoading,
+      envField.error,
+      observed.isLoading,
+      observed.error,
+    ],
+  );
+
   const scene: MapScene = useMemo(() => {
     const base = emptyScene();
     const tick = latestTick(ticks);
@@ -94,6 +164,10 @@ export function useScene(options: SceneOptions = {}): {
       stations: stations.data?.stations ?? [],
       ports: stations.data?.ports ?? [],
       iceField: iceField.data ?? null,
+      iceFieldBase: baseParams ? (iceBase.data ?? null) : null,
+      envField: flowOn ? (envField.data ?? null) : null,
+      observed: layers.observedBergs ? (observed.data ?? null) : null,
+      status,
       icebergs: icebergs.data?.icebergs ?? [],
       selectedBergId,
       bergDrift: options.showBergDrift ? bergDrift : null,
@@ -112,6 +186,12 @@ export function useScene(options: SceneOptions = {}): {
     coastline.data,
     stations.data,
     iceField.data,
+    iceBase.data,
+    baseParams,
+    envField.data,
+    flowOn,
+    observed.data,
+    status,
     icebergs.data,
     selectedBergId,
     bergDrift,

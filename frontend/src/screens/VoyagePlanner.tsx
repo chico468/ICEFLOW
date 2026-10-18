@@ -16,7 +16,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { AlertTriangle, ArrowRight, ChevronDown, ChevronUp, Play, Route } from 'lucide-react';
 import { optimizeRoute } from '../api/client';
 import { useEndpoints, useVessels } from '../api/queries';
-import { MapCanvas } from '../map/MapCanvas';
+import { ChartViews } from '../components/ChartViews';
 import { MapStage } from '../components/MapStage';
 import { Badge, ComputeOverlay, ErrorNote, KeyValue, Select, Slider, Stat, Toggle } from '../components/ui';
 import { Explain } from '../components/Explain';
@@ -430,7 +430,7 @@ export function VoyagePlanner(): JSX.Element {
   // ------------------------------------------------------------------------- the map
   const map = (
     <>
-      <MapCanvas scene={scene} fitTargets={fitTargets} onClickPoint={(ll) => setInspect(ll)} />
+      <ChartViews scene={scene} fitTargets={fitTargets} onClickPoint={(ll) => setInspect(ll)} />
       {phase === 'planning' && (
         <ComputeOverlay
           title="Planning"

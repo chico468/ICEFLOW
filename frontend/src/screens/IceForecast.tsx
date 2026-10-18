@@ -33,6 +33,9 @@ const LAYER_LABELS: { key: keyof LayerToggles; label: string }[] = [
   { key: 'compression', label: 'Compression' },
   { key: 'drift', label: 'Drift vectors' },
   { key: 'icebergs', label: 'Icebergs' },
+  { key: 'windFlow', label: 'Wind (simulated)' },
+  { key: 'currentFlow', label: 'Current (simulated)' },
+  { key: 'observedBergs', label: 'Observed bergs (stale)' },
   { key: 'land', label: 'Land' },
   { key: 'graticule', label: 'Graticule' },
   { key: 'optimisedRoute', label: 'Optimised route' },
@@ -124,10 +127,11 @@ export function IceForecast(): JSX.Element {
 
         <Panel title="Chart layers">
           <div className="mb-2 flex gap-1">
-            {(['concentration', 'thickness'] as const).map((mode) => (
+            {(['concentration', 'classes', 'change', 'thickness'] as const).map((mode) => (
               <button
                 key={mode}
                 type="button"
+                aria-pressed={rasterMode === mode}
                 className={`btn flex-1 ${rasterMode === mode ? 'btn-accent' : ''}`}
                 onClick={() => setRasterMode(mode)}
               >

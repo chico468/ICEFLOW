@@ -6,10 +6,14 @@
  * and it is throttled to animation frames.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Crosshair, Maximize2, Minus, Plus } from 'lucide-react';
+import { Crosshair, Maximize2, Minus, Plus, SlidersHorizontal } from 'lucide-react';
+import { FlowOverlay } from './FlowOverlay';
 import { MapEngine, type MapScene } from './MapEngine';
 import type { LatLon } from './projection';
+import { MapLayerPanel } from '../components/MapLayerPanel';
+import { MapLegend } from '../components/MapLegend';
 import { useStageInsets } from '../components/stageInsets';
+import { useAppStore } from '../store/useAppStore';
 
 export interface MapCanvasHandle {
   fitTo(points: { lat: number; lon: number }[]): void;
@@ -42,6 +46,9 @@ export function MapCanvas({
   const insets = useStageInsets();
 
   const dragRef = useRef<{ x: number; y: number; moved: boolean } | null>(null);
+  const [layersOpen, setLayersOpen] = useState(false);
+  const closeLayers = useCallback(() => setLayersOpen(false), []);
+  const leadHours = useAppStore((s) => s.leadHours);
   const [cursor, setCursor] = useState<LatLon | null>(null);
   const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
 
@@ -184,6 +191,14 @@ export function MapCanvas({
         }}
       />
 
+      {/* Wind and current particles: their own canvas, so the chart above keeps idling when nothing changes. */}
+      <FlowOverlay
+        engine={engine}
+        field={scene.envField}
+        wind={scene.layers.windFlow}
+        current={scene.layers.currentFlow}
+      />
+
       {cursor && tooltipPos && (
         <div
           className="pointer-events-none absolute z-10 rounded border border-hair bg-ground/90 px-2 py-1 num text-2xs text-ink-2"
@@ -217,6 +232,16 @@ export function MapCanvas({
             <Maximize2 size={16} />
           </button>
           <button
+            className={`btn-icon ${layersOpen ? 'btn-accent' : ''}`}
+            title="Layers and legend settings"
+            aria-label="Layers and legend settings"
+            aria-expanded={layersOpen}
+            aria-controls="map-layer-panel"
+            onClick={() => setLayersOpen((v) => !v)}
+          >
+            <SlidersHorizontal size={16} />
+          </button>
+          <button
             className="btn-icon"
             title="Frame the Antarctic sector"
             aria-label="Frame the Antarctic sector"
@@ -233,6 +258,9 @@ export function MapCanvas({
           </button>
         </div>
       )}
+
+      {showControls && <MapLegend scene={scene} leadHours={leadHours} />}
+      {showControls && <MapLayerPanel open={layersOpen} onClose={closeLayers} />}
     </div>
   );
 }

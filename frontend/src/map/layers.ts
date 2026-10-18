@@ -9,6 +9,7 @@ import type {
   IceField,
   IcebergForecast,
   IcebergProfile,
+  ObservedIceberg,
   Port,
   RadarSweep,
   Station,
@@ -16,6 +17,8 @@ import type {
 } from '../api/types';
 import {
   MAP_COLORS,
+  changeCss,
+  classedCss,
   compressionCss,
   concentrationCss,
   rioColor,
@@ -25,7 +28,13 @@ import {
 import { scaleFactorAt, toEpsg3031 } from './projection';
 import type { Viewport } from './viewport';
 
-export type RasterMode = 'concentration' | 'thickness';
+/**
+ * concentration  continuous ramp
+ * classes        the same data in five labelled bands (see ICE_BANDS), so the legend and map agree
+ * thickness      ice thickness, metres
+ * change         concentration at the shown lead time minus concentration at +0 h
+ */
+export type RasterMode = 'concentration' | 'classes' | 'thickness' | 'change';
 
 const TAU = Math.PI * 2;
 
@@ -123,10 +132,23 @@ export function drawIceRaster(
   field: IceField,
   mode: RasterMode,
   opacity: number,
+  base: IceField | null = null,
 ): void {
   const { lats, lons } = field;
   if (lats.length < 2 || lons.length < 2) return;
   const values = mode === 'thickness' ? field.thickness_m : field.concentration;
+  let baseValues: number[][] | null = null;
+  if (mode === 'change') {
+    // A difference is only meaningful on an identical grid. Refuse rather than misalign.
+    const same =
+      base !== null &&
+      base.lats.length === lats.length &&
+      base.lons.length === lons.length &&
+      base.lats[0] === lats[0] &&
+      base.lons[0] === lons[0];
+    if (!same || !base) return;
+    baseValues = base.concentration;
+  }
 
   ctx.save();
   ctx.globalAlpha = opacity;
@@ -136,8 +158,17 @@ export function drawIceRaster(
     for (let j = 0; j < lons.length - 1; j += 1) {
       const v = rowA[j];
       if (v === undefined) continue;
-      if (mode === 'concentration' && v < 0.03) continue;
-      if (mode === 'thickness' && v < 0.01) continue;
+      let fill: string | null;
+      if (mode === 'change') {
+        const b = baseValues?.[i]?.[j];
+        if (b === undefined) continue;
+        fill = changeCss(v - b);
+      } else {
+        if ((mode === 'concentration' || mode === 'classes') && v < 0.03) continue;
+        if (mode === 'thickness' && v < 0.01) continue;
+        fill = mode === 'thickness' ? thicknessCss(v) : mode === 'classes' ? classedCss(v) : concentrationCss(v);
+      }
+      if (fill === null) continue;
 
       const p0 = vp.lonLatToScreen(lats[i], lons[j]);
       const p1 = vp.lonLatToScreen(lats[i], lons[j + 1]);
@@ -149,7 +180,7 @@ export function drawIceRaster(
       const maxY = Math.max(p0.y, p1.y, p2.y, p3.y);
       if (maxX < -8 || minX > vp.widthPx + 8 || maxY < -8 || minY > vp.heightPx + 8) continue;
 
-      ctx.fillStyle = mode === 'thickness' ? thicknessCss(v) : concentrationCss(v);
+      ctx.fillStyle = fill;
       ctx.beginPath();
       ctx.moveTo(p0.x, p0.y);
       ctx.lineTo(p1.x, p1.y);
@@ -173,28 +204,37 @@ export function drawIceEdge(
   edgeLat: number[],
 ): void {
   if (lons.length < 2) return;
+  const trace = (): void => {
+    ctx.beginPath();
+    let started = false;
+    for (let i = 0; i < lons.length; i += 1) {
+      const lat = edgeLat[i];
+      if (lat === undefined || !Number.isFinite(lat)) {
+        started = false;
+        continue;
+      }
+      const p = vp.lonLatToScreen(lat, lons[i]);
+      if (!started) {
+        ctx.moveTo(p.x, p.y);
+        started = true;
+      } else {
+        ctx.lineTo(p.x, p.y);
+      }
+    }
+  };
   ctx.save();
-  ctx.strokeStyle = MAP_COLORS.iceEdge;
-  ctx.lineWidth = 1.6;
   ctx.setLineDash([]);
-  ctx.shadowColor = 'rgba(27, 106, 156, 0.35)';
-  ctx.shadowBlur = 6;
-  ctx.beginPath();
-  let started = false;
-  for (let i = 0; i < lons.length; i += 1) {
-    const lat = edgeLat[i];
-    if (lat === undefined || !Number.isFinite(lat)) {
-      started = false;
-      continue;
-    }
-    const p = vp.lonLatToScreen(lat, lons[i]);
-    if (!started) {
-      ctx.moveTo(p.x, p.y);
-      started = true;
-    } else {
-      ctx.lineTo(p.x, p.y);
-    }
-  }
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  // A pale casing under the blue line keeps the edge readable where it crosses dense, dark ice
+  // and where it runs over the route; the line alone disappears into the 70 percent and up ramp.
+  ctx.strokeStyle = MAP_COLORS.iceEdgeCasing;
+  ctx.lineWidth = 4.2;
+  trace();
+  ctx.stroke();
+  ctx.strokeStyle = MAP_COLORS.iceEdge;
+  ctx.lineWidth = 1.8;
+  trace();
   ctx.stroke();
   ctx.restore();
 }
@@ -349,6 +389,50 @@ export function drawIcebergs(
 
     ctx.fillStyle = selected ? MAP_COLORS.icebergCore : 'rgba(196, 181, 253, 0.9)';
     ctx.fillText(berg.berg_id, p.x + r + 4, p.y + 3);
+  }
+  ctx.restore();
+}
+
+/**
+ * The observed iceberg snapshot. Drawn as a hollow dashed diamond and an equivalent-area circle,
+ * so it can never be mistaken for the filled, simulated catalogue. The circle is the circle with the
+ * same area as the reported footprint: orientation is not in the data, so no shape is implied.
+ * Stale snapshots are drawn fainter. Labels appear only when zoomed in enough to avoid clutter.
+ */
+export function drawObservedIcebergs(
+  ctx: CanvasRenderingContext2D,
+  vp: Viewport,
+  bergs: ObservedIceberg[],
+  stale: boolean,
+  tag: string,
+): void {
+  ctx.save();
+  ctx.font = '10px ui-monospace, Consolas, monospace';
+  ctx.strokeStyle = stale ? MAP_COLORS.observedBergStale : MAP_COLORS.observedBerg;
+  ctx.fillStyle = ctx.strokeStyle;
+  const showLabels = vp.metresPerPixel < 16000;
+  for (const b of bergs) {
+    const p = vp.lonLatToScreen(b.latitude, b.longitude);
+    if (p.x < -80 || p.x > vp.widthPx + 80 || p.y < -80 || p.y > vp.heightPx + 80) continue;
+    const radiusKm = Math.sqrt(b.area_sqkm / Math.PI);
+    const rPx = Math.min(140, kmToPixels(radiusKm, b.latitude, vp));
+    if (rPx > 5) {
+      ctx.setLineDash([5, 4]);
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, rPx, 0, TAU);
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(p.x, p.y - 5);
+    ctx.lineTo(p.x + 5, p.y);
+    ctx.lineTo(p.x, p.y + 5);
+    ctx.lineTo(p.x - 5, p.y);
+    ctx.closePath();
+    ctx.stroke();
+    if (showLabels) ctx.fillText(`${b.id} ${tag}`, p.x + 9, p.y + 3);
   }
   ctx.restore();
 }

@@ -18,6 +18,7 @@
  */
 import { Activity, BarChart3, Layers, Ship, Snowflake } from 'lucide-react';
 import { ProvenanceBar } from './components/ProvenanceBar';
+import { ScreenActiveContext } from './components/screenActive';
 import { useHealth } from './api/queries';
 import { Analytics } from './screens/Analytics';
 import { BridgeConsole } from './screens/BridgeConsole';
@@ -155,7 +156,7 @@ function Screen({
       style={{ visibility: visible ? 'visible' : 'hidden', pointerEvents: visible ? 'auto' : 'none' }}
       aria-hidden={!visible}
     >
-      {children}
+      <ScreenActiveContext.Provider value={visible}>{children}</ScreenActiveContext.Provider>
     </div>
   );
 }

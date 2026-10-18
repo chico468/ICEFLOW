@@ -9,6 +9,7 @@ import type {
   BandwidthReport,
   CoastlineResponse,
   CreateVoyageRequest,
+  EnvField,
   EnvSample,
   ForecastSkillResponse,
   HealthResponse,
@@ -18,9 +19,11 @@ import type {
   IcebergForecast,
   IcebergRiskResponse,
   IcebergsResponse,
+  ObservedIcebergsResponse,
   OptimizationSummary,
   POLARISAssessment,
   RadarSweep,
+  RegionalContext,
   ResistanceResult,
   RiskMatrixResponse,
   RouteRequest,
@@ -94,6 +97,7 @@ export const getHealth = () => get<HealthResponse>('/health');
 
 export const getCoastline = () => get<CoastlineResponse>('/geo/coastline');
 export const getStations = () => get<StationsResponse>('/geo/stations');
+export const getRegionalContext = () => get<RegionalContext>('/geo/regional');
 
 // -------------------------------------------------------------------------- environment
 
@@ -127,6 +131,29 @@ export function clampIceResolution(q: IceFieldQuery): number {
   }
   return Math.min(5, Math.max(0.25, Number(res.toFixed(3))));
 }
+
+export interface EnvFieldQuery {
+  latMin: number;
+  latMax: number;
+  lonMin: number;
+  lonMax: number;
+  resolutionDeg: number;
+  tHours?: number;
+}
+
+/**
+ * Wind and current vectors for the flow layers. Shares the service's 40 000-cell cap, so the
+ * same clamp keeps a wide request from becoming a 400.
+ */
+export const getEnvField = (q: EnvFieldQuery) =>
+  get<EnvField>('/env/field', {
+    lat_min: q.latMin,
+    lat_max: q.latMax,
+    lon_min: q.lonMin,
+    lon_max: q.lonMax,
+    resolution_deg: clampIceResolution({ ...q, leadHours: 0 }),
+    t_hours: q.tHours ?? 0,
+  });
 
 export const getIceField = (q: IceFieldQuery) =>
   get<IceField>('/ice/field', {
@@ -192,6 +219,8 @@ export const getRadarSweep = (lat: number, lon: number, headingDeg: number, spee
   });
 
 // ------------------------------------------------------------------------------ icebergs
+
+export const getObservedIcebergs = () => get<ObservedIcebergsResponse>('/icebergs/observed');
 
 export const getIcebergs = (leadHours = 0) =>
   get<IcebergsResponse>('/icebergs', { lead_hours: leadHours });
