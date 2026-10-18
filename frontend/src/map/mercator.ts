@@ -36,6 +36,70 @@ export function mercLat(y: number): number {
   return (2 * Math.atan(Math.exp(y)) - Math.PI / 2) / DEG;
 }
 
+/** The numbers that define a regional view. */
+export interface ViewState {
+  centreLon: number;
+  centreY: number;
+  scale: number;
+}
+
+const EARTH_RADIUS_M = 6_371_008.8;
+
+/**
+ * Ground metres per screen pixel at a latitude. Mercator stretches distances by 1 / cos(lat), so a
+ * scale bar is only true at the latitude it is measured at; callers pass the latitude they label.
+ */
+export function metresPerPixelAt(scale: number, latDeg: number): number {
+  return (EARTH_RADIUS_M * Math.cos((Math.max(-85, Math.min(85, latDeg)) * Math.PI) / 180)) / scale;
+}
+
+/**
+ * A scale bar whose length is a round number of kilometres (1, 2, 5 times a power of ten) and at most
+ * `maxPx` wide. Returns null when the scale is degenerate.
+ */
+export function niceScaleBar(metresPerPixel: number, maxPx = 140): { lengthPx: number; label: string; km: number } | null {
+  if (!(metresPerPixel > 0) || !Number.isFinite(metresPerPixel)) return null;
+  const maxKm = (metresPerPixel * maxPx) / 1000;
+  if (maxKm <= 0) return null;
+  const pow = Math.pow(10, Math.floor(Math.log10(maxKm)));
+  const km = [5, 2, 1].map((m) => m * pow).find((c) => c <= maxKm) ?? pow;
+  const label = km >= 1 ? `${km.toLocaleString('en-GB', { maximumFractionDigits: 0 })} km` : `${Math.round(km * 1000)} m`;
+  return { lengthPx: (km * 1000) / metresPerPixel, label, km };
+}
+
+export function easeOutCubic(t: number): number {
+  const c = Math.min(1, Math.max(0, t));
+  return 1 - Math.pow(1 - c, 3);
+}
+
+/** Interpolate two views. Scale is interpolated geometrically so a zoom feels even. */
+export function lerpView(a: ViewState, b: ViewState, t: number): ViewState {
+  return {
+    centreLon: a.centreLon + (b.centreLon - a.centreLon) * t,
+    centreY: a.centreY + (b.centreY - a.centreY) * t,
+    scale: a.scale * Math.pow(b.scale / a.scale, t),
+  };
+}
+
+/** The lon/lat bounding box of a flat [lon, lat, lon, lat, ...] ring, for cheap off-screen culling. */
+export function ringBounds(ring: number[]): RegionBounds {
+  let lonMin = Infinity;
+  let lonMax = -Infinity;
+  let latMin = Infinity;
+  let latMax = -Infinity;
+  for (let i = 0; i + 1 < ring.length; i += 2) {
+    lonMin = Math.min(lonMin, ring[i]);
+    lonMax = Math.max(lonMax, ring[i]);
+    latMin = Math.min(latMin, ring[i + 1]);
+    latMax = Math.max(latMax, ring[i + 1]);
+  }
+  return { lon_min: lonMin, lon_max: lonMax, lat_min: latMin, lat_max: latMax };
+}
+
+export function boundsIntersect(a: RegionBounds, b: RegionBounds): boolean {
+  return a.lon_min <= b.lon_max && a.lon_max >= b.lon_min && a.lat_min <= b.lat_max && a.lat_max >= b.lat_min;
+}
+
 export class RegionViewport {
   widthPx = 1;
   heightPx = 1;
@@ -95,6 +159,52 @@ export class RegionViewport {
     this.centreLon -= (dxPx / this.scale) / DEG;
     this.centreY += dyPx / this.scale;
     this.clamp();
+  }
+
+  /** The three numbers that define the view, for animating between two of them. */
+  getView(): ViewState {
+    return { centreLon: this.centreLon, centreY: this.centreY, scale: this.scale };
+  }
+
+  setView(v: ViewState): void {
+    this.centreLon = v.centreLon;
+    this.centreY = v.centreY;
+    this.scale = Math.min(this.maxScale, Math.max(this.minScale, v.scale));
+    this.clamp();
+  }
+
+  /** Where a zoom about (px, py) would end up, without moving the view. Used to animate the zoom. */
+  viewAfterZoom(px: number, py: number, factor: number): ViewState {
+    const before = this.getView();
+    this.zoomAt(px, py, factor);
+    const target = this.getView();
+    this.setView(before);
+    return target;
+  }
+
+  /** Where a pan of (dx, dy) pixels would end up. */
+  viewAfterPan(dxPx: number, dyPx: number): ViewState {
+    const before = this.getView();
+    this.panBy(dxPx, dyPx);
+    const target = this.getView();
+    this.setView(before);
+    return target;
+  }
+
+  /** Where fitting these points would end up. */
+  viewAfterFit(points: LonLat[], padPx = 60): ViewState {
+    const before = this.getView();
+    this.fitPoints(points, padPx);
+    const target = this.getView();
+    this.setView(before);
+    return target;
+  }
+
+  /** The geographic rectangle currently on screen. */
+  visibleBounds(): RegionBounds {
+    const tl = this.unproject(0, 0);
+    const br = this.unproject(this.widthPx, this.heightPx);
+    return { lon_min: tl.lon, lon_max: br.lon, lat_min: br.lat, lat_max: tl.lat };
   }
 
   /** Zoom by `factor` keeping the geographic point under (px, py) fixed. */
