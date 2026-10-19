@@ -38,3 +38,9 @@ test('the screen wrapper in App still hides inactive screens with visibility, an
   const app = readFileSync(join(SRC, 'App.tsx'), 'utf8');
   assert.match(app, /visibility:\s*visible\s*\?\s*'visible'\s*:\s*'hidden'/);
 });
+
+test('flow layers never use a field while a request error is showing (stale vectors must not keep moving)', () => {
+  const overlay = readFileSync(join(SRC, 'map', 'FlowOverlay.tsx'), 'utf8');
+  assert.match(overlay, /const usable = error \? null : field;/);
+  assert.doesNotMatch(overlay, /makeFlowGrid\(field\./, 'grids must be built from `usable`, not the raw field');
+});

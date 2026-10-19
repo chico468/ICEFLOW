@@ -53,6 +53,7 @@ export function MapCanvas({
   const [layersOpen, setLayersOpen] = useState(false);
   const closeLayers = useCallback(() => setLayersOpen(false), []);
   const leadHours = useAppStore((s) => s.leadHours);
+  const flowStyle = useAppStore((s) => s.flowStyle);
   const [cursor, setCursor] = useState<LatLon | null>(null);
   const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
 
@@ -201,6 +202,9 @@ export function MapCanvas({
         field={scene.envField}
         wind={scene.layers.windFlow}
         current={scene.layers.currentFlow}
+        style={flowStyle}
+        loading={scene.status.flowLoading}
+        error={scene.status.flowError}
       />
 
       {cursor && tooltipPos && (

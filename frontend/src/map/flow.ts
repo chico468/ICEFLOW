@@ -147,6 +147,9 @@ export function advanceStep(
 
 export type FlowKind = 'wind' | 'current';
 
+/** How flow is drawn: moving particles, or static arrows (the dependable fallback, and the reduced-motion default). */
+export type FlowStyle = 'animated' | 'arrows';
+
 export interface FlowKindSpec {
   kind: FlowKind;
   label: string;
@@ -165,9 +168,10 @@ export const FLOW_KINDS: Record<FlowKind, FlowKindSpec> = {
     kind: 'wind',
     label: 'Wind at 10 m',
     maxSpeed: 25,
-    pxPerSecPerMs: 6,
-    trailLength: 14,
-    lineWidth: 1.2,
+    // ~50 px/s at the median simulated wind (7 m/s), ~175 px/s at the fastest: clearly moving, never frantic.
+    pxPerSecPerMs: 7,
+    trailLength: 10,
+    lineWidth: 1,
     ramp: [
       [148, 163, 184],
       [100, 116, 139],
@@ -181,9 +185,11 @@ export const FLOW_KINDS: Record<FlowKind, FlowKindSpec> = {
     kind: 'current',
     label: 'Surface current',
     maxSpeed: 0.8,
-    pxPerSecPerMs: 200,
-    trailLength: 12,
-    lineWidth: 1.7,
+    // Currents are ~50x slower than wind, so they need a much larger visual scale to be seen at all:
+    // ~50 px/s at the median simulated current (0.15 m/s). The legend says the two scales differ.
+    pxPerSecPerMs: 320,
+    trailLength: 11,
+    lineWidth: 1.3,
     ramp: [
       [103, 232, 249],
       [34, 211, 238],
@@ -216,7 +222,86 @@ export function mulberry32(seed: number): () => number {
 
 /** How many particles to run for a canvas of this size: sparse enough to read, cheap enough to run. */
 export function particleCountFor(widthPx: number, heightPx: number): number {
-  return Math.max(250, Math.min(1600, Math.round((widthPx * heightPx) / 1500)));
+  return Math.max(200, Math.min(700, Math.round((widthPx * heightPx) / 3200)));
+}
+
+/**
+ * How much of a particle's trail to show: all of it for most of its life, then a shrinking tail as it nears
+ * its end, so particles dissolve instead of vanishing. Young particles are already short because their
+ * trail has not had time to grow. Returns 0 to 1.
+ */
+export function lifeFraction(age: number, maxAge: number, fadeFrames = 14): number {
+  const left = maxAge - age;
+  if (!(left > 0)) return 0;
+  return Math.min(1, left / fadeFrames);
+}
+
+// ------------------------------------------------------------------------------------ coverage
+
+/**
+ * What fraction of the screen lies inside the grid's extent, sampled on an n x n lattice. 0 means the whole
+ * visible chart is outside the field (nothing can be drawn and the user should be told why).
+ */
+export function viewCoverage(
+  g: FlowGrid,
+  screenToLatLon: (x: number, y: number) => { lat: number; lon: number },
+  widthPx: number,
+  heightPx: number,
+  n = 7,
+): number {
+  let inside = 0;
+  for (let i = 0; i < n; i += 1) {
+    for (let j = 0; j < n; j += 1) {
+      const ll = screenToLatLon(((i + 0.5) / n) * widthPx, ((j + 0.5) / n) * heightPx);
+      if (Number.isFinite(ll.lat) && Number.isFinite(ll.lon) && insideGrid(g, ll.lat, ll.lon)) inside += 1;
+    }
+  }
+  return inside / (n * n);
+}
+
+/** Plain-language extent of a grid, for the "outside the field" notice. */
+export function coverageText(g: FlowGrid): string {
+  const fmtLat = (v: number): string => `${Math.abs(Math.round(v))}°${v < 0 ? 'S' : 'N'}`;
+  const lonSpan = g.lons[g.lons.length - 1] - g.lons[0];
+  const lon = lonSpan >= 359 ? 'all longitudes' : `${Math.round(g.lons[0])}° to ${Math.round(g.lons[g.lons.length - 1])}° longitude`;
+  return `${fmtLat(g.lats[0])} to ${fmtLat(g.lats[g.lats.length - 1])}, ${lon}`;
+}
+
+// ------------------------------------------------------------------------------------ static vectors
+
+/** Arrow length in pixels, proportional to speed between a floor (so calm cells stay visible) and a cap. */
+export function arrowLength(speed: number, maxSpeed: number, minPx = 9, maxPx = 28): number {
+  const t = Math.min(1, Math.max(0, speed / maxSpeed));
+  return minPx + t * (maxPx - minPx);
+}
+
+/**
+ * A static arrow centred on (lat, lon): its screen endpoints are the images of the GEOGRAPHIC direction of
+ * (u, v), so on the polar chart it points the same way an advected particle would. Null for a calm vector.
+ */
+export function vectorArrow(
+  project: Project,
+  lat: number,
+  lon: number,
+  u: number,
+  v: number,
+  lengthPx: number,
+): { x0: number; y0: number; x1: number; y1: number } | null {
+  const head = advanceStep(project, lat, lon, u, v, lengthPx / 2);
+  const tail = advanceStep(project, lat, lon, -u, -v, lengthPx / 2);
+  if (!head || !tail) return null;
+  const a = project(tail.lat, tail.lon);
+  const b = project(head.lat, head.lon);
+  return { x0: a.x, y0: a.y, x1: b.x, y1: b.y };
+}
+
+/** Screen positions of a regular lattice (flat x, y pairs), optionally offset so two layers do not collide. */
+export function arrowLattice(widthPx: number, heightPx: number, spacingPx: number, offsetPx = 0): number[] {
+  const out: number[] = [];
+  for (let y = spacingPx / 2 + offsetPx; y < heightPx; y += spacingPx) {
+    for (let x = spacingPx / 2 + offsetPx; x < widthPx; x += spacingPx) out.push(x, y);
+  }
+  return out;
 }
 
 // -------------------------------------------------------------------------------------- particles

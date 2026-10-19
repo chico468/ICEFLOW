@@ -16,6 +16,7 @@ import type {
   VoyageTick,
 } from '../api/types';
 import { DEFAULT_LAYERS, type LayerToggles } from '../map/MapEngine';
+import type { FlowStyle } from '../map/flow';
 import type { RasterMode } from '../map/layers';
 
 export type ScreenId = 'flow' | 'bridge' | 'planner' | 'forecast' | 'icebergs' | 'analytics';
@@ -63,6 +64,9 @@ interface AppState {
   setLayers: (patch: Partial<LayerToggles>) => void;
   rasterMode: RasterMode;
   setRasterMode: (m: RasterMode) => void;
+  /** Moving particles or static arrows for the wind and current layers. */
+  flowStyle: FlowStyle;
+  setFlowStyle: (s: FlowStyle) => void;
   rasterOpacity: number;
   setRasterOpacity: (v: number) => void;
   rioColoredRoute: boolean;
@@ -137,6 +141,8 @@ export const useAppStore = create<AppState>((set) => ({
   setLayers: (patch) => set((s) => ({ layers: { ...s.layers, ...patch } })),
   rasterMode: 'concentration',
   setRasterMode: (rasterMode) => set({ rasterMode }),
+  flowStyle: 'animated',
+  setFlowStyle: (flowStyle) => set({ flowStyle }),
   rasterOpacity: 0.92,
   setRasterOpacity: (rasterOpacity) => set({ rasterOpacity }),
   rioColoredRoute: false,

@@ -69,6 +69,12 @@ export function legendSummary(scene: MapScene, leadHours: number): string {
   return parts.join(' · ');
 }
 
+function coverageNote(f: { lats: number[]; lons: number[] }): string {
+  const lat = (v: number): string => `${Math.abs(Math.round(v))} °${v < 0 ? 'S' : 'N'}`;
+  const span = f.lons[f.lons.length - 1] - f.lons[0];
+  return `${lat(f.lats[0])} to ${lat(f.lats[f.lats.length - 1])}, ${span >= 359 ? 'all longitudes' : `${Math.round(f.lons[0])}° to ${Math.round(f.lons[f.lons.length - 1])}°`}`;
+}
+
 export function MapLegend({ scene, leadHours }: { scene: MapScene; leadHours: number }): JSX.Element | null {
   const [open, setOpen] = useState(false);
   const L = scene.layers;
@@ -277,9 +283,9 @@ function FlowSection({ scene }: { scene: MapScene }): JSX.Element {
         </div>
       ))}
       <p className="text-ink-3">
-        Particles move toward where the {L.windFlow && L.currentFlow ? 'wind blows and the water flows' : L.windFlow ? 'wind blows' : 'water flows'}.
-        Colour is the true speed. Particle speed is a visual aid, scaled differently for wind and current, and is not a
-        real-time drift.
+        Direction is where the {L.windFlow && L.currentFlow ? 'wind blows and the water flows' : L.windFlow ? 'wind blows' : 'water flows'}.
+        Colour is the true speed. Particle and arrow size are a visual aid, scaled differently for wind and current;
+        arrows are longer where the flow is faster, wind arrows have an open head and current arrows a solid one.
       </p>
       {f && (
         <p className="mt-1 text-ink-3">
@@ -292,7 +298,17 @@ function FlowSection({ scene }: { scene: MapScene }): JSX.Element {
           Flow data unavailable: {st.flowError}. Nothing is animated.
         </p>
       )}
-      <p className="mt-1 text-ink-3">Shown north to 28 °S only; the simulated fields have no continental land mask.</p>
+      <p className="mt-1 text-ink-3">
+        Field covers {f ? coverageNote(f) : '78 °S to 28 °S, all longitudes'}. Not shown north of that: the
+        simulated fields have no continental land mask.
+      </p>
+      {L.currentFlow && (
+        <p className="mt-1 text-ink-3">
+          The simulated current changes direction sharply between neighbouring cells, so its pattern looks
+          irregular. That is the data, not a drawing fault. The simulated fields also do not match across
+          the 180° meridian, so flow stops there.
+        </p>
+      )}
     </div>
   );
 }

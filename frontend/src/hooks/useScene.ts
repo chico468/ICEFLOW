@@ -104,27 +104,17 @@ export function useScene(options: SceneOptions = {}): {
   );
   const iceBase = useIceField(baseParams);
 
-  // Wind and current for the particle overlay. The box covers the whole route, including the ocean
-  // north of the ice domain, but stops at 28 S: the synthetic fields are defined for the Southern Ocean
-  // and have no land mask for continents, so drawing them further north would animate flow over land.
+  // Wind and current for the flow layers: ONE fixed circumpolar field, not a box shaped like the route.
+  // A route-shaped box meant that panning away from the route left the particles with nothing to follow,
+  // which looked like the animation had stopped. This grid (78 S to 28 S, all longitudes, 1 x 2 degrees,
+  // about 9 200 cells) costs the service about 0.14 s and ~420 KB, and because its key never changes with
+  // the route it is fetched once per forecast time and cached. It stops at 28 S because the simulated fields
+  // have no land mask for continents; north of that nothing is drawn and the chart says why.
   const flowOn = layers.windFlow || layers.currentFlow;
-  const flowParams: EnvFieldParams | null = useMemo(() => {
-    if (!flowOn) return null;
-    const lats = fitTargets.map((p) => p.lat);
-    const lons = fitTargets.map((p) => p.lon);
-    const latMin = Math.max(-78, Math.min(...lats) - PAD_LAT);
-    const latMax = Math.min(-28, Math.max(...lats) + 2);
-    const lonMin = Math.max(-180, Math.min(...lons) - PAD_LON);
-    const lonMax = Math.min(180, Math.max(...lons) + PAD_LON);
-    if (!(latMax > latMin && lonMax > lonMin)) return null;
-    let resolutionDeg = 1.0;
-    for (const candidate of [1.0, 1.5, 2.0, 3.0]) {
-      const cells = ((latMax - latMin) / candidate) * ((lonMax - lonMin) / (candidate * 2));
-      resolutionDeg = candidate;
-      if (cells <= 5_000) break;
-    }
-    return { latMin, latMax, lonMin, lonMax, resolutionDeg, tHours: leadHours };
-  }, [flowOn, fitTargets, leadHours]);
+  const flowParams: EnvFieldParams | null = useMemo(
+    () => (flowOn ? { latMin: -78, latMax: -28, lonMin: -180, lonMax: 180, resolutionDeg: 1.0, tHours: leadHours } : null),
+    [flowOn, leadHours],
+  );
   const envField = useEnvField(flowParams);
 
   const observed = useObservedIcebergs(layers.observedBergs);

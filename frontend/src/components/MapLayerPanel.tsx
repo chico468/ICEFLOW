@@ -9,6 +9,7 @@
 import { useEffect } from 'react';
 import type { LayerToggles } from '../map/MapEngine';
 import type { RasterMode } from '../map/layers';
+import { useReducedMotion } from '../hooks/useReducedMotion';
 import { useAppStore } from '../store/useAppStore';
 import { Slider, Toggle } from './ui';
 
@@ -67,6 +68,9 @@ export function MapLayerPanel({ open, onClose }: { open: boolean; onClose: () =>
   const setRasterOpacity = useAppStore((s) => s.setRasterOpacity);
   const leadHours = useAppStore((s) => s.leadHours);
   const setLeadHours = useAppStore((s) => s.setLeadHours);
+  const flowStyle = useAppStore((s) => s.flowStyle);
+  const setFlowStyle = useAppStore((s) => s.setFlowStyle);
+  const reduced = useReducedMotion();
 
   useEffect(() => {
     if (!open) return undefined;
@@ -131,6 +135,35 @@ export function MapLayerPanel({ open, onClose }: { open: boolean; onClose: () =>
           {g.rows.map((r) => (
             <Toggle key={r.key} label={r.label} hint={r.hint} checked={layers[r.key]} onChange={() => toggleLayer(r.key)} />
           ))}
+          {g.title === 'Wind and current' && (
+            <div className="mt-1.5">
+              <div className="mb-1 text-2xs text-ink-3">Display</div>
+              <div className="grid grid-cols-2 gap-1" role="group" aria-label="Wind and current display">
+                {(
+                  [
+                    ['animated', 'Particles', 'Moving particles that follow the field'],
+                    ['arrows', 'Arrows', 'Static arrows; length is relative speed'],
+                  ] as const
+                ).map(([id, label, hint]) => {
+                  const pressed = (reduced ? 'arrows' : flowStyle) === id;
+                  return (
+                    <button
+                      key={id}
+                      type="button"
+                      title={hint}
+                      disabled={reduced && id === 'animated'}
+                      aria-pressed={pressed}
+                      className={`btn ${pressed ? 'btn-accent' : ''}`}
+                      onClick={() => setFlowStyle(id)}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+              {reduced && <p className="mt-1 text-2xs text-ink-3">Your system asks for reduced motion, so particles are off.</p>}
+            </div>
+          )}
         </div>
       ))}
       <p className="text-2xs text-ink-3">Press Esc to close.</p>

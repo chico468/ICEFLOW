@@ -13,6 +13,14 @@ import {
   sampleFlow,
   speedBucket,
 } from '../src/map/flow.ts';
+import {
+  arrowLattice,
+  arrowLength,
+  coverageText,
+  lifeFraction,
+  vectorArrow,
+  viewCoverage,
+} from '../src/map/flow.ts';
 import { toEpsg3031 } from '../src/map/projection.ts';
 
 const DEG = Math.PI / 180;
@@ -251,8 +259,81 @@ test('speedBucket clamps and particleCountFor stays within its budget', () => {
   assert.equal(speedBucket(-3, 25, 6), 0);
   assert.equal(speedBucket(12.5, 25, 6), 3);
   assert.equal(speedBucket(999, 25, 6), 5);
-  assert.equal(particleCountFor(100, 100), 250);
-  assert.equal(particleCountFor(4000, 3000), 1600);
-  const mid = particleCountFor(1400, 800);
-  assert.ok(mid > 250 && mid < 1600);
+  assert.equal(particleCountFor(100, 100), 200);
+  assert.equal(particleCountFor(4000, 3000), 700);
+  const mid = particleCountFor(1100, 560);
+  assert.ok(mid >= 200 && mid < 700);
+  assert.ok(particleCountFor(1100, 560) <= 260, 'a laptop-sized chart gets a restrained particle count, not a swarm');
+});
+
+
+// ---------------------------------------------------------------- Stage B: static vectors, coverage, fading
+
+test('life fraction: full for most of a particle\'s life, then a shrinking tail, then nothing', () => {
+  assert.equal(lifeFraction(0, 100), 1);
+  assert.equal(lifeFraction(80, 100), 1);
+  assert.ok(lifeFraction(95, 100) < 0.5 && lifeFraction(95, 100) > 0);
+  assert.equal(lifeFraction(100, 100), 0);
+  assert.equal(lifeFraction(130, 100), 0);
+  let last = 2;
+  for (let a = 80; a <= 100; a += 1) {
+    const f = lifeFraction(a, 100);
+    assert.ok(f <= last + 1e-12, 'never grows while dying');
+    last = f;
+  }
+});
+
+test('coverage: 1 inside the grid, 0 when the whole view is outside it, between when it straddles', () => {
+  const g = makeFlowGrid([-78, -28], [-180, 180], [[1, 1], [1, 1]], [[1, 1], [1, 1]])!;
+  const at = (lat: number) => () => ({ lat, lon: 10 });
+  assert.equal(viewCoverage(g, at(-60), 800, 600), 1);
+  assert.equal(viewCoverage(g, at(-10), 800, 600), 0, 'north of the field');
+  assert.equal(viewCoverage(g, at(-85), 800, 600), 0, 'south of the field');
+  const half = viewCoverage(g, (x, y) => ({ lat: y < 300 ? -20 : -60, lon: 0 }), 800, 600);
+  assert.ok(half > 0.3 && half < 0.7, `straddling view covered ${half}`);
+  assert.equal(viewCoverage(g, () => ({ lat: Number.NaN, lon: 0 }), 800, 600), 0, 'a failed unprojection is not coverage');
+  assert.equal(coverageText(g), '78°S to 28°S, all longitudes');
+  const regional = makeFlowGrid([-60, -50], [10, 90], [[1, 1], [1, 1]], [[1, 1], [1, 1]])!;
+  assert.equal(coverageText(regional), '60°S to 50°S, 10° to 90° longitude');
+});
+
+test('arrow length is proportional to speed between a visible floor and a cap', () => {
+  assert.equal(arrowLength(0, 25), 9);
+  assert.equal(arrowLength(25, 25), 28);
+  assert.equal(arrowLength(99, 25), 28);
+  assert.ok(Math.abs(arrowLength(12.5, 25) - 18.5) < 1e-9);
+  assert.ok(arrowLength(3, 25) < arrowLength(9, 25));
+});
+
+test('static arrows are parallel to the screen image of the GEOGRAPHIC direction, and centred on the cell', () => {
+  // Reference direction built independently: project a point and a point a hair along the ground bearing.
+  const reference = (lat: number, lon: number, u: number, v: number): number => {
+    const eps = 0.02;
+    const n = Math.hypot(u, v);
+    const p0 = polar(lat, lon);
+    const p1 = polar(lat + (v / n) * eps, lon + ((u / n) * eps) / Math.cos(lat * DEG));
+    return Math.atan2(p1.y - p0.y, p1.x - p0.x);
+  };
+  for (const [name, u, v] of [['east', 6, 0], ['north', 0, 6], ['south-east', 4, -4], ['north-west', -3, 5]] as const) {
+    for (const lon of [0, 60, 150, -100]) {
+      const a = vectorArrow(polar, -62, lon, u, v, 20)!;
+      assert.ok(a, `${name} @ ${lon}`);
+      const centre = polar(-62, lon);
+      assert.ok(Math.hypot((a.x0 + a.x1) / 2 - centre.x, (a.y0 + a.y1) / 2 - centre.y) < 0.3, 'arrow is centred on its cell');
+      assert.ok(Math.abs(Math.hypot(a.x1 - a.x0, a.y1 - a.y0) - 20) < 0.2, 'arrow has the requested length');
+      const got = Math.atan2(a.y1 - a.y0, a.x1 - a.x0);
+      const diff = Math.abs(((got - reference(-62, lon, u, v)) / DEG + 540) % 360 - 180);
+      assert.ok(diff < 0.5, `${name} @ ${lon}: arrow is ${diff.toFixed(2)} degrees off the geographic direction`);
+    }
+  }
+  assert.equal(vectorArrow(polar, -62, 0, 0, 0, 20), null, 'a calm cell has no arrow');
+});
+
+test('the arrow lattice covers the canvas evenly and can be offset between layers', () => {
+  const pts = arrowLattice(440, 220, 44);
+  assert.equal(pts.length / 2, 10 * 5);
+  const offset = arrowLattice(440, 220, 44, 22);
+  assert.notDeepEqual(pts.slice(0, 2), offset.slice(0, 2));
+  for (let i = 0; i < pts.length; i += 2) assert.ok(pts[i] > 0 && pts[i] < 440 && pts[i + 1] > 0 && pts[i + 1] < 220);
+  assert.equal(arrowLattice(10, 10, 44).length, 0, 'a canvas smaller than half a cell has no arrows');
 });
