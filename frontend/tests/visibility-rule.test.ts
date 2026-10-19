@@ -44,3 +44,11 @@ test('flow layers never use a field while a request error is showing (stale vect
   assert.match(overlay, /const usable = error \? null : field;/);
   assert.doesNotMatch(overlay, /makeFlowGrid\(field\./, 'grids must be built from `usable`, not the raw field');
 });
+
+test('the flow legend keeps its honesty caveats (simulated, visual-aid speed, not real-time drift)', () => {
+  const legend = readFileSync(join(SRC, 'components', 'MapLegend.tsx'), 'utf8').replace(/\s+/g, ' ');
+  assert.match(legend, /not a real-time drift/);
+  assert.match(legend, /SIMULATED/);
+  assert.match(legend, /not satellite observation/);
+  assert.match(legend, /Not zero ice/);
+});

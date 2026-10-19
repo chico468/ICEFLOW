@@ -32,7 +32,7 @@ export const MAP_COLORS = {
   // Observed (not simulated) iceberg snapshot: hollow, dashed, muted, so it never reads as live.
   observedBerg: '#6B5B95',
   observedBergStale: 'rgba(107, 91, 149, 0.62)',
-  iceEdgeCasing: 'rgba(255, 255, 255, 0.88)',
+  iceEdgeCasing: 'rgba(255, 255, 255, 0.72)',
 } as const;
 
 function lerp(a: number, b: number, t: number): number {

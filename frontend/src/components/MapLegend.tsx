@@ -11,6 +11,8 @@ import { ChevronDown, ChevronUp } from 'lucide-react';
 import type { IceField, ObservedIcebergsResponse } from '../api/types';
 import type { MapScene } from '../map/MapEngine';
 import { FLOW_KINDS } from '../map/flow';
+import { countMissing, modeAvailability } from '../map/iceModes';
+import { NO_DATA_FILL } from '../map/layers';
 import { CHANGE_DEADBAND, ICE_BANDS, MAP_COLORS, bandCss, changeCss, concentrationCss, thicknessCss } from '../map/palette';
 
 const KM_PER_DEG = 111.2;
@@ -75,8 +77,17 @@ function coverageNote(f: { lats: number[]; lons: number[] }): string {
   return `${lat(f.lats[0])} to ${lat(f.lats[f.lats.length - 1])}, ${span >= 359 ? 'all longitudes' : `${Math.round(f.lons[0])}° to ${Math.round(f.lons[f.lons.length - 1])}°`}`;
 }
 
-export function MapLegend({ scene, leadHours }: { scene: MapScene; leadHours: number }): JSX.Element | null {
-  const [open, setOpen] = useState(false);
+export function MapLegend({
+  scene,
+  leadHours,
+  defaultOpen = false,
+}: {
+  scene: MapScene;
+  leadHours: number;
+  /** Start expanded. The chart starts collapsed; this is for printing and screenshots. */
+  defaultOpen?: boolean;
+}): JSX.Element | null {
+  const [open, setOpen] = useState(defaultOpen);
   const L = scene.layers;
   const st = scene.status;
 
@@ -129,7 +140,15 @@ export function MapLegend({ scene, leadHours }: { scene: MapScene; leadHours: nu
 
 function IceSection({ scene, leadHours }: { scene: MapScene; leadHours: number }): JSX.Element {
   const { iceField: field, rasterMode: mode, status: st } = scene;
-  const classed = mode === 'concentration' || mode === 'classes';
+  const avail = modeAvailability(field, leadHours, {
+    field: scene.iceFieldBase,
+    loading: st.baseLoading,
+    error: st.baseError,
+  })[mode];
+  // Only describe a colour scale the chart is actually painting. An unavailable mode shows why, not a legend.
+  const drawn = avail.available;
+  const classed = drawn && (mode === 'concentration' || mode === 'classes');
+  const missing = countMissing(mode === 'thickness' ? field?.thickness_m : field?.concentration);
 
   let title = 'Sea-ice concentration';
   let unit = 'percent of each cell covered by ice';
@@ -148,6 +167,12 @@ function IceSection({ scene, leadHours }: { scene: MapScene; leadHours: number }
         {field?.is_synthetic && <span className="rounded bg-panel-3 px-1.5 py-px text-[10px] text-ink-2">SIMULATED</span>}
       </div>
       <div className="mb-1 text-ink-3">{unit}</div>
+
+      {field && !drawn && (
+        <p role="status" className="my-1 rounded border border-hair-2 bg-panel-2 px-2 py-1.5 text-warn">
+          {avail.reason} Nothing is drawn for this mode.
+        </p>
+      )}
 
       {classed && (
         <>
@@ -186,7 +211,7 @@ function IceSection({ scene, leadHours }: { scene: MapScene; leadHours: number }
         </>
       )}
 
-      {mode === 'thickness' && (
+      {drawn && mode === 'thickness' && (
         <>
           <div className="h-3 rounded-sm border border-hair-2" style={{ background: gradient((t) => thicknessCss(t * 3)) }} />
           <div className="mt-0.5 flex justify-between num text-[10px] text-ink-3">
@@ -198,7 +223,7 @@ function IceSection({ scene, leadHours }: { scene: MapScene; leadHours: number }
         </>
       )}
 
-      {mode === 'change' && (
+      {drawn && mode === 'change' && (
         <>
           <div
             className="h-3 rounded-sm border border-hair-2"
@@ -214,10 +239,20 @@ function IceSection({ scene, leadHours }: { scene: MapScene; leadHours: number }
           <p className="mt-1 text-ink-3">
             Changes smaller than {Math.round(CHANGE_DEADBAND * 100)} points are left unpainted so model noise is not drawn.
           </p>
-          {leadHours === 0 && <p className="mt-1 text-warn">Choose a forecast time after +0 h to compare.</p>}
-          {leadHours > 0 && st.baseLoading && <p className="mt-1 text-ink-3">Loading the +0 h field to compare against…</p>}
-          {leadHours > 0 && st.baseError && <p className="mt-1 text-danger">Could not load the +0 h field: {st.baseError}</p>}
+          <p className="mt-1 text-ink-3">
+            Indigo: more ice at +{leadHours} h than at +0 h. Teal: less. Both fields are the same simulation, so this
+            is the model's own change, not an observed one.
+          </p>
         </>
+      )}
+
+      {drawn && missing.missing > 0 && (
+        <div className="mt-1.5 flex items-center gap-1.5">
+          <span className="inline-block h-2.5 w-4 shrink-0 rounded-sm border border-hair-2" style={{ background: NO_DATA_FILL }} aria-hidden />
+          <span>
+            No data: {missing.missing.toLocaleString('en-GB')} of {missing.total.toLocaleString('en-GB')} cells. Not zero ice.
+          </span>
+        </div>
       )}
 
       <div className="mt-1.5 flex items-center gap-1.5">
@@ -284,8 +319,9 @@ function FlowSection({ scene }: { scene: MapScene }): JSX.Element {
       ))}
       <p className="text-ink-3">
         Direction is where the {L.windFlow && L.currentFlow ? 'wind blows and the water flows' : L.windFlow ? 'wind blows' : 'water flows'}.
-        Colour is the true speed. Particle and arrow size are a visual aid, scaled differently for wind and current;
-        arrows are longer where the flow is faster, wind arrows have an open head and current arrows a solid one.
+        Colour is the true speed. Particle speed and arrow length are a visual aid, scaled differently for wind and
+        current, and are not a real-time drift. Arrows are longer where the flow is faster; wind arrows have an open
+        head and current arrows a solid one.
       </p>
       {f && (
         <p className="mt-1 text-ink-3">

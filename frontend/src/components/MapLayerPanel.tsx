@@ -8,6 +8,7 @@
  */
 import { useEffect } from 'react';
 import type { LayerToggles } from '../map/MapEngine';
+import type { ModeAvailability } from '../map/iceModes';
 import type { RasterMode } from '../map/layers';
 import { useReducedMotion } from '../hooks/useReducedMotion';
 import { useAppStore } from '../store/useAppStore';
@@ -59,7 +60,16 @@ const GROUPS: { title: string; rows: Row[] }[] = [
   },
 ];
 
-export function MapLayerPanel({ open, onClose }: { open: boolean; onClose: () => void }): JSX.Element | null {
+export function MapLayerPanel({
+  open,
+  onClose,
+  availability,
+}: {
+  open: boolean;
+  onClose: () => void;
+  /** Which ice modes the loaded data supports, and why not. */
+  availability: Record<RasterMode, ModeAvailability>;
+}): JSX.Element | null {
   const layers = useAppStore((s) => s.layers);
   const toggleLayer = useAppStore((s) => s.toggleLayer);
   const rasterMode = useAppStore((s) => s.rasterMode);
@@ -94,18 +104,24 @@ export function MapLayerPanel({ open, onClose }: { open: boolean; onClose: () =>
       <div className="mb-3">
         <div className="mb-1.5 text-2xs font-medium text-ink">Ice display</div>
         <div className="grid grid-cols-2 gap-1" role="group" aria-label="Ice display mode">
-          {RASTER_MODES.map(({ mode, label, hint }) => (
-            <button
-              key={mode}
-              type="button"
-              title={hint}
-              aria-pressed={rasterMode === mode}
-              className={`btn ${rasterMode === mode ? 'btn-accent' : ''}`}
-              onClick={() => setRasterMode(mode)}
-            >
-              {label}
-            </button>
-          ))}
+          {RASTER_MODES.map(({ mode, label, hint }) => {
+            const a = availability[mode];
+            return (
+              // aria-disabled, not disabled: the mode can still be chosen, and the legend then explains why it
+              // draws nothing. A dead button would leave the user guessing.
+              <button
+                key={mode}
+                type="button"
+                title={a.available ? hint : (a.reason ?? hint)}
+                aria-pressed={rasterMode === mode}
+                aria-disabled={!a.available}
+                className={`btn ${rasterMode === mode ? 'btn-accent' : ''} ${a.available ? '' : 'opacity-50'}`}
+                onClick={() => setRasterMode(mode)}
+              >
+                {label}
+              </button>
+            );
+          })}
         </div>
         <div className="mt-3 space-y-3">
           <Slider

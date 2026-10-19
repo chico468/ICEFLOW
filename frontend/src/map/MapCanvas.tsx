@@ -8,10 +8,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Crosshair, Maximize2, Minus, Plus, SlidersHorizontal } from 'lucide-react';
 import { FlowOverlay } from './FlowOverlay';
+import { nearestWithin } from './hitTest';
 import { MapEngine, type MapScene } from './MapEngine';
 import type { LatLon } from './projection';
 import { MapLayerPanel } from '../components/MapLayerPanel';
+import { modeAvailability } from './iceModes';
 import { MapLegend } from '../components/MapLegend';
+import { formatObservedDate } from '../components/MapLegend';
 import { MapToolbar, ToolButton } from '../components/MapToolbar';
 import { useStageInsets } from '../components/stageInsets';
 import { useAppStore } from '../store/useAppStore';
@@ -54,8 +57,20 @@ export function MapCanvas({
   const closeLayers = useCallback(() => setLayersOpen(false), []);
   const leadHours = useAppStore((s) => s.leadHours);
   const flowStyle = useAppStore((s) => s.flowStyle);
+  const iceAvailability = useMemo(
+    () =>
+      modeAvailability(scene.iceField, leadHours, {
+        field: scene.iceFieldBase,
+        loading: scene.status.baseLoading,
+        error: scene.status.baseError,
+      }),
+    [scene.iceField, scene.iceFieldBase, scene.status.baseLoading, scene.status.baseError, leadHours],
+  );
   const [cursor, setCursor] = useState<LatLon | null>(null);
   const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
+  const sceneRef = useRef(scene);
+  sceneRef.current = scene;
+  const [hoverBergId, setHoverBergId] = useState<string | null>(null);
 
   // --- attach and size ---
   useEffect(() => {
@@ -151,6 +166,11 @@ export function MapCanvas({
       }
       setCursor(engine.viewport.screenToLatLon(px, py));
       setTooltipPos({ x: px, y: py });
+      // Observed bergs carry no on-chart text at normal zoom, so a hover finds the one under the pointer.
+      const sc = sceneRef.current;
+      const obs = sc.layers.observedBergs && sc.observed?.available ? sc.observed.icebergs : [];
+      const hit = nearestWithin(obs, (b) => engine.viewport.lonLatToScreen(b.latitude, b.longitude), px, py, 12);
+      setHoverBergId((prev) => (prev === (hit?.item.id ?? null) ? prev : (hit?.item.id ?? null)));
     },
     [engine],
   );
@@ -193,6 +213,7 @@ export function MapCanvas({
           dragRef.current = null;
           setCursor(null);
           setTooltipPos(null);
+          setHoverBergId(null);
         }}
       />
 
@@ -206,6 +227,15 @@ export function MapCanvas({
         loading={scene.status.flowLoading}
         error={scene.status.flowError}
       />
+
+      {hoverBergId && tooltipPos && scene.observed?.available && (
+        <ObservedBergCard
+          berg={scene.observed.icebergs.find((b) => b.id === hoverBergId) ?? null}
+          obs={scene.observed}
+          x={Math.min(tooltipPos.x + 14, (hostRef.current?.clientWidth ?? 600) - 250)}
+          y={Math.min(tooltipPos.y + 30, (hostRef.current?.clientHeight ?? 400) - 150)}
+        />
+      )}
 
       {cursor && tooltipPos && (
         <div
@@ -265,7 +295,7 @@ export function MapCanvas({
       )}
 
       {showControls && <MapLegend scene={scene} leadHours={leadHours} />}
-      {showControls && <MapLayerPanel open={layersOpen} onClose={closeLayers} />}
+      {showControls && <MapLayerPanel open={layersOpen} onClose={closeLayers} availability={iceAvailability} />}
     </div>
   );
 }
@@ -284,4 +314,38 @@ export function formatLon(lon: number): string {
   const deg = Math.floor(a);
   const min = (a - deg) * 60;
   return `${deg.toString().padStart(3, '0')}° ${min.toFixed(1).padStart(4, '0')}' ${hemi}`;
+}
+
+function ObservedBergCard({
+  berg,
+  obs,
+  x,
+  y,
+}: {
+  berg: { id: string; latitude: number; longitude: number; length_nm: number; width_nm: number; area_sqkm: number } | null;
+  obs: { observed_date?: string; age_days?: number; stale?: boolean };
+  x: number;
+  y: number;
+}): JSX.Element | null {
+  if (!berg) return null;
+  return (
+    <div role="status" className="float pointer-events-none absolute z-20 w-[236px] px-3 py-2 text-2xs text-ink-2" style={{ left: Math.max(8, x), top: Math.max(8, y) }}>
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="font-semibold text-ink">{berg.id}</span>
+        <span className="text-ink-3">observed snapshot</span>
+      </div>
+      <div className={obs.stale ? 'mt-0.5 font-medium text-warn' : 'mt-0.5'}>
+        {formatObservedDate(obs.observed_date)} · {obs.age_days} days old{obs.stale ? ' · STALE' : ''}
+      </div>
+      <div className="mt-0.5 num">
+        {berg.length_nm.toFixed(0)} × {berg.width_nm.toFixed(0)} nm · {Math.round(berg.area_sqkm).toLocaleString('en-GB')} km²
+      </div>
+      <div className="num text-ink-3">
+        {formatLat(berg.latitude)} {formatLon(berg.longitude)} on that date
+      </div>
+      <div className="mt-1 text-ink-3">
+        {obs.stale ? 'Not where it is now. ' : ''}Position uncertainty is not given by the source. Not used for routing.
+      </div>
+    </div>
+  );
 }

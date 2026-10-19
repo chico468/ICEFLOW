@@ -15,6 +15,7 @@ import type {
   Station,
   Waypoint,
 } from '../api/types';
+import { hasFinite, isMissing } from './iceModes';
 import {
   MAP_COLORS,
   changeCss,
@@ -126,6 +127,51 @@ export function drawGraticule(ctx: CanvasRenderingContext2D, vp: Viewport): void
  * axis-aligned rectangle. At the field resolutions the API returns (0.25 to 2 degrees)
  * this stays comfortably inside one frame's budget.
  */
+/** Paint colour for a cell with no value at all. Deliberately neutral: it is not a concentration. */
+export const NO_DATA_FILL = 'rgba(122, 133, 143, 0.34)';
+
+let rasterLayer: HTMLCanvasElement | null = null;
+
+/**
+ * Run `draw` so that the result reaches `ctx` at a single, uniform opacity.
+ *
+ * Painting thousands of translucent quads straight onto the chart has two faults: neighbouring quads show
+ * faint seams where their anti-aliased edges meet, and any overlap darkens twice. So the quads are painted
+ * fully opaque onto a scratch canvas (where they may overlap by a hair to hide the seams) and that canvas is
+ * composited once at the requested opacity. Where there is no DOM (tests) it paints directly.
+ */
+function withUniformOpacity(
+  ctx: CanvasRenderingContext2D,
+  opacity: number,
+  draw: (target: CanvasRenderingContext2D) => void,
+): void {
+  if (opacity >= 0.995 || typeof document === 'undefined' || !ctx.canvas) {
+    draw(ctx);
+    return;
+  }
+  const w = ctx.canvas.width;
+  const h = ctx.canvas.height;
+  if (!rasterLayer) rasterLayer = document.createElement('canvas');
+  if (rasterLayer.width !== w || rasterLayer.height !== h) {
+    rasterLayer.width = w;
+    rasterLayer.height = h;
+  }
+  const lctx = rasterLayer.getContext('2d');
+  if (!lctx) {
+    draw(ctx);
+    return;
+  }
+  lctx.setTransform(1, 0, 0, 1, 0, 0);
+  lctx.clearRect(0, 0, w, h);
+  lctx.setTransform(ctx.getTransform());
+  draw(lctx);
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalAlpha = opacity;
+  ctx.drawImage(rasterLayer, 0, 0);
+  ctx.restore();
+}
+
 export function drawIceRaster(
   ctx: CanvasRenderingContext2D,
   vp: Viewport,
@@ -137,6 +183,9 @@ export function drawIceRaster(
   const { lats, lons } = field;
   if (lats.length < 2 || lons.length < 2) return;
   const values = mode === 'thickness' ? field.thickness_m : field.concentration;
+  // A mode whose data is absent paints nothing. The legend and layer panel say why; the chart never
+  // invents a thickness or a change.
+  if (!hasFinite(values)) return;
   let baseValues: number[][] | null = null;
   if (mode === 'change') {
     // A difference is only meaningful on an identical grid. Refuse rather than misalign.
@@ -145,52 +194,66 @@ export function drawIceRaster(
       base.lats.length === lats.length &&
       base.lons.length === lons.length &&
       base.lats[0] === lats[0] &&
-      base.lons[0] === lons[0];
+      base.lons[0] === lons[0] &&
+      hasFinite(base.concentration);
     if (!same || !base) return;
     baseValues = base.concentration;
   }
 
-  ctx.save();
-  ctx.globalAlpha = opacity;
-  for (let i = 0; i < lats.length - 1; i += 1) {
-    const rowA = values[i];
-    if (!rowA) continue;
-    for (let j = 0; j < lons.length - 1; j += 1) {
-      const v = rowA[j];
-      if (v === undefined) continue;
-      let fill: string | null;
-      if (mode === 'change') {
-        const b = baseValues?.[i]?.[j];
-        if (b === undefined) continue;
-        fill = changeCss(v - b);
-      } else {
-        if ((mode === 'concentration' || mode === 'classes') && v < 0.03) continue;
-        if (mode === 'thickness' && v < 0.01) continue;
-        fill = mode === 'thickness' ? thicknessCss(v) : mode === 'classes' ? classedCss(v) : concentrationCss(v);
+  withUniformOpacity(ctx, opacity, (target) => {
+    // When composited through the scratch layer the quads are opaque, so a hairline stroke in the same
+    // colour closes the seams without changing any colour.
+    const seams = target !== ctx;
+    target.save();
+    if (!seams) target.globalAlpha = opacity;
+    target.lineJoin = 'round';
+    target.lineWidth = 0.8;
+    for (let i = 0; i < lats.length - 1; i += 1) {
+      const rowA = values[i];
+      if (!rowA) continue;
+      for (let j = 0; j < lons.length - 1; j += 1) {
+        const v = rowA[j];
+        let fill: string | null;
+        if (isMissing(v)) {
+          // No value is not zero: it gets its own neutral colour and a legend entry.
+          fill = NO_DATA_FILL;
+        } else if (mode === 'change') {
+          const b = baseValues?.[i]?.[j];
+          fill = isMissing(b) ? NO_DATA_FILL : changeCss((v as number) - (b as number));
+        } else {
+          const x = v as number;
+          if ((mode === 'concentration' || mode === 'classes') && x < 0.03) continue;
+          if (mode === 'thickness' && x < 0.01) continue;
+          fill = mode === 'thickness' ? thicknessCss(x) : mode === 'classes' ? classedCss(x) : concentrationCss(x);
+        }
+        if (fill === null) continue;
+
+        const p0 = vp.lonLatToScreen(lats[i], lons[j]);
+        const p1 = vp.lonLatToScreen(lats[i], lons[j + 1]);
+        const p2 = vp.lonLatToScreen(lats[i + 1], lons[j + 1]);
+        const p3 = vp.lonLatToScreen(lats[i + 1], lons[j]);
+        const minX = Math.min(p0.x, p1.x, p2.x, p3.x);
+        const maxX = Math.max(p0.x, p1.x, p2.x, p3.x);
+        const minY = Math.min(p0.y, p1.y, p2.y, p3.y);
+        const maxY = Math.max(p0.y, p1.y, p2.y, p3.y);
+        if (maxX < -8 || minX > vp.widthPx + 8 || maxY < -8 || minY > vp.heightPx + 8) continue;
+
+        target.fillStyle = fill;
+        target.beginPath();
+        target.moveTo(p0.x, p0.y);
+        target.lineTo(p1.x, p1.y);
+        target.lineTo(p2.x, p2.y);
+        target.lineTo(p3.x, p3.y);
+        target.closePath();
+        target.fill();
+        if (seams) {
+          target.strokeStyle = fill;
+          target.stroke();
+        }
       }
-      if (fill === null) continue;
-
-      const p0 = vp.lonLatToScreen(lats[i], lons[j]);
-      const p1 = vp.lonLatToScreen(lats[i], lons[j + 1]);
-      const p2 = vp.lonLatToScreen(lats[i + 1], lons[j + 1]);
-      const p3 = vp.lonLatToScreen(lats[i + 1], lons[j]);
-      const minX = Math.min(p0.x, p1.x, p2.x, p3.x);
-      const maxX = Math.max(p0.x, p1.x, p2.x, p3.x);
-      const minY = Math.min(p0.y, p1.y, p2.y, p3.y);
-      const maxY = Math.max(p0.y, p1.y, p2.y, p3.y);
-      if (maxX < -8 || minX > vp.widthPx + 8 || maxY < -8 || minY > vp.heightPx + 8) continue;
-
-      ctx.fillStyle = fill;
-      ctx.beginPath();
-      ctx.moveTo(p0.x, p0.y);
-      ctx.lineTo(p1.x, p1.y);
-      ctx.lineTo(p2.x, p2.y);
-      ctx.lineTo(p3.x, p3.y);
-      ctx.closePath();
-      ctx.fill();
     }
-  }
-  ctx.restore();
+    target.restore();
+  });
 }
 
 /**
@@ -229,11 +292,11 @@ export function drawIceEdge(
   // A pale casing under the blue line keeps the edge readable where it crosses dense, dark ice
   // and where it runs over the route; the line alone disappears into the 70 percent and up ramp.
   ctx.strokeStyle = MAP_COLORS.iceEdgeCasing;
-  ctx.lineWidth = 4.2;
+  ctx.lineWidth = 3.4;
   trace();
   ctx.stroke();
   ctx.strokeStyle = MAP_COLORS.iceEdge;
-  ctx.lineWidth = 1.8;
+  ctx.lineWidth = 1.5;
   trace();
   ctx.stroke();
   ctx.restore();
@@ -387,8 +450,11 @@ export function drawIcebergs(
     ctx.lineWidth = selected ? 1.8 : 1;
     ctx.stroke();
 
-    ctx.fillStyle = selected ? MAP_COLORS.icebergCore : 'rgba(196, 181, 253, 0.9)';
-    ctx.fillText(berg.berg_id, p.x + r + 4, p.y + 3);
+    // A name is drawn for the selected berg, or when zoomed in far enough to have room for it.
+    if (selected || vp.metresPerPixel < 6000) {
+      ctx.fillStyle = selected ? MAP_COLORS.icebergCore : 'rgba(196, 181, 253, 0.9)';
+      ctx.fillText(berg.berg_id, p.x + r + 4, p.y + 3);
+    }
   }
   ctx.restore();
 }
@@ -404,13 +470,13 @@ export function drawObservedIcebergs(
   vp: Viewport,
   bergs: ObservedIceberg[],
   stale: boolean,
-  tag: string,
+  _tag = '',
 ): void {
   ctx.save();
   ctx.font = '10px ui-monospace, Consolas, monospace';
   ctx.strokeStyle = stale ? MAP_COLORS.observedBergStale : MAP_COLORS.observedBerg;
   ctx.fillStyle = ctx.strokeStyle;
-  const showLabels = vp.metresPerPixel < 16000;
+  const showLabels = vp.metresPerPixel < 8000;
   for (const b of bergs) {
     const p = vp.lonLatToScreen(b.latitude, b.longitude);
     if (p.x < -80 || p.x > vp.widthPx + 80 || p.y < -80 || p.y > vp.heightPx + 80) continue;
@@ -432,7 +498,9 @@ export function drawObservedIcebergs(
     ctx.lineTo(p.x - 5, p.y);
     ctx.closePath();
     ctx.stroke();
-    if (showLabels) ctx.fillText(`${b.id} ${tag}`, p.x + 9, p.y + 3);
+    // Just the identifier, and only when zoomed in. The date, age and STALE flag are on the hover card and
+    // in the legend, so the chart is not carpeted with repeated text.
+    if (showLabels) ctx.fillText(b.id, p.x + 9, p.y + 3);
   }
   ctx.restore();
 }
@@ -709,9 +777,16 @@ export function drawStations(
       ctx.fill();
     }
 
+    // Other stations are named only once the chart is zoomed in; the marker is always drawn. A priority
+    // label (an Indian station) is placed first so it wins a clash, but it no longer BYPASSES the clash
+    // test: two Indian stations a few kilometres apart used to be drawn on top of each other.
+    if (!priority && vp.metresPerPixel > 9000) {
+      ctx.globalAlpha = 1;
+      return;
+    }
     const w = ctx.measureText(label).width;
     const box = { x: p.x + 6, y: p.y - 6, w: w + 4, h: 12 };
-    if (!priority && collides(box.x, box.y, box.w, box.h)) {
+    if (collides(box.x, box.y, box.w, box.h)) {
       ctx.globalAlpha = 1;
       return;
     }
