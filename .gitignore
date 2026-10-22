@@ -13,3 +13,7 @@ __pycache__/
 *.db-shm
 .DS_Store
 .venv-test312/
+
+# Playwright generated output
+/frontend/playwright-report/
+/frontend/test-results/
