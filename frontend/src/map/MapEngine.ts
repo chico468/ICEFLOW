@@ -31,12 +31,14 @@ import {
   drawObservedIcebergs,
   drawRadarRings,
   drawRoute,
+  drawRouteEnds,
   drawScaleBar,
   drawStations,
   drawTrack,
   drawVessel,
   type RasterMode,
 } from './layers';
+import { isUsableIceField } from './iceModes';
 import { MAP_COLORS } from './palette';
 import { Viewport } from './viewport';
 
@@ -248,11 +250,15 @@ export class MapEngine {
 
     drawBackground(ctx, vp);
     if (L.graticule) drawGraticule(ctx, vp);
-    if (L.iceRaster && s.iceField) drawIceRaster(ctx, vp, s.iceField, s.rasterMode, s.rasterOpacity, s.iceFieldBase);
-    if (L.iceEdge && s.iceField) drawIceEdge(ctx, vp, s.iceField.lons, s.iceField.ice_edge_lat);
-    if (L.compression && s.iceField) drawCompression(ctx, vp, s.iceField);
+    // Validate the ice field ONCE, here. A response is data from outside the program: if it is malformed every
+    // ice painter below is skipped (the legend says "malformed, nothing is drawn"), instead of each painter
+    // throwing on every frame. A field that is only missing its edge line still draws what it has.
+    const ice = isUsableIceField(s.iceField) ? s.iceField : null;
+    if (L.iceRaster && ice) drawIceRaster(ctx, vp, ice, s.rasterMode, s.rasterOpacity, s.iceFieldBase);
+    if (L.iceEdge && ice && Array.isArray(ice.ice_edge_lat)) drawIceEdge(ctx, vp, ice.lons, ice.ice_edge_lat);
+    if (L.compression && ice) drawCompression(ctx, vp, ice);
     if (L.land) drawLand(ctx, vp, s.coastline);
-    if (L.drift && s.iceField) drawDriftField(ctx, vp, s.iceField);
+    if (L.drift && ice) drawDriftField(ctx, vp, ice);
     if (L.icebergs && s.bergDrift) drawIcebergDrift(ctx, vp, s.bergDrift);
     if (L.icebergs) drawIcebergs(ctx, vp, s.icebergs, s.selectedBergId);
     if (L.observedBergs && s.observed?.available) {
@@ -260,12 +266,15 @@ export class MapEngine {
     }
     if (L.baselineRoute && s.baselineRoute.length > 1)
       drawRoute(ctx, vp, s.baselineRoute, { dashed: true, color: MAP_COLORS.routeBaseline, width: 1.5 });
-    if (L.optimisedRoute && s.optimisedRoute.length > 1)
+    if (L.optimisedRoute && s.optimisedRoute.length > 1) {
       drawRoute(ctx, vp, s.optimisedRoute, {
         color: MAP_COLORS.routeOptimised,
         width: 2.2,
         rioColored: s.rioColoredRoute,
       });
+      // The two ends of the passage are marked only while the route itself is shown.
+      drawRouteEnds(ctx, vp, s.optimisedRoute);
+    }
     if (L.track) drawTrack(ctx, vp, s.track);
     if (L.radarRings && s.vessel)
       drawRadarRings(ctx, vp, s.vessel.lat, s.vessel.lon, s.radar?.max_range_nm ?? 6, s.radar);

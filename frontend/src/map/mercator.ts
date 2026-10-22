@@ -245,7 +245,15 @@ export class RegionViewport {
     this.clamp();
   }
 
-  /** Keep the view inside the region; when the region is smaller than the view in an axis, centre it. */
+  /**
+   * Keep the view's CENTRE inside the region; when the region is smaller than the view in an axis, centre it.
+   *
+   * It is the centre that is bounded, not the whole view. Requiring every edge of the view to stay inside the
+   * region sounds tidier, but on a wide, short map cell (the region fits by height, so the view is wider than
+   * the region) it pushes the view back after every zoom and breaks pointer-anchored zoom: zooming about a
+   * point near the region's edge drifted by over 10 degrees. Bounding the centre keeps the anchor where the
+   * pointer is, and the user can still never lose the region: Reset and Whole region are always one press away.
+   */
   clamp(): void {
     const b = this.bounds;
     const halfLon = (this.widthPx / 2 / this.scale) / DEG;
@@ -256,10 +264,8 @@ export class RegionViewport {
     const yMid = (yLo + yHi) / 2;
 
     this.centreLon =
-      halfLon * 2 >= b.lon_max - b.lon_min
-        ? lonMid
-        : Math.min(b.lon_max - halfLon, Math.max(b.lon_min + halfLon, this.centreLon));
-    this.centreY = halfY * 2 >= yHi - yLo ? yMid : Math.min(yHi - halfY, Math.max(yLo + halfY, this.centreY));
+      halfLon * 2 >= b.lon_max - b.lon_min ? lonMid : Math.min(b.lon_max, Math.max(b.lon_min, this.centreLon));
+    this.centreY = halfY * 2 >= yHi - yLo ? yMid : Math.min(yHi, Math.max(yLo, this.centreY));
   }
 
   /** True when the point projects inside the canvas, with a margin. */

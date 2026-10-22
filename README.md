@@ -296,6 +296,31 @@ not used by routing or alerts. Its origin is not recorded in the repository, so 
 Tests: `pytest tests/test_observed_icebergs.py tests/test_regional_context.py tests/test_stage_a_api.py`, and
 `cd frontend && npm run test:unit` (Node 22.18 or newer; no extra dependency).
 
+## Layout, regional map and browser tests (Stage B)
+
+The map stage is a stable workspace, not a map with panels floating over it: a command bar (Plan), the map
+cell (guaranteed at least 300 px tall), a result tray (Plan) and a tabbed bottom dock (Sail, Sea ice, Icebergs)
+that shows one instrument panel at a time. Map controls live in one toolbar in the map's top-right corner, and
+the legend starts collapsed to a one-line summary. Everything a map overlay needs is positioned inside the map
+cell, so nothing can run underneath the dock.
+
+Unit tests (no browser): `cd frontend && npm run test:unit` (Node 22.18 or newer).
+
+Browser tests (Playwright). One-time setup, which also records the dependency in `package.json` and
+`package-lock.json` (the Docker build uses `npm ci`, so the two must agree):
+
+```bash
+cd frontend
+npm i -D @playwright/test
+npx playwright install chromium
+npm run test:e2e        # starts the backend and the dev server if they are not already running
+```
+
+The backend used by the tests defaults to `../.venv-test312/bin/python`; override with
+`ICEFLOW_PYTHON=/path/to/python npm run test:e2e`. The specs check the layout at 1024x640, 1280x720, 1366x768,
+1440x900 and 1920x1080, the regional map's zoom, pan, reset and keyboard behaviour, the wind and current layers
+(including reduced motion, a failed request and a malformed response), and the sea-ice legend states.
+
 ## How to check the prototype is actually working
 
 Six checks, in order. Each one prints something you can compare against the expected result, so

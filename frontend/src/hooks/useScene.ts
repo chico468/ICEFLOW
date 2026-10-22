@@ -107,7 +107,7 @@ export function useScene(options: SceneOptions = {}): {
   // Wind and current for the flow layers: ONE fixed circumpolar field, not a box shaped like the route.
   // A route-shaped box meant that panning away from the route left the particles with nothing to follow,
   // which looked like the animation had stopped. This grid (78 S to 28 S, all longitudes, 1 x 2 degrees,
-  // about 9 200 cells) costs the service about 0.14 s and ~420 KB, and because its key never changes with
+  // about 9 200 cells) costs the service about 0.14 s and ~660 KB (measured through the real route), and because its key never changes with
   // the route it is fetched once per forecast time and cached. It stops at 28 S because the simulated fields
   // have no land mask for continents; north of that nothing is drawn and the chart says why.
   const flowOn = layers.windFlow || layers.currentFlow;

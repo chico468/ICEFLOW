@@ -52,3 +52,23 @@ test('the flow legend keeps its honesty caveats (simulated, visual-aid speed, no
   assert.match(legend, /not satellite observation/);
   assert.match(legend, /Not zero ice/);
 });
+
+test('provenance: seeded (real-seed) data is never listed under "Real"', () => {
+  const bar = readFileSync(join(SRC, 'components', 'ProvenanceBar.tsx'), 'utf8').replace(/\s+/g, ' ');
+  assert.match(bar, /p\.status !== 'synthetic' && p\.status !== 'real-seed'/);
+  assert.match(bar, /Seeded from real names, not observed/);
+});
+
+test('route ends are drawn only inside the optimised-route condition, with explicit braces', () => {
+  const engine = readFileSync(join(SRC, 'map', 'MapEngine.ts'), 'utf8');
+  assert.match(engine, /if \(L\.optimisedRoute && s\.optimisedRoute\.length > 1\) \{[\s\S]*?drawRouteEnds\(ctx, vp, s\.optimisedRoute\);\s*\}/);
+});
+
+test('dock tabs never nest a Panel\'s right-hand content inside the tab button (button-in-button is invalid HTML)', () => {
+  const stage = readFileSync(join(SRC, 'components', 'MapStage.tsx'), 'utf8');
+  const tab = stage.slice(stage.indexOf('role="tab"') - 400, stage.indexOf('role="tab"') + 900);
+  const buttonOpen = tab.lastIndexOf('<button', tab.indexOf('role="tab"'));
+  const buttonClose = tab.indexOf('</button>', buttonOpen);
+  assert.ok(buttonClose > buttonOpen);
+  assert.ok(!tab.slice(buttonOpen, buttonClose).includes('props.right'), 'props.right is inside the tab <button>');
+});

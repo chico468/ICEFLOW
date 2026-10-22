@@ -61,3 +61,26 @@ test('sameGrid compares size and both corners', () => {
   assert.equal(sameGrid(field(), field({ lons: [10, 12, 15] })), false);
   assert.equal(sameGrid(field(), field({ lats: [-71, -69, -68] })), false);
 });
+
+// ---------------------------------------------------------------- malformed responses
+import { isUsableIceField } from '../src/map/iceModes.ts';
+
+test('isUsableIceField accepts a real grid and rejects everything else without throwing', () => {
+  assert.equal(isUsableIceField(field()), true);
+  for (const bad of [null, undefined, 0, 'x', {}, { lats: [1], lons: [1, 2] }, { lats: [1, 2], lons: 'x' }, { lats: [1, Number.NaN], lons: [1, 2] }, { lats: [1, '2'], lons: [1, 2] }]) {
+    assert.equal(isUsableIceField(bad), false, JSON.stringify(bad));
+  }
+});
+
+test('counting and detection tolerate non-array grids and ragged rows', () => {
+  assert.deepEqual(countMissing(3 as never), { missing: 0, total: 0 });
+  assert.deepEqual(countMissing([[1], null, 'x', [null]] as never), { missing: 1, total: 2 });
+  assert.equal(hasFinite('nope' as never), false);
+});
+
+test('a malformed field makes every mode unavailable with a clear reason (not an exception)', () => {
+  const a = modeAvailability({ lats: 5, lons: 'x' } as never, 24, noBase);
+  for (const m of Object.values(a)) assert.match(m.reason!, /malformed/);
+  const b = modeAvailability(field(), 24, { field: { lats: 5 } as never, loading: false, error: null });
+  assert.equal(b.change.available, false);
+});

@@ -21,6 +21,7 @@ export const MAP_COLORS = {
   drift: 'rgba(27, 106, 156, 0.55)',
   routeOptimised: '#C2410C',
   routeBaseline: 'rgba(60, 80, 92, 0.75)',
+  routeCasing: 'rgba(255, 255, 255, 0.78)',
   track: '#1F7A4D',
   vessel: '#FFFFFF',
   iceberg: '#5B3FD1',

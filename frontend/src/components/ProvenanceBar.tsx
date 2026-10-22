@@ -59,7 +59,10 @@ export function ProvenanceBar(): JSX.Element {
 
   const entries: [string, Provenance][] = data ? Object.entries(data.data_provenance) : [];
   const synthetic = entries.filter(([, p]) => p.status === 'synthetic');
-  const real = entries.filter(([, p]) => p.status !== 'synthetic');
+  // 'real-seed' means real names and origins with positions the authors seeded: NOT observations. It must not
+  // share a heading with genuinely real data, so it gets its own group.
+  const seeded = entries.filter(([, p]) => p.status === 'real-seed');
+  const real = entries.filter(([, p]) => p.status !== 'synthetic' && p.status !== 'real-seed');
 
   return (
     <div ref={rootRef} className="relative z-40 min-w-0">
@@ -129,6 +132,24 @@ export function ProvenanceBar(): JSX.Element {
                 ))}
               </ul>
             </div>
+
+            {seeded.length > 0 && (
+              <div>
+                <div className="display mb-2 flex items-center gap-1.5 text-[14px] text-caution">
+                  <FlaskConical size={14} /> Seeded from real names, not observed ({seeded.length})
+                </div>
+                <ul className="space-y-2">
+                  {seeded.map(([key, p]) => (
+                    <li key={key} className="rounded-lg border border-caution/30 bg-caution/[0.06] p-2.5">
+                      <div className="text-xs font-semibold text-caution">{prettyKey(key)}</div>
+                      <div className="mt-0.5 text-2xs leading-relaxed text-ink-3">
+                        <span className="text-ink-2">{p.source}</span>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
 
             <div>
               <div className="display mb-2 flex items-center gap-1.5 text-[14px] text-ok">

@@ -41,6 +41,7 @@ import {
   easeOutCubic,
   graticuleStep,
   lerpView,
+  mercLat,
   metresPerPixelAt,
   niceScaleBar,
   ringBounds,
@@ -98,6 +99,8 @@ export function RegionalMap({ scene, visible, polarEngine, originId, destination
 
   const rafRef = useRef(0);
   const animRef = useRef(0);
+  /** Where the animation in flight will end. New moves build on this, so rapid presses accumulate instead of restarting. */
+  const pendingRef = useRef<ViewState | null>(null);
   const dragRef = useRef<{ x: number; y: number; moved: boolean } | null>(null);
   const fittedKeyRef = useRef('');
 
@@ -147,6 +150,12 @@ export function RegionalMap({ scene, visible, polarEngine, originId, destination
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     const view = vp.visibleBounds();
     const zoom = vp.zoom;
+    // Exposed for tests and diagnostics: the view's zoom (1 = whole region) and centre.
+    const host = hostRef.current;
+    if (host) {
+      host.dataset.zoom = zoom.toFixed(3);
+      host.dataset.centre = `${vp.centreLon.toFixed(3)},${mercLat(vp.centreY).toFixed(3)}`;
+    }
 
     ctx.fillStyle = MAP_COLORS.ocean;
     ctx.fillRect(0, 0, w, h);
@@ -391,14 +400,17 @@ export function RegionalMap({ scene, visible, polarEngine, originId, destination
   const cancelAnim = useCallback((): void => {
     if (animRef.current) cancelAnimationFrame(animRef.current);
     animRef.current = 0;
+    pendingRef.current = null;
   }, []);
 
   /** Run `frame(e)` for e easing 0 to 1 over `ms`; or jump straight to 1 when motion is reduced. */
   const animate = useCallback(
     (frame: (e: number) => void, ms = EASE_MS): void => {
-      cancelAnim();
+      if (animRef.current) cancelAnimationFrame(animRef.current);
+      animRef.current = 0;
       if (reduced) {
         frame(1);
+        pendingRef.current = null;
         schedule();
         return;
       }
@@ -407,31 +419,56 @@ export function RegionalMap({ scene, visible, polarEngine, originId, destination
         const t = Math.min(1, (now - t0) / ms);
         frame(easeOutCubic(t));
         schedule();
-        animRef.current = t < 1 ? requestAnimationFrame(step) : 0;
+        if (t < 1) {
+          animRef.current = requestAnimationFrame(step);
+        } else {
+          animRef.current = 0;
+          pendingRef.current = null;
+        }
       };
       animRef.current = requestAnimationFrame(step);
     },
-    [cancelAnim, reduced, schedule],
+    [schedule, reduced],
+  );
+
+  /** The view a change would produce, built on the pending target of any animation in flight. */
+  const targetFrom = useCallback(
+    (apply: (v: RegionViewport) => void): ViewState => {
+      const now = vp.getView();
+      vp.setView(pendingRef.current ?? now);
+      apply(vp);
+      const target = vp.getView();
+      vp.setView(now);
+      return target;
+    },
+    [vp],
   );
 
   const zoomAbout = useCallback(
     (factor: number, px: number, py: number): void => {
+      const target = targetFrom((v) => v.zoomAt(px, py, factor));
       const from: ViewState = vp.getView();
+      const total = target.scale / from.scale;
+      pendingRef.current = target;
+      // Each frame re-applies the zoom from the start view, so the point under (px, py) never drifts mid-flight.
       animate((e) => {
         vp.setView(from);
-        vp.zoomAt(px, py, Math.pow(factor, e));
+        vp.zoomAt(px, py, Math.pow(total, e));
       });
     },
-    [animate, vp],
+    [animate, targetFrom, vp],
   );
 
   const moveTo = useCallback(
     (target: ViewState, ms = EASE_MS): void => {
       const from = vp.getView();
+      pendingRef.current = target;
       animate((e) => vp.setView(lerpView(from, target, e)), ms);
     },
     [animate, vp],
   );
+
+  const panBy = useCallback((dx: number, dy: number): void => moveTo(targetFrom((v) => v.panBy(dx, dy)), 140), [moveTo, targetFrom]);
 
   const resetView = useCallback((): void => moveTo(vp.viewAfterFit(initialPoints, 90), 260), [initialPoints, moveTo, vp]);
   const wholeRegion = useCallback((): void => moveTo(vp.viewAfterFit([], 0), 260), [moveTo, vp]);
@@ -530,7 +567,7 @@ export function RegionalMap({ scene, visible, polarEngine, originId, destination
     // Only when the map itself has focus: a button or field inside keeps its own keys.
     if (e.target !== e.currentTarget || e.altKey || e.ctrlKey || e.metaKey) return;
     const step = e.shiftKey ? KEY_PAN_FAR_PX : KEY_PAN_PX;
-    const pan = (dx: number, dy: number): void => moveTo(vp.viewAfterPan(dx, dy), 140);
+    const pan = panBy;
     switch (e.key) {
       case 'ArrowLeft': pan(step, 0); break;
       case 'ArrowRight': pan(-step, 0); break;
@@ -599,6 +636,7 @@ export function RegionalMap({ scene, visible, polarEngine, originId, destination
 
       <div
         ref={readoutRef}
+        data-testid="regional-readout"
         className="pointer-events-none absolute bottom-7 right-3 z-10 rounded border border-hair bg-panel px-2 py-0.5 num text-2xs text-ink-2"
         aria-live="off"
       >

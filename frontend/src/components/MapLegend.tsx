@@ -11,7 +11,7 @@ import { ChevronDown, ChevronUp } from 'lucide-react';
 import type { IceField, ObservedIcebergsResponse } from '../api/types';
 import type { MapScene } from '../map/MapEngine';
 import { FLOW_KINDS } from '../map/flow';
-import { countMissing, modeAvailability } from '../map/iceModes';
+import { countMissing, isUsableIceField, modeAvailability } from '../map/iceModes';
 import { NO_DATA_FILL } from '../map/layers';
 import { CHANGE_DEADBAND, ICE_BANDS, MAP_COLORS, bandCss, changeCss, concentrationCss, thicknessCss } from '../map/palette';
 
@@ -24,7 +24,7 @@ function gradient(sampleFn: (t: number) => string, steps = 12): string {
 }
 
 export function cellSizeText(field: IceField): string | null {
-  if (field.lats.length < 2 || field.lons.length < 2) return null;
+  if (!isUsableIceField(field)) return null;
   const dLat = Math.abs(field.lats[1] - field.lats[0]);
   const dLon = Math.abs(field.lons[1] - field.lons[0]);
   const midLat = field.lats[Math.floor(field.lats.length / 2)];
@@ -94,7 +94,8 @@ export function MapLegend({
   const showIce = L.iceRaster;
   const showFlow = L.windFlow || L.currentFlow;
   const showBergs = L.icebergs || L.observedBergs;
-  if (!showIce && !showFlow && !showBergs) return null;
+  const showRoute = (L.optimisedRoute || L.baselineRoute || L.track) && scene.optimisedRoute.length > 1;
+  if (!showIce && !showFlow && !showBergs && !showRoute) return null;
 
   return (
     <section
@@ -125,6 +126,7 @@ export function MapLegend({
           {showIce && <IceSection scene={scene} leadHours={leadHours} />}
           {showFlow && <FlowSection scene={scene} />}
           {showBergs && <BergSection scene={scene} />}
+          {showRoute && <RouteSection scene={scene} />}
           {(st.iceError || st.flowError || st.observedError) && (
             <p role="alert" className="text-danger">
               Some layers failed to load. See the notes above; nothing missing here means "clear".
@@ -139,8 +141,11 @@ export function MapLegend({
 // ----------------------------------------------------------------------------------- sea ice
 
 function IceSection({ scene, leadHours }: { scene: MapScene; leadHours: number }): JSX.Element {
-  const { iceField: field, rasterMode: mode, status: st } = scene;
-  const avail = modeAvailability(field, leadHours, {
+  const { rasterMode: mode, status: st } = scene;
+  const raw = scene.iceField;
+  const malformed = raw !== null && !isUsableIceField(raw);
+  const field = malformed ? null : raw;
+  const avail = modeAvailability(malformed ? null : field, leadHours, {
     field: scene.iceFieldBase,
     loading: st.baseLoading,
     error: st.baseError,
@@ -167,6 +172,12 @@ function IceSection({ scene, leadHours }: { scene: MapScene; leadHours: number }
         {field?.is_synthetic && <span className="rounded bg-panel-3 px-1.5 py-px text-[10px] text-ink-2">SIMULATED</span>}
       </div>
       <div className="mb-1 text-ink-3">{unit}</div>
+
+      {malformed && (
+        <p role="alert" className="my-1 rounded border border-hair-2 bg-panel-2 px-2 py-1.5 text-danger">
+          The ice field response is malformed, so nothing is drawn. This is a missing layer, not clear water.
+        </p>
+      )}
 
       {field && !drawn && (
         <p role="status" className="my-1 rounded border border-hair-2 bg-panel-2 px-2 py-1.5 text-warn">
@@ -285,7 +296,7 @@ function IceSection({ scene, leadHours }: { scene: MapScene; leadHours: number }
           Ice field unavailable: {st.iceError}. A blank chart here is NOT open water.
         </p>
       )}
-      {!st.iceLoading && !st.iceError && !field && (
+      {!st.iceLoading && !st.iceError && !field && !malformed && (
         <p className="mt-1 text-warn">No ice data for this view. That is a missing layer, not clear water.</p>
       )}
     </div>
@@ -295,7 +306,10 @@ function IceSection({ scene, leadHours }: { scene: MapScene; leadHours: number }
 // ---------------------------------------------------------------------------------------- flow
 
 function FlowSection({ scene }: { scene: MapScene }): JSX.Element {
-  const { envField: f, status: st, layers: L } = scene;
+  const { status: st, layers: L } = scene;
+  const rawF = scene.envField;
+  const flowOk = !!rawF && Array.isArray(rawF.lats) && Array.isArray(rawF.lons) && rawF.lats.length >= 2 && rawF.lons.length >= 2;
+  const f = flowOk ? rawF : null;
   const kinds = [L.windFlow && FLOW_KINDS.wind, L.currentFlow && FLOW_KINDS.current].filter(Boolean) as (typeof FLOW_KINDS)['wind'][];
   return (
     <div>
@@ -326,6 +340,11 @@ function FlowSection({ scene }: { scene: MapScene }): JSX.Element {
       {f && (
         <p className="mt-1 text-ink-3">
           Model hour +{f.valid_time_hours}. {f.source ?? ''}
+        </p>
+      )}
+      {rawF && !flowOk && (
+        <p role="alert" className="mt-1 text-danger">
+          The wind and current response is malformed, so nothing is drawn.
         </p>
       )}
       {st.flowLoading && !f && <p className="mt-1 text-ink-3">Loading wind and current…</p>}
@@ -394,6 +413,59 @@ function BergSection({ scene }: { scene: MapScene }): JSX.Element {
           </span>
         </div>
       )}
+    </div>
+  );
+}
+
+// --------------------------------------------------------------------------------------- route
+
+function RouteSection({ scene }: { scene: MapScene }): JSX.Element {
+  const { layers: L } = scene;
+  const swatch = (children: JSX.Element): JSX.Element => (
+    <svg width="30" height="14" viewBox="0 0 30 14" className="shrink-0" aria-hidden>
+      {children}
+    </svg>
+  );
+  return (
+    <div>
+      <div className="mb-1 font-medium text-ink">Passage</div>
+      <ul className="space-y-1">
+        {L.optimisedRoute && (
+          <li className="flex items-center gap-2">
+            {swatch(
+              <>
+                <line x1="2" y1="7" x2="28" y2="7" stroke="rgba(255,255,255,0.78)" strokeWidth="4.6" strokeLinecap="round" />
+                <line x1="2" y1="7" x2="28" y2="7" stroke={MAP_COLORS.routeOptimised} strokeWidth="2.2" strokeLinecap="round" />
+              </>,
+            )}
+            <span>Planned route</span>
+          </li>
+        )}
+        {L.optimisedRoute && (
+          <li className="flex items-center gap-2">
+            {swatch(
+              <>
+                <circle cx="7" cy="7" r="5" fill="#fff" stroke={MAP_COLORS.routeOptimised} strokeWidth="2" />
+                <circle cx="23" cy="7" r="6" fill="#fff" stroke={MAP_COLORS.routeOptimised} strokeWidth="2" />
+                <circle cx="23" cy="7" r="2.6" fill={MAP_COLORS.routeOptimised} />
+              </>,
+            )}
+            <span>Start (open ring) and destination (target)</span>
+          </li>
+        )}
+        {L.baselineRoute && (
+          <li className="flex items-center gap-2">
+            {swatch(<line x1="2" y1="7" x2="28" y2="7" stroke={MAP_COLORS.routeBaseline} strokeWidth="1.5" strokeDasharray="5 4" />)}
+            <span>Baseline for comparison</span>
+          </li>
+        )}
+        {L.track && (
+          <li className="flex items-center gap-2">
+            {swatch(<line x1="2" y1="7" x2="28" y2="7" stroke={MAP_COLORS.track} strokeWidth="2.6" strokeLinecap="round" />)}
+            <span>Track made good</span>
+          </li>
+        )}
+      </ul>
     </div>
   );
 }

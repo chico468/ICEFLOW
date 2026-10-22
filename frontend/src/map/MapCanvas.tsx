@@ -10,6 +10,7 @@ import { Crosshair, Maximize2, Minus, Plus, SlidersHorizontal } from 'lucide-rea
 import { FlowOverlay } from './FlowOverlay';
 import { nearestWithin } from './hitTest';
 import { MapEngine, type MapScene } from './MapEngine';
+import type { IcebergProfile } from '../api/types';
 import type { LatLon } from './projection';
 import { MapLayerPanel } from '../components/MapLayerPanel';
 import { modeAvailability } from './iceModes';
@@ -70,7 +71,7 @@ export function MapCanvas({
   const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
   const sceneRef = useRef(scene);
   sceneRef.current = scene;
-  const [hoverBergId, setHoverBergId] = useState<string | null>(null);
+  const [hover, setHover] = useState<{ kind: 'observed' | 'simulated'; id: string } | null>(null);
 
   // --- attach and size ---
   useEffect(() => {
@@ -166,11 +167,19 @@ export function MapCanvas({
       }
       setCursor(engine.viewport.screenToLatLon(px, py));
       setTooltipPos({ x: px, y: py });
-      // Observed bergs carry no on-chart text at normal zoom, so a hover finds the one under the pointer.
+      // Bergs carry little or no on-chart text at normal zoom, so a hover finds the one under the pointer.
+      // Observed and simulated are tested separately and reported with their kind, so the card can never
+      // describe a simulated berg as an observation (or the reverse).
       const sc = sceneRef.current;
+      const project = (lat: number, lon: number): { x: number; y: number } => engine.viewport.lonLatToScreen(lat, lon);
       const obs = sc.layers.observedBergs && sc.observed?.available ? sc.observed.icebergs : [];
-      const hit = nearestWithin(obs, (b) => engine.viewport.lonLatToScreen(b.latitude, b.longitude), px, py, 12);
-      setHoverBergId((prev) => (prev === (hit?.item.id ?? null) ? prev : (hit?.item.id ?? null)));
+      const sim = sc.layers.icebergs ? sc.icebergs : [];
+      const obsHit = nearestWithin(obs, (b) => project(b.latitude, b.longitude), px, py, 12);
+      const simHit = obsHit
+        ? null
+        : nearestWithin(sim, (b) => project(b.forecast_latitude ?? b.latitude, b.forecast_longitude ?? b.longitude), px, py, 14);
+      const next = obsHit ? { kind: 'observed' as const, id: obsHit.item.id } : simHit ? { kind: 'simulated' as const, id: simHit.item.berg_id } : null;
+      setHover((prev) => (prev?.kind === next?.kind && prev?.id === next?.id ? prev : next));
     },
     [engine],
   );
@@ -213,7 +222,7 @@ export function MapCanvas({
           dragRef.current = null;
           setCursor(null);
           setTooltipPos(null);
-          setHoverBergId(null);
+          setHover(null);
         }}
       />
 
@@ -228,10 +237,17 @@ export function MapCanvas({
         error={scene.status.flowError}
       />
 
-      {hoverBergId && tooltipPos && scene.observed?.available && (
+      {hover && tooltipPos && hover.kind === 'observed' && scene.observed?.available && (
         <ObservedBergCard
-          berg={scene.observed.icebergs.find((b) => b.id === hoverBergId) ?? null}
+          berg={scene.observed.icebergs.find((b) => b.id === hover.id) ?? null}
           obs={scene.observed}
+          x={Math.min(tooltipPos.x + 14, (hostRef.current?.clientWidth ?? 600) - 250)}
+          y={Math.min(tooltipPos.y + 30, (hostRef.current?.clientHeight ?? 400) - 150)}
+        />
+      )}
+      {hover && tooltipPos && hover.kind === 'simulated' && (
+        <SimulatedBergCard
+          berg={scene.icebergs.find((b) => b.berg_id === hover.id) ?? null}
           x={Math.min(tooltipPos.x + 14, (hostRef.current?.clientWidth ?? 600) - 250)}
           y={Math.min(tooltipPos.y + 30, (hostRef.current?.clientHeight ?? 400) - 150)}
         />
@@ -316,7 +332,7 @@ export function formatLon(lon: number): string {
   return `${deg.toString().padStart(3, '0')}° ${min.toFixed(1).padStart(4, '0')}' ${hemi}`;
 }
 
-function ObservedBergCard({
+export function ObservedBergCard({
   berg,
   obs,
   x,
@@ -346,6 +362,29 @@ function ObservedBergCard({
       <div className="mt-1 text-ink-3">
         {obs.stale ? 'Not where it is now. ' : ''}Position uncertainty is not given by the source. Not used for routing.
       </div>
+    </div>
+  );
+}
+
+export function SimulatedBergCard({ berg, x, y }: { berg: IcebergProfile | null; x: number; y: number }): JSX.Element | null {
+  if (!berg) return null;
+  const lat = berg.forecast_latitude ?? berg.latitude;
+  const lon = berg.forecast_longitude ?? berg.longitude;
+  const lead = berg.forecast_lead_hours ?? 0;
+  return (
+    <div role="status" className="float pointer-events-none absolute z-20 w-[236px] px-3 py-2 text-2xs text-ink-2" style={{ left: Math.max(8, x), top: Math.max(8, y) }}>
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="font-semibold text-ink">{berg.berg_id}</span>
+        <span className="rounded bg-panel-3 px-1.5 py-px text-[10px] text-ink-2">SIMULATED</span>
+      </div>
+      <div className="mt-0.5">{berg.size_class} · {berg.origin}</div>
+      <div className="num mt-0.5">
+        {Math.round(berg.length_m).toLocaleString('en-GB')} × {Math.round(berg.width_m).toLocaleString('en-GB')} m
+      </div>
+      <div className="num text-ink-3">
+        {formatLat(lat)} {formatLon(lon)} {lead > 0 ? `at +${lead} h (model drift)` : 'seeded position'}
+      </div>
+      <div className="mt-1 text-ink-3">A catalogue entry placed and drifted by the model, not an observation.</div>
     </div>
   );
 }

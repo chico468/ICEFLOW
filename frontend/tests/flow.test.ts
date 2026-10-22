@@ -337,3 +337,27 @@ test('the arrow lattice covers the canvas evenly and can be offset between layer
   for (let i = 0; i < pts.length; i += 2) assert.ok(pts[i] > 0 && pts[i] < 440 && pts[i + 1] > 0 && pts[i + 1] < 220);
   assert.equal(arrowLattice(10, 10, 44).length, 0, 'a canvas smaller than half a cell has no arrows');
 });
+
+
+test('malformed responses yield "no grid", never an exception', () => {
+  const bad: unknown[][] = [
+    [undefined, undefined, undefined, undefined],
+    [[-60, -59], [10, 11], undefined, [[1, 1], [1, 1]]],
+    [[-60, -59], [10, 11], [[1, 1], [1, 1]], 'nope'],
+    [[-60, 'x'], [10, 11], [[1, 1], [1, 1]], [[1, 1], [1, 1]]],
+    [[-60, Number.NaN], [10, 11], [[1, 1], [1, 1]], [[1, 1], [1, 1]]],
+    [[-60, -59], [10, 11], [[1, 1], null], [[1, 1], [1, 1]]],
+    [[-60, -59], [10, 11], [[1, 1], [1, 1]], [[1, 1], [1, 1]], [[1]]], // wave-height mask with the wrong row count
+  ];
+  for (const args of bad) {
+    assert.doesNotThrow(() => makeFlowGrid(...(args as Parameters<typeof makeFlowGrid>)), JSON.stringify(args));
+    assert.equal(makeFlowGrid(...(args as Parameters<typeof makeFlowGrid>)), null, JSON.stringify(args));
+  }
+  assert.ok(makeFlowGrid([-60, -59], [10, 11], [[1, 1], [1, 1]], [[1, 1], [1, 1]], [[0.4, 0.4], [0.4, 0.4]]));
+});
+
+test('a grid whose cells hold non-numbers is skipped by sampling, not crashed on', () => {
+  const g = makeFlowGrid([-60, -59], [10, 11], [[1, 'x' as unknown as number], [1, 1]], [[1, 1], [1, 1]])!;
+  const out: [number, number] = [0, 0];
+  assert.equal(sampleFlow(g, -59.5, 10.5, out), false);
+});

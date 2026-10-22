@@ -191,7 +191,7 @@ export function MapStage({ id, map, top, tray, shelf, shelfLabel = 'Panels' }: P
         </div>
       )}
 
-      <div className="relative min-h-0 flex-1 overflow-hidden" style={{ minHeight: MAP_MIN_HEIGHT }}>
+      <div data-testid="map-cell" className="relative min-h-0 flex-1 overflow-hidden" style={{ minHeight: MAP_MIN_HEIGHT }}>
         <StageInsetsContext.Provider value={NO_INSETS}>{map}</StageInsetsContext.Provider>
       </div>
 
@@ -205,34 +205,40 @@ export function MapStage({ id, map, top, tray, shelf, shelfLabel = 'Panels' }: P
       )}
 
       {hasDock && (
-        <section className="shrink-0 border-t border-hair bg-panel" aria-label={shelfLabel}>
+        <section data-testid="dock" className="shrink-0 border-t border-hair bg-panel" aria-label={shelfLabel}>
           <div className="flex items-stretch" style={{ height: DOCK_BAR_HEIGHT }}>
             <div role="tablist" aria-label={shelfLabel} className="flex min-w-0 flex-1 items-stretch overflow-x-auto" onKeyDown={onTabKey}>
               {panels.map((p, i) => {
                 const selected = i === activeIndex;
                 const props = p.props as PanelProps;
                 return (
-                  <button
+                  // The badge (a Panel's `right`) is a SIBLING of the tab button, not a child: it may itself be a
+                  // button or link, and a button inside a button is invalid HTML that browsers repair unpredictably.
+                  <div
                     key={labels[i]}
-                    id={`${uid}-tab-${i}`}
-                    type="button"
-                    role="tab"
-                    aria-selected={selected}
-                    aria-controls={`${uid}-panel`}
-                    tabIndex={selected ? 0 : -1}
-                    onClick={() => {
-                      setSavedTab(labels[i]);
-                      if (!open && room.canOpen) setOpen(true);
-                    }}
-                    className={`flex shrink-0 items-center gap-2 whitespace-nowrap border-b-2 px-4 text-xs transition-colors ${
-                      selected && dockOpen
-                        ? 'border-accent font-semibold text-ink'
-                        : 'border-transparent text-ink-3 hover:text-ink'
+                    className={`flex shrink-0 items-center gap-2 border-b-2 pr-3 transition-colors ${
+                      selected && dockOpen ? 'border-accent' : 'border-transparent'
                     }`}
                   >
-                    <span className="display text-[13px]">{labels[i]}</span>
+                    <button
+                      id={`${uid}-tab-${i}`}
+                      type="button"
+                      role="tab"
+                      aria-selected={selected}
+                      aria-controls={`${uid}-panel`}
+                      tabIndex={selected ? 0 : -1}
+                      onClick={() => {
+                        setSavedTab(labels[i]);
+                        if (!open && room.canOpen) setOpen(true);
+                      }}
+                      className={`h-full whitespace-nowrap pl-4 text-xs transition-colors ${
+                        selected && dockOpen ? 'font-semibold text-ink' : 'text-ink-3 hover:text-ink'
+                      }`}
+                    >
+                      <span className="display text-[13px]">{labels[i]}</span>
+                    </button>
                     {props.right}
-                  </button>
+                  </div>
                 );
               })}
             </div>

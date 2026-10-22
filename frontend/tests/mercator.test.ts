@@ -47,17 +47,41 @@ test('project and unproject round-trip', () => {
   }
 });
 
-test('the whole region fits at the initial scale and the view cannot leave the region', () => {
+test('the whole region fits at the initial scale and the view centre cannot leave the region', () => {
   const v = viewport();
   const sw = v.project(REGION.lat_min, REGION.lon_min);
   const ne = v.project(REGION.lat_max, REGION.lon_max);
   assert.ok(sw.x >= -1 && sw.y <= 801 && ne.x <= 1201 && ne.y >= -1, 'region fully visible at fit');
   v.zoomAt(600, 400, 6);
-  v.panBy(5000, -5000);
-  const tl = v.unproject(0, 0);
-  const br = v.unproject(1200, 800);
-  assert.ok(tl.lon >= REGION.lon_min - 1e-6 && br.lon <= REGION.lon_max + 1e-6);
-  assert.ok(tl.lat <= REGION.lat_max + 1e-6 && br.lat >= REGION.lat_min - 1e-6);
+  v.panBy(50_000, -50_000);
+  const c = v.unproject(600, 400);
+  assert.ok(c.lon >= REGION.lon_min - 1e-6 && c.lon <= REGION.lon_max + 1e-6, 'centre longitude stays in the region');
+  assert.ok(c.lat >= REGION.lat_min - 1e-6 && c.lat <= REGION.lat_max + 1e-6, 'centre latitude stays in the region');
+  v.panBy(-50_000, 50_000);
+  const d = v.unproject(600, 400);
+  assert.ok(d.lon >= REGION.lon_min - 1e-6 && d.lon <= REGION.lon_max + 1e-6);
+});
+
+test('REGRESSION: on a wide, short map cell, anchored zoom does not drift, even over blank ocean beyond the region', () => {
+  // The browser's exact map cell at 1366x768 (1294 x 416.56): the region fits by height, so the opening view is
+  // far wider than the region. The old clamp pushed the view back after zooming and moved the anchor by 11 degrees.
+  const v = new RegionViewport(REGION);
+  v.resize(1294, 416.5625);
+  v.fitPoints([{ lat: -33.9, lon: 18.4 }, { lat: -69.4, lon: 76.2 }], 90);
+  const span = v.visibleBounds();
+  assert.ok(span.lon_max - span.lon_min > 195, 'precondition: the view is wider than the region');
+  for (const [fx, fy] of [[0.7, 0.4], [0.9, 0.5], [0.1, 0.5], [0.5, 0.1], [0.95, 0.9]]) {
+    const w = new RegionViewport(REGION);
+    w.resize(1294, 416.5625);
+    w.fitPoints([{ lat: -33.9, lon: 18.4 }, { lat: -69.4, lon: 76.2 }], 90);
+    const px = 1294 * fx;
+    const py = 416.5625 * fy;
+    const before = w.unproject(px, py);
+    w.zoomAt(px, py, Math.exp(0.9));
+    const after = w.unproject(px, py);
+    assert.ok(Math.abs(after.lon - before.lon) < 1e-6, `pointer at ${fx},${fy}: longitude drifted ${(after.lon - before.lon).toFixed(3)} deg`);
+    assert.ok(Math.abs(after.lat - before.lat) < 1e-6, `pointer at ${fx},${fy}: latitude drifted ${(after.lat - before.lat).toFixed(3)} deg`);
+  }
 });
 
 test('zoomAt keeps the point under the cursor fixed, and respects the zoom limits', () => {

@@ -22,6 +22,7 @@ import { MapCanvas } from '../map/MapCanvas';
 import { MapStage } from '../components/MapStage';
 import { Badge, EmptyState, KeyValue, Panel, Slider, Toggle } from '../components/ui';
 import { useScene } from '../hooks/useScene';
+import { modeAvailability } from '../map/iceModes';
 import { num, tenths } from '../lib/format';
 import { rioColor } from '../map/palette';
 import type { LayerToggles } from '../map/MapEngine';
@@ -47,6 +48,12 @@ const LAYER_LABELS: { key: keyof LayerToggles; label: string }[] = [
 export function IceForecast(): JSX.Element {
   const { scene, fitTargets, iceLoading } = useScene();
   const leadHours = useAppStore((s) => s.leadHours);
+  // The same availability rules the chart's layer panel and legend use, so the three can never disagree.
+  const modeAvail = modeAvailability(scene.iceField, leadHours, {
+    field: scene.iceFieldBase,
+    loading: scene.status.baseLoading,
+    error: scene.status.baseError,
+  });
   const setLeadHours = useAppStore((s) => s.setLeadHours);
   const playing = useAppStore((s) => s.playingForecast);
   const setPlaying = useAppStore((s) => s.setPlayingForecast);
@@ -131,14 +138,21 @@ export function IceForecast(): JSX.Element {
               <button
                 key={mode}
                 type="button"
+                title={modeAvail[mode].reason ?? undefined}
                 aria-pressed={rasterMode === mode}
-                className={`btn flex-1 ${rasterMode === mode ? 'btn-accent' : ''}`}
+                aria-disabled={!modeAvail[mode].available}
+                className={`btn flex-1 ${rasterMode === mode ? 'btn-accent' : ''} ${modeAvail[mode].available ? '' : 'opacity-50'}`}
                 onClick={() => setRasterMode(mode)}
               >
                 {mode}
               </button>
             ))}
           </div>
+          {!modeAvail[rasterMode].available && (
+            <p role="status" className="text-2xs text-warn">
+              {modeAvail[rasterMode].reason} Nothing is drawn for this mode.
+            </p>
+          )}
           <Slider
             label="Raster opacity"
             value={rasterOpacity}

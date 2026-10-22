@@ -15,7 +15,7 @@ import type {
   Station,
   Waypoint,
 } from '../api/types';
-import { hasFinite, isMissing } from './iceModes';
+import { hasFinite, isMissing, isUsableIceField } from './iceModes';
 import {
   MAP_COLORS,
   changeCss,
@@ -180,8 +180,8 @@ export function drawIceRaster(
   opacity: number,
   base: IceField | null = null,
 ): void {
+  if (!isUsableIceField(field)) return; // malformed response: draw nothing rather than throw every frame
   const { lats, lons } = field;
-  if (lats.length < 2 || lons.length < 2) return;
   const values = mode === 'thickness' ? field.thickness_m : field.concentration;
   // A mode whose data is absent paints nothing. The legend and layer panel say why; the chart never
   // invents a thickness or a change.
@@ -191,6 +191,7 @@ export function drawIceRaster(
     // A difference is only meaningful on an identical grid. Refuse rather than misalign.
     const same =
       base !== null &&
+      isUsableIceField(base) &&
       base.lats.length === lats.length &&
       base.lons.length === lons.length &&
       base.lats[0] === lats[0] &&
@@ -266,7 +267,7 @@ export function drawIceEdge(
   lons: number[],
   edgeLat: number[],
 ): void {
-  if (lons.length < 2) return;
+  if (!Array.isArray(lons) || !Array.isArray(edgeLat) || lons.length < 2) return;
   const trace = (): void => {
     ctx.beginPath();
     let started = false;
@@ -305,6 +306,8 @@ export function drawIceEdge(
 /** Compression / besetting shading, hatched so it reads differently from the raster. */
 export function drawCompression(ctx: CanvasRenderingContext2D, vp: Viewport, field: IceField): void {
   const { lats, lons, compression_index: comp, concentration } = field;
+  // Axes may be valid while a grid is absent or the wrong shape: draw nothing rather than throw every frame.
+  if (!Array.isArray(comp) || !Array.isArray(concentration)) return;
   ctx.save();
   for (let i = 0; i < lats.length - 1; i += 1) {
     const row = comp[i];
@@ -370,6 +373,7 @@ export function drawDriftField(
   strideOverride?: number,
 ): void {
   const { lats, lons } = field;
+  if (!Array.isArray(field.drift_u_ms) || !Array.isArray(field.drift_v_ms) || !Array.isArray(field.concentration)) return;
   const stride = strideOverride ?? Math.max(1, Math.round(28 / Math.max(1, vp.widthPx / lons.length)));
   ctx.save();
   ctx.strokeStyle = MAP_COLORS.drift;
@@ -478,6 +482,7 @@ export function drawObservedIcebergs(
   ctx.fillStyle = ctx.strokeStyle;
   const showLabels = vp.metresPerPixel < 8000;
   for (const b of bergs) {
+    if (!b || !Number.isFinite(b.latitude) || !Number.isFinite(b.longitude) || !Number.isFinite(b.area_sqkm)) continue;
     const p = vp.lonLatToScreen(b.latitude, b.longitude);
     if (p.x < -80 || p.x > vp.widthPx + 80 || p.y < -80 || p.y > vp.heightPx + 80) continue;
     const radiusKm = Math.sqrt(b.area_sqkm / Math.PI);
@@ -577,6 +582,23 @@ export function drawRoute(
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
   ctx.lineWidth = opts.width ?? 2;
+
+  // The chosen route gets a thin pale casing so it stays visible over dense, dark ice without needing to be
+  // drawn any wider. The dashed baseline is secondary and is left uncased, so it never competes.
+  if (!opts.dashed) {
+    ctx.save();
+    ctx.strokeStyle = MAP_COLORS.routeCasing;
+    ctx.lineWidth = (opts.width ?? 2) + 2.4;
+    ctx.beginPath();
+    for (let i = 0; i < waypoints.length; i += 1) {
+      const p = vp.lonLatToScreen(waypoints[i].latitude, waypoints[i].longitude);
+      if (i === 0) ctx.moveTo(p.x, p.y);
+      else ctx.lineTo(p.x, p.y);
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+
   if (opts.dashed) ctx.setLineDash([7, 5]);
 
   if (opts.rioColored) {
@@ -614,6 +636,40 @@ export function drawRoute(
       ctx.fill();
     }
   }
+  ctx.restore();
+}
+
+/**
+ * Where the planned passage starts and finishes, so the ends of the route are not just two more station dots:
+ * a hollow ring for the start, and a ring with a solid centre (a target) for the destination. Derived from
+ * the route itself, so it is always where the route actually begins and ends.
+ */
+export function drawRouteEnds(ctx: CanvasRenderingContext2D, vp: Viewport, waypoints: Waypoint[]): void {
+  if (waypoints.length < 2) return;
+  const first = waypoints[0];
+  const last = waypoints[waypoints.length - 1];
+  if (![first.latitude, first.longitude, last.latitude, last.longitude].every(Number.isFinite)) return;
+  const a = vp.lonLatToScreen(first.latitude, first.longitude);
+  const b = vp.lonLatToScreen(last.latitude, last.longitude);
+  ctx.save();
+  ctx.lineWidth = 2.2;
+  ctx.strokeStyle = MAP_COLORS.routeOptimised;
+
+  ctx.beginPath();
+  ctx.arc(a.x, a.y, 6.5, 0, TAU);
+  ctx.fillStyle = '#FFFFFF';
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.arc(b.x, b.y, 9, 0, TAU);
+  ctx.fillStyle = '#FFFFFF';
+  ctx.fill();
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(b.x, b.y, 3.8, 0, TAU);
+  ctx.fillStyle = MAP_COLORS.routeOptimised;
+  ctx.fill();
   ctx.restore();
 }
 

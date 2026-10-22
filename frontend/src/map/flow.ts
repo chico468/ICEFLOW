@@ -41,7 +41,13 @@ export function makeFlowGrid(
   v: number[][],
   landFromWaveHeight?: number[][],
 ): FlowGrid | null {
+  // A response can be anything: an empty object, a partial field, the wrong shape. This runs inside a render,
+  // so it must answer "not usable" (null) rather than throw and take the screen down.
+  const arr = (x: unknown): boolean => Array.isArray(x);
+  if (!arr(lats) || !arr(lons) || !arr(u) || !arr(v)) return null;
+  if (landFromWaveHeight !== undefined && (!arr(landFromWaveHeight) || landFromWaveHeight.length !== lats.length)) return null;
   if (lats.length < 2 || lons.length < 2) return null;
+  if (![...lats, ...lons].every((x) => typeof x === 'number' && Number.isFinite(x))) return null;
   if (u.length !== lats.length || v.length !== lats.length) return null;
   for (let i = 1; i < lats.length; i += 1) if (!(lats[i] > lats[i - 1])) return null;
   for (let j = 1; j < lons.length; j += 1) if (!(lons[j] > lons[j - 1])) return null;
