@@ -26,9 +26,9 @@ export interface FlowGrid {
   /** Ascending longitudes, degrees. */
   lons: number[];
   /** [lat][lon], m/s, east component. */
-  u: number[][];
+  u: (number | null)[][];
   /** [lat][lon], m/s, north component. */
-  v: number[][];
+  v: (number | null)[][];
   /** [lat][lon]; true where the field is not defined as ocean. Optional. */
   land?: boolean[][];
 }
@@ -37,8 +37,8 @@ export interface FlowGrid {
 export function makeFlowGrid(
   lats: number[],
   lons: number[],
-  u: number[][],
-  v: number[][],
+  u: (number | null)[][],
+  v: (number | null)[][],
   landFromWaveHeight?: number[][],
 ): FlowGrid | null {
   // A response can be anything: an empty object, a partial field, the wrong shape. This runs inside a render,
@@ -96,13 +96,12 @@ export function sampleFlow(g: FlowGrid, lat: number, lon: number, out: [number, 
   const v01 = g.v[i][j + 1];
   const v10 = g.v[i + 1][j];
   const v11 = g.v[i + 1][j + 1];
-  if (
-    !Number.isFinite(u00 + u01 + u10 + u11 + v00 + v01 + v10 + v11)
-  ) {
+  if ([u00, u01, u10, u11, v00, v01, v10, v11].some((x) => typeof x !== 'number' || !Number.isFinite(x))) {
     return false;
   }
-  out[0] = (u00 * (1 - tx) + u01 * tx) * (1 - ty) + (u10 * (1 - tx) + u11 * tx) * ty;
-  out[1] = (v00 * (1 - tx) + v01 * tx) * (1 - ty) + (v10 * (1 - tx) + v11 * tx) * ty;
+  const [a, b, c, d, e, f, h, k] = [u00, u01, u10, u11, v00, v01, v10, v11] as number[];
+  out[0] = (a * (1 - tx) + b * tx) * (1 - ty) + (c * (1 - tx) + d * tx) * ty;
+  out[1] = (e * (1 - tx) + f * tx) * (1 - ty) + (h * (1 - tx) + k * tx) * ty;
   return true;
 }
 

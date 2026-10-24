@@ -58,6 +58,9 @@ export function MapCanvas({
   const closeLayers = useCallback(() => setLayersOpen(false), []);
   const leadHours = useAppStore((s) => s.leadHours);
   const flowStyle = useAppStore((s) => s.flowStyle);
+  const flowPaused = useAppStore((s) => s.flowPaused);
+  const windFlowSource = useAppStore((s) => s.windFlowSource);
+  const currentFlowSource = useAppStore((s) => s.currentFlowSource);
   const iceAvailability = useMemo(
     () =>
       modeAvailability(scene.iceField, leadHours, {
@@ -230,11 +233,16 @@ export function MapCanvas({
       <FlowOverlay
         engine={engine}
         field={scene.envField}
+        realWindFlow={scene.realWindFlow}
+        realCurrentFlow={scene.realCurrentFlow}
+        windSource={windFlowSource}
+        currentSource={currentFlowSource}
         wind={scene.layers.windFlow}
         current={scene.layers.currentFlow}
         style={flowStyle}
         loading={scene.status.flowLoading}
         error={scene.status.flowError}
+        paused={flowPaused}
       />
 
       {hover && tooltipPos && hover.kind === 'observed' && scene.observed?.available && (

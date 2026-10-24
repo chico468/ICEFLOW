@@ -15,6 +15,7 @@
 import { useState } from 'react';
 import { MapCanvas, type MapCanvasHandle } from '../map/MapCanvas';
 import type { MapScene } from '../map/MapEngine';
+import type { RouteProfileId } from '../api/types';
 import { RegionalMap } from '../map/RegionalMap';
 import type { LatLon } from '../map/projection';
 import { useAppStore } from '../store/useAppStore';
@@ -34,10 +35,12 @@ export function ChartViews({
   scene,
   fitTargets,
   onClickPoint,
+  onSelectRouteCandidate,
 }: {
   scene: MapScene;
   fitTargets: { lat: number; lon: number }[];
   onClickPoint?: (ll: LatLon) => void;
+  onSelectRouteCandidate?: (id: RouteProfileId) => void;
 }): JSX.Element {
   const [view, setView] = useState<View>('antarctic');
   const [polar, setPolar] = useState<MapCanvasHandle | null>(null);
@@ -70,6 +73,7 @@ export function ChartViews({
           polarEngine={polar?.engine ?? null}
           originId={originId}
           destinationId={destinationId}
+          onSelectRouteCandidate={onSelectRouteCandidate ?? (() => undefined)}
           toolbarLead={lead}
         />
       </div>

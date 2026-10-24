@@ -32,6 +32,7 @@ from src.core.constants import (
     RIO_PROHIBITED_THRESHOLD,
 )
 from src.core.environment import EnvironmentModel, get_environment
+from src.core.environment_time import EnvironmentTimeResolution, resolve_active_voyage_time
 from src.core.geo import destination_point, haversine_nm, initial_bearing_deg
 from src.core.growler_radar import RadarSweep, highest_threat, simulate_sweep
 from src.core.lindqvist_model import (
@@ -77,6 +78,7 @@ class VoyageTick(BaseModel):
     tick: int
     sim_hours: float
     timestamp_iso: str
+    environment_time: Optional[EnvironmentTimeResolution] = None
 
     latitude: float
     longitude: float
@@ -128,10 +130,13 @@ class VoyageState(BaseModel):
     status: str  # PLANNED, UNDER_WAY, ARRIVED, BESET, ABORTED
     created_iso: str
     departure_iso: str
+    environment_time: Optional[EnvironmentTimeResolution] = None
+    model_departure_time_hours: float = 0.0
 
     vessel_name: str
     vessel_key: str
     ice_class: str
+    route_profile_id: str = "balanced"
     origin: Tuple[float, float]
     destination: Tuple[float, float]
     origin_name: str = ""
@@ -167,6 +172,8 @@ class VoyageEngine:
         destination_name: str = "",
         vessel_key: str = "",
         departure: Optional[datetime] = None,
+        departure_time_hours: float = 0.0,
+        route_profile_id: str = "balanced",
         weights: Optional[RouteWeights] = None,
         sea_ice: Optional[SeaIceModel] = None,
         environment: Optional[EnvironmentModel] = None,
@@ -178,8 +185,10 @@ class VoyageEngine:
         self.sea_ice = sea_ice or get_sea_ice_model()
         self.env = environment or get_environment()
         self.avoid_icebergs = avoid_icebergs
+        self._departure_time_hours = departure_time_hours
 
         departure = departure or datetime.now(timezone.utc)
+        env_time = resolve_active_voyage_time(departure, 0.0, None, departure_time_hours)
         route = plan.optimized.waypoints if plan.optimized else plan.waypoints
 
         self.state = VoyageState(
@@ -187,9 +196,12 @@ class VoyageEngine:
             status="PLANNED",
             created_iso=datetime.now(timezone.utc).isoformat(timespec="seconds"),
             departure_iso=departure.isoformat(timespec="seconds"),
+            environment_time=env_time,
+            model_departure_time_hours=departure_time_hours,
             vessel_name=vessel.name,
             vessel_key=vessel_key,
             ice_class=ice_class.value,
+            route_profile_id=route_profile_id,
             origin=plan.origin,
             destination=plan.destination,
             origin_name=origin_name,
@@ -345,10 +357,17 @@ class VoyageEngine:
         self._evaluate_alerts(polaris, ice, env, sweep, speed, is_beset, remaining_nm)
 
         eta = remaining_nm / max(speed, 0.5)
+        tick_timestamp = (self._departure + timedelta(hours=self.state.sim_hours)).isoformat(timespec="seconds")
+        env_time = resolve_active_voyage_time(
+            self._departure, self.state.sim_hours, tick_timestamp, self._departure_time_hours
+        )
+        self.state.environment_time = env_time
+
         tick = VoyageTick(
             tick=self.state.current_tick,
             sim_hours=self.state.sim_hours,
-            timestamp_iso=(self._departure + timedelta(hours=self.state.sim_hours)).isoformat(timespec="seconds"),
+            timestamp_iso=tick_timestamp,
+            environment_time=env_time,
             latitude=round(new_lat, 5),
             longitude=round(new_lon, 5),
             heading_deg=round(heading, 1),
@@ -368,8 +387,8 @@ class VoyageEngine:
             ice_concentration=ice.concentration,
             ice_thickness_m=ice.thickness_m,
             ice_type=ice.ice_type.value,
-            rio=polaris.rio,
-            rio_status=polaris.status,
+            rio=getattr(polaris, "rio", 0),
+            rio_status=getattr(polaris, "status", "NORMAL"),
             polaris_speed_cap_knots=polaris.max_recommended_speed_knots,
             attainable_speed_knots=round(attainable, 2),
             compression_index=ice.compression_index,
@@ -583,6 +602,8 @@ def create_voyage(
     destination_name: str = "",
     vessel_key: str = "",
     departure: Optional[datetime] = None,
+    departure_time_hours: float = 0.0,
+    route_profile_id: str = "balanced",
     avoid_icebergs: bool = True,
     grid_resolution_deg: float = 0.5,
 ) -> VoyageEngine:
@@ -597,6 +618,7 @@ def create_voyage(
     plan = optimizer.optimize_route(
         origin[0], origin[1], destination[0], destination[1],
         grid_resolution_deg=grid_resolution_deg,
+        departure_time_hours=departure_time_hours,
         avoid_icebergs=avoid_icebergs,
     )
     return VoyageEngine(
@@ -607,6 +629,8 @@ def create_voyage(
         destination_name=destination_name,
         vessel_key=vessel_key,
         departure=departure,
+        departure_time_hours=departure_time_hours,
+        route_profile_id=route_profile_id,
         weights=weights,
         avoid_icebergs=avoid_icebergs,
     )

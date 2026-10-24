@@ -34,6 +34,8 @@ from src.core.constants import (
 from src.api.routers import environment as environment_router
 from src.api.routers import geo as geo_router
 from src.api.routers import navigation as navigation_router
+from src.api.routers import observed_ice as observed_ice_router
+from src.api.routers import real_flow as real_flow_router
 from src.api.routers import physics as physics_router
 from src.api.routers import voyages as voyages_router
 
@@ -134,6 +136,8 @@ app.include_router(geo_router.router)
 app.include_router(environment_router.router)
 app.include_router(physics_router.router)
 app.include_router(navigation_router.router)
+app.include_router(observed_ice_router.router)
+app.include_router(real_flow_router.router)
 app.include_router(voyages_router.router)
 
 

@@ -3,11 +3,13 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse, PlainTextResponse, Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+from src.core.environment_time import parse_utc_datetime
 
 from src.core.lindqvist_model import VesselParameters, get_vessel_preset
 from src.core.polaris_risk import IceClass
@@ -34,8 +36,18 @@ class CreateVoyageRequest(BaseModel):
     vessel_key: str = "vasiliy_golovnin"
     ice_class: Optional[IceClass] = None
     weights: Optional[RouteWeights] = None
+    route_profile_id: Literal["safety-first", "balanced", "fuel-efficient", "fastest"] = "balanced"
+    departure_iso: Optional[str] = None
+    departure_time_hours: float = Field(default=0.0, ge=0.0, allow_inf_nan=False)
     grid_resolution_deg: float = Field(default=0.5, ge=0.25, le=2.0)
     avoid_icebergs: bool = True
+
+    @field_validator("departure_iso")
+    @classmethod
+    def _validate_departure_iso(cls, value: Optional[str]) -> Optional[str]:
+        if value is not None:
+            parse_utc_datetime(value, "departure_iso")
+        return value
 
 
 class StepRequest(BaseModel):
@@ -66,12 +78,17 @@ def create(req: CreateVoyageRequest) -> VoyageState:
     except KeyError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    departure = parse_utc_datetime(req.departure_iso, "departure_iso") if req.departure_iso else None
+
     engine = create_voyage(
         origin=origin,
         destination=destination,
         vessel=vessel,
         ice_class=req.ice_class,
         weights=req.weights,
+        route_profile_id=req.route_profile_id,
+        departure=departure,
+        departure_time_hours=req.departure_time_hours,
         origin_name=origin_name,
         destination_name=destination_name,
         vessel_key=req.vessel_key,

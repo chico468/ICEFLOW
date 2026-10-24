@@ -100,6 +100,44 @@ test('particles start reliably: most are alive within half a second, and the cou
   assert.ok(controller.aliveCount > controller.particleCount * 0.8, `alive ${controller.aliveCount}/${controller.particleCount}`);
 });
 
+test('pausing freezes the current frame and resuming advances without applying the pause gap', () => {
+  const { controller, rec } = make('animated', new FakeView(-62, 60));
+  run(controller, 500);
+  const draws = controller.stats.draws;
+  const steps = controller.stats.steps;
+  const strokes = rec.calls.stroke ?? 0;
+  const p = controller.particleLayers[0].particles;
+  const before = p.lat[0];
+
+  controller.setPaused(true);
+  assert.equal(controller.frame(600_000), 'skipped');
+  assert.equal(controller.stats.draws, draws);
+  assert.equal(controller.stats.steps, steps);
+  assert.equal(rec.calls.stroke ?? 0, strokes, 'the visible canvas is untouched while paused');
+  assert.equal(p.lat[0], before);
+
+  controller.setPaused(false);
+  assert.equal(controller.frame(600_100), 'drew');
+  assert.equal(controller.stats.steps, steps + 1);
+  assert.equal(p.lat[0], before, 'one nominal step after resume does not move the particle latitude');
+});
+
+test('paused trails stay attached to the map when the view moves, without advancing particles', () => {
+  const view = new FakeView(-62, 60);
+  const { controller } = make('animated', view);
+  run(controller, 500);
+  const p = controller.particleLayers[0].particles;
+  const beforeLat = p.lat[0];
+  const beforeX = p.trailX[0];
+  const steps = controller.stats.steps;
+  controller.setPaused(true);
+  view.moveTo(-61, 60);
+  assert.equal(controller.frame(600_000), 'drew');
+  assert.equal(controller.stats.steps, steps);
+  assert.equal(p.lat[0], beforeLat);
+  assert.notEqual(p.trailX[0], beforeX, 'the stored trail is reprojected onto the new map view');
+});
+
 test('particles follow the field: a purely eastward wind leaves every trail on a line of constant latitude', () => {
   const { controller } = make('animated', new FakeView(-62, 60));
   run(controller, 1500);

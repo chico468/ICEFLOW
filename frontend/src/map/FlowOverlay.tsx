@@ -25,7 +25,7 @@
  * is drawn: loading, failed, no data, or the view lying outside the field's extent.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { EnvField } from '../api/types';
+import type { EnvField, RealFlowField } from '../api/types';
 import { useScreenActive } from '../components/screenActive';
 import { useReducedMotion } from '../hooks/useReducedMotion';
 import { coverageText, makeFlowGrid, type FlowStyle } from './flow';
@@ -35,15 +35,26 @@ import type { MapEngine } from './MapEngine';
 interface Props {
   engine: MapEngine;
   field: EnvField | null;
+  realWindFlow: RealFlowField | null;
+  realCurrentFlow: RealFlowField | null;
+  windSource: 'simulated' | 'noaa-gfs';
+  currentSource: 'simulated' | 'copernicus';
   wind: boolean;
   current: boolean;
   style: FlowStyle;
   loading: boolean;
   error: string | null;
+  paused: boolean;
 }
 
-export function FlowOverlay({ engine, field, wind, current, style, loading, error }: Props): JSX.Element | null {
+export function FlowOverlay({ engine, field, realWindFlow, realCurrentFlow, windSource, currentSource, wind, current, style, loading, error, paused }: Props): JSX.Element | null {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const controllerRef = useRef<FlowController | null>(null);
+  const rafRef = useRef<number | null>(null);
+  const pausePollRef = useRef<number | null>(null);
+  const loopRef = useRef<((now: number) => void) | null>(null);
+  const pausedRef = useRef(paused);
+  pausedRef.current = paused;
   const screenActive = useScreenActive();
   const tabVisible = useTabVisible();
   const reduced = useReducedMotion();
@@ -63,8 +74,20 @@ export function FlowOverlay({ engine, field, wind, current, style, loading, erro
     [usable],
   );
 
-  const windGrid = wind ? grids.wind : null;
-  const currentGrid = current ? grids.current : null;
+  const realWindGrid = useMemo(
+    () => realWindFlow?.available && realWindFlow.lats && realWindFlow.lons && realWindFlow.u && realWindFlow.v
+      ? makeFlowGrid(realWindFlow.lats, realWindFlow.lons, realWindFlow.u, realWindFlow.v)
+      : null,
+    [realWindFlow],
+  );
+  const realCurrentGrid = useMemo(
+    () => realCurrentFlow?.available && realCurrentFlow.lats && realCurrentFlow.lons && realCurrentFlow.u && realCurrentFlow.v
+      ? makeFlowGrid(realCurrentFlow.lats, realCurrentFlow.lons, realCurrentFlow.u, realCurrentFlow.v)
+      : null,
+    [realCurrentFlow],
+  );
+  const windGrid = wind ? (windSource === 'simulated' ? grids.wind : realWindGrid) : null;
+  const currentGrid = current ? (currentSource === 'simulated' ? grids.current : realCurrentGrid) : null;
   const anyLayer = wind || current;
   const haveData = windGrid !== null || currentGrid !== null;
   const run = screenActive && tabVisible && haveData;
@@ -76,6 +99,8 @@ export function FlowOverlay({ engine, field, wind, current, style, loading, erro
     const ctx = canvas.getContext('2d');
     if (!ctx) return undefined;
     if (!run) {
+      controllerRef.current = null;
+      loopRef.current = null;
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       return undefined;
@@ -91,17 +116,49 @@ export function FlowOverlay({ engine, field, wind, current, style, loading, erro
       devicePixelRatio: () => window.devicePixelRatio || 1,
       onOutside: setOutside,
     });
-    let raf = 0;
+    controllerRef.current = controller;
+    const motionPaused = (): boolean => pausedRef.current && mode === 'animated';
     const loop = (now: number): void => {
-      raf = requestAnimationFrame(loop);
       controller.frame(now);
+      if (!motionPaused()) rafRef.current = requestAnimationFrame(loop);
     };
-    raf = requestAnimationFrame(loop);
+    loopRef.current = loop;
+    if (motionPaused()) {
+      // Seed a first visible frame, then hold the animation clock.
+      controller.frame(performance.now());
+      controller.setPaused(true);
+    } else {
+      rafRef.current = requestAnimationFrame(loop);
+    }
     return () => {
-      cancelAnimationFrame(raf);
+      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+      if (pausePollRef.current !== null) window.clearInterval(pausePollRef.current);
+      pausePollRef.current = null;
+      controllerRef.current = null;
+      loopRef.current = null;
       controller.dispose();
     };
   }, [engine, run, windGrid, currentGrid, mode]);
+
+  // Pause only the animation clock. Keep the controller and its last canvas frame alive so resume
+  // continues the same stream of particles without a reset or a large time jump.
+  useEffect(() => {
+    const controller = controllerRef.current;
+    if (!run || mode !== 'animated' || !controller) return;
+    controller.setPaused(paused);
+    if (paused) {
+      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+      if (pausePollRef.current !== null) window.clearInterval(pausePollRef.current);
+      // Low-rate checks keep frozen particles registered to the map if the user pans or resizes.
+      pausePollRef.current = window.setInterval(() => controller.frame(performance.now()), 120);
+    } else if (rafRef.current === null && loopRef.current) {
+      if (pausePollRef.current !== null) window.clearInterval(pausePollRef.current);
+      pausePollRef.current = null;
+      rafRef.current = requestAnimationFrame(loopRef.current);
+    }
+  }, [paused, run, mode]);
 
   // Clear any stale 'outside' notice when the layers or data go away.
   useEffect(() => {
@@ -112,8 +169,11 @@ export function FlowOverlay({ engine, field, wind, current, style, loading, erro
 
   let notice: { text: string; alert?: boolean } | null = null;
   if (error) notice = { text: `Wind and current data unavailable: ${error}. Nothing is shown or animated.`, alert: true };
-  else if (loading && !field) notice = { text: 'Loading wind and current…' };
-  else if (!field || !haveData) notice = { text: 'No wind or current data for this time. Nothing is shown.' };
+  else if (loading && !haveData) notice = { text: 'Loading selected flow data…' };
+  else if (!haveData) {
+    const unavailable = [wind && windSource === 'noaa-gfs' ? realWindFlow : null, current && currentSource === 'copernicus' ? realCurrentFlow : null].find((x) => x && !x.available);
+    notice = { text: unavailable ? `${unavailable.reason} Run: ${unavailable.provenance.acquisition_command}` : 'No selected flow data is available. Nothing is shown.' };
+  }
   else if (outside && extent) notice = { text: `This view is outside the flow field (${coverageText(extent)}). Pan back to see vectors.` };
   else if (reduced) notice = { text: 'Reduced motion is on: showing static vectors instead of moving particles.' };
 

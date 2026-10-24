@@ -50,6 +50,7 @@ import numpy as np
 from pydantic import BaseModel, Field
 
 from src.core.constants import (
+    DATA_PROVENANCE,
     ICEBERG_EXCLUSION_RADIUS_NM,
     MGO_CO2_FACTOR,
     MGO_PRICE_USD_PER_TONNE,
@@ -186,6 +187,37 @@ class OptimizationSummary(BaseModel):
         "the difference. No fixed multiplier is applied."
     )
     is_synthetic_environment: bool = True
+
+
+class RouteProfile(BaseModel):
+    id: str
+    name: str
+    description: str
+    weights: RouteWeights
+
+
+class RouteAlternative(BaseModel):
+    id: str
+    name: str
+    description: str
+    weights: RouteWeights
+    evaluation: RouteEvaluation
+    is_feasible: bool
+    goal_reached: bool
+    warnings: List[str] = Field(default_factory=list)
+    search: SearchDiagnostics
+    is_synthetic_environment: bool = True
+
+
+class RouteAlternativesResult(BaseModel):
+    candidates: List[RouteAlternative]
+    balanced_summary: Optional[OptimizationSummary] = None
+    comparison_reference_id: str = "balanced"
+    omitted_profiles: List[Dict[str, str]] = Field(default_factory=list)
+    distinct_alternatives_found: int
+    planning_ms: float
+    is_synthetic_environment: bool = True
+    environment_provenance: Dict[str, Dict[str, str]] = Field(default_factory=dict)
 
 
 # --------------------------------------------------------------------------------------
@@ -584,6 +616,7 @@ class PolarRouteOptimizer:
         ice_aware: bool,
         exclusions: Sequence["DriftingExclusion"],
         t0_hours: float,
+        weights: Optional[RouteWeights] = None,
     ) -> Tuple[List[Tuple[int, int]], SearchDiagnostics]:
         """
         A* over the lattice.
@@ -593,7 +626,7 @@ class PolarRouteOptimizer:
         the full multi-objective cost and every hard constraint apply.
         """
         started = time.perf_counter()
-        w = self.weights
+        w = weights or self.weights
 
         # Admissible heuristic: the cheapest conceivable cost per nautical mile is open water at
         # the ship's maximum speed with no risk penalty. This never over-estimates, so A* stays
@@ -901,6 +934,177 @@ class PolarRouteOptimizer:
         return max(0, min(cache.n_lat - 1, i)), max(0, min(cache.n_lon - 1, j))
 
     # --------------------------------------------------------------- planning
+    def optimize_alternatives(
+        self,
+        start_lat: float,
+        start_lon: float,
+        dest_lat: float,
+        dest_lon: float,
+        grid_resolution_deg: float = DEFAULT_LAT_STEP,
+        departure_time_hours: float = 0.0,
+        avoid_icebergs: bool = True,
+    ) -> RouteAlternativesResult:
+        """Search distinct weighted routes against one shared field cache and iceberg forecast."""
+        started = time.perf_counter()
+        lat_step = float(np.clip(grid_resolution_deg, 0.25, 2.0))
+        lon_step = lat_step * 2.0
+        start = (start_lat, start_lon)
+        dest = (dest_lat, dest_lon)
+        cache, dest_lon_unwrapped = self._build_cache(
+            start, dest, departure_time_hours, lat_step, lon_step,
+        )
+        start_node = self._node_of(
+            cache, start_lat,
+            cache.lon_min + lon_delta(normalize_lon(cache.lon_min), start_lon),
+        )
+        goal_node = self._node_of(cache, dest_lat, dest_lon_unwrapped)
+        exclusions = (
+            self._build_exclusions(start, dest, cache, departure_time_hours)
+            if avoid_icebergs else []
+        )
+
+        balanced = self.weights
+        profiles = [
+            RouteProfile(
+                id="balanced",
+                name="Balanced",
+                description="Uses your current fuel, time and risk weights.",
+                weights=balanced,
+            ),
+            RouteProfile(
+                id="safety-first",
+                name="Safety-first",
+                description="Raises the soft compression-risk penalty; all hard constraints stay active.",
+                weights=RouteWeights(fuel=1.0, time=0.2, risk=6.0),
+            ),
+            RouteProfile(
+                id="fuel-efficient",
+                name="Fuel-efficient",
+                description="Prioritizes modelled fuel burn while retaining POLARIS and navigation constraints.",
+                weights=RouteWeights(fuel=4.0, time=0.05, risk=max(0.5, balanced.risk)),
+            ),
+            RouteProfile(
+                id="fastest",
+                name="Fastest",
+                description="Prioritizes modelled transit time while retaining POLARIS and navigation constraints.",
+                weights=RouteWeights(fuel=0.25, time=4.0, risk=max(0.5, balanced.risk)),
+            ),
+        ]
+
+        base_path, _ = self._search(
+            cache, start_node, goal_node, dest, ice_aware=False, exclusions=(),
+            t0_hours=departure_time_hours,
+        )
+        base_points = self._path_to_points(cache, base_path, start, dest)
+        if len(base_points) < 2:
+            base_points = great_circle_path(start_lat, start_lon, dest_lat, dest_lon, 40)
+        baseline = self.evaluate(
+            cache, base_points, "Ice-blind shortest navigable route", departure_time_hours,
+        )
+
+        candidates: List[RouteAlternative] = []
+        omitted: List[Dict[str, str]] = []
+        seen_geometries: Dict[Tuple[Tuple[float, float], ...], str] = {}
+        balanced_summary: Optional[OptimizationSummary] = None
+        for profile in profiles:
+            path, diagnostics = self._search(
+                cache, start_node, goal_node, dest, ice_aware=True,
+                exclusions=exclusions, t0_hours=departure_time_hours,
+                weights=profile.weights,
+            )
+            points = self._path_to_points(
+                cache, path, start, dest, include_destination=diagnostics.goal_reached,
+            )
+            if len(points) < 2:
+                points = [start]
+            evaluation = self.evaluate(
+                cache, points, f"{profile.name} route", departure_time_hours,
+            )
+            geometry = tuple((w.latitude, w.longitude) for w in evaluation.waypoints)
+            duplicate_of = seen_geometries.get(geometry)
+            if duplicate_of is not None:
+                omitted.append({
+                    "profile_id": profile.id,
+                    "reason": f"Same calculated geometry as {duplicate_of}; not listed as a distinct alternative.",
+                })
+                if profile.id == "balanced":
+                    omitted[-1]["reason"] = f"Same calculated geometry as {duplicate_of}; that candidate remains the balanced reference."
+                continue
+            seen_geometries[geometry] = profile.name
+            warnings: List[str] = []
+            if not diagnostics.goal_reached:
+                warnings.append("Search did not reach the destination; this is a partial, non-selectable route.")
+            if not evaluation.is_feasible:
+                warnings.append(evaluation.infeasible_reason or "Route evaluation found a prohibited POLARIS waypoint.")
+            candidate = RouteAlternative(
+                id=profile.id,
+                name=profile.name,
+                description=profile.description,
+                weights=profile.weights,
+                evaluation=evaluation,
+                is_feasible=diagnostics.goal_reached and evaluation.is_feasible,
+                goal_reached=diagnostics.goal_reached,
+                warnings=warnings,
+                search=diagnostics,
+                is_synthetic_environment=bool(getattr(self.env, "is_synthetic", True)),
+            )
+            candidates.append(candidate)
+
+            if profile.id == "balanced":
+                optimized = evaluation
+                fuel_saved = baseline.total_fuel_burn_tonnes - optimized.total_fuel_burn_tonnes
+                fuel_saved_pct = (
+                    fuel_saved / baseline.total_fuel_burn_tonnes * 100.0
+                    if baseline.total_fuel_burn_tonnes > 1e-9 else 0.0
+                )
+                summary_warnings = list(warnings)
+                if not baseline.is_feasible:
+                    summary_warnings.append(
+                        "The ice-blind baseline enters ice where POLARIS prohibits operation; its fuel figure is counterfactual."
+                    )
+                balanced_summary = OptimizationSummary(
+                    origin=start,
+                    destination=dest,
+                    total_distance_nm=optimized.total_distance_nm,
+                    total_transit_hours=optimized.total_transit_hours,
+                    total_fuel_burn_tonnes=optimized.total_fuel_burn_tonnes,
+                    baseline_direct_fuel_tonnes=baseline.total_fuel_burn_tonnes,
+                    fuel_saved_percentage=round(fuel_saved_pct, 2),
+                    minimum_rio=optimized.minimum_rio,
+                    waypoints_count=len(optimized.waypoints),
+                    waypoints=optimized.waypoints,
+                    optimized=optimized,
+                    baseline=baseline,
+                    time_saved_hours=round(baseline.total_transit_hours - optimized.total_transit_hours, 1),
+                    distance_delta_nm=round(optimized.total_distance_nm - baseline.total_distance_nm, 1),
+                    co2_saved_tonnes=round(fuel_saved * MGO_CO2_FACTOR, 2),
+                    cost_saved_usd=round(fuel_saved * MGO_PRICE_USD_PER_TONNE, 2),
+                    cost_saved_inr=round(fuel_saved * MGO_PRICE_USD_PER_TONNE * USD_TO_INR, 2),
+                    baseline_would_be_prohibited=not baseline.is_feasible,
+                    vessel_name=self.vessel.name,
+                    ice_class=self.ice_class.value,
+                    weights=balanced,
+                    departure_time_hours=departure_time_hours,
+                    search=diagnostics,
+                    warnings=summary_warnings,
+                    is_synthetic_environment=bool(getattr(self.env, "is_synthetic", True)),
+                )
+
+        if not any(c.id == "balanced" for c in candidates) and candidates:
+            omitted.append({"profile_id": "balanced", "reason": "Balanced geometry duplicates another listed candidate."})
+        return RouteAlternativesResult(
+            candidates=candidates,
+            balanced_summary=balanced_summary,
+            omitted_profiles=omitted,
+            distinct_alternatives_found=sum(1 for candidate in candidates if candidate.is_feasible),
+            planning_ms=round((time.perf_counter() - started) * 1000.0, 1),
+            is_synthetic_environment=bool(getattr(self.env, "is_synthetic", True)),
+            environment_provenance={
+                key: DATA_PROVENANCE[key]
+                for key in ("sea_ice_field", "atmosphere_ocean", "iceberg_catalogue", "coastline")
+            },
+        )
+
     def optimize_route(
         self,
         start_lat: float,
@@ -1011,6 +1215,7 @@ class PolarRouteOptimizer:
         path: Sequence[Tuple[int, int]],
         start: Tuple[float, float],
         dest: Tuple[float, float],
+        include_destination: bool = True,
     ) -> List[Tuple[float, float]]:
         if not path:
             return []
@@ -1018,6 +1223,6 @@ class PolarRouteOptimizer:
         for i, j in path[1:]:
             lat, lon_unwrapped = cache.position(i, j)
             points.append((lat, normalize_lon(lon_unwrapped)))
-        if haversine_nm(points[-1][0], points[-1][1], dest[0], dest[1]) > 1.0:
+        if include_destination and haversine_nm(points[-1][0], points[-1][1], dest[0], dest[1]) > 1.0:
             points.append(dest)
         return points

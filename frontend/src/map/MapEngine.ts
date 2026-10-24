@@ -12,8 +12,10 @@ import type {
   IcebergForecast,
   IcebergProfile,
   ObservedIcebergsResponse,
+  RealFlowField,
   Port,
   RadarSweep,
+  RouteAlternative,
   Station,
   Waypoint,
 } from '../api/types';
@@ -112,6 +114,15 @@ export const IDLE_STATUS: SceneStatus = {
   observedError: null,
 };
 
+function candidateColor(id: RouteAlternative['id']): string {
+  switch (id) {
+    case 'safety-first': return MAP_COLORS.routeSafetyFirst;
+    case 'balanced': return MAP_COLORS.routeBalanced;
+    case 'fuel-efficient': return MAP_COLORS.routeFuelEfficient;
+    case 'fastest': return MAP_COLORS.routeFastest;
+  }
+}
+
 export interface MapScene {
   coastline: CoastlineFeature[];
   stations: Station[];
@@ -121,12 +132,18 @@ export interface MapScene {
   iceFieldBase: IceField | null;
   /** Wind and current vectors for the particle overlay; null until a flow layer is on. */
   envField: EnvField | null;
+  realWindFlow: RealFlowField | null;
+  realCurrentFlow: RealFlowField | null;
+  windFlowSource: 'simulated' | 'noaa-gfs';
+  currentFlowSource: 'simulated' | 'copernicus';
   observed: ObservedIcebergsResponse | null;
   status: SceneStatus;
   icebergs: IcebergProfile[];
   selectedBergId: string | null;
   bergDrift: IcebergForecast | null;
   optimisedRoute: Waypoint[];
+  routeAlternatives: RouteAlternative[];
+  selectedCandidateId: RouteAlternative['id'] | null;
   baselineRoute: Waypoint[];
   track: [number, number][];
   vessel: { lat: number; lon: number; heading: number } | null;
@@ -146,12 +163,18 @@ export function emptyScene(): MapScene {
     iceField: null,
     iceFieldBase: null,
     envField: null,
+    realWindFlow: null,
+    realCurrentFlow: null,
+    windFlowSource: 'simulated',
+    currentFlowSource: 'simulated',
     observed: null,
     status: { ...IDLE_STATUS },
     icebergs: [],
     selectedBergId: null,
     bergDrift: null,
     optimisedRoute: [],
+    routeAlternatives: [],
+    selectedCandidateId: null,
     baselineRoute: [],
     track: [],
     vessel: null,
@@ -180,6 +203,7 @@ export class MapEngine {
   private dirty = true;
   private rafId: number | null = null;
   private frameMs = 0;
+  private readonly changeListeners = new Set<() => void>();
 
   attach(canvas: HTMLCanvasElement): void {
     this.canvas = canvas;
@@ -197,10 +221,21 @@ export class MapEngine {
   setScene(scene: MapScene): void {
     this.scene = scene;
     this.dirty = true;
+    this.notifyChange();
   }
 
   invalidate(): void {
     this.dirty = true;
+    this.notifyChange();
+  }
+
+  subscribe(listener: () => void): () => void {
+    this.changeListeners.add(listener);
+    return () => this.changeListeners.delete(listener);
+  }
+
+  private notifyChange(): void {
+    this.changeListeners.forEach((listener) => listener());
   }
 
   /** Sizes the backing store for the device pixel ratio and keeps CSS pixels as the unit. */
@@ -213,6 +248,7 @@ export class MapEngine {
     this.canvas.style.height = `${cssHeight}px`;
     this.viewport.resize(cssWidth, cssHeight);
     this.dirty = true;
+    this.notifyChange();
   }
 
   get lastFrameDurationMs(): number {
@@ -266,7 +302,17 @@ export class MapEngine {
     }
     if (L.baselineRoute && s.baselineRoute.length > 1)
       drawRoute(ctx, vp, s.baselineRoute, { dashed: true, color: MAP_COLORS.routeBaseline, width: 1.5 });
-    if (L.optimisedRoute && s.optimisedRoute.length > 1) {
+    if (L.optimisedRoute && s.routeAlternatives.length > 0) {
+      for (const candidate of s.routeAlternatives) {
+        const selected = candidate.id === s.selectedCandidateId;
+        drawRoute(ctx, vp, candidate.evaluation.waypoints, {
+          color: candidateColor(candidate.id),
+          width: selected ? 4.8 : 2.7,
+          dashed: !candidate.is_feasible,
+        });
+        if (selected && candidate.is_feasible) drawRouteEnds(ctx, vp, candidate.evaluation.waypoints);
+      }
+    } else if (L.optimisedRoute && s.optimisedRoute.length > 1) {
       drawRoute(ctx, vp, s.optimisedRoute, {
         color: MAP_COLORS.routeOptimised,
         width: 2.2,
@@ -275,6 +321,7 @@ export class MapEngine {
       // The two ends of the passage are marked only while the route itself is shown.
       drawRouteEnds(ctx, vp, s.optimisedRoute);
     }
+
     if (L.track) drawTrack(ctx, vp, s.track);
     if (L.radarRings && s.vessel)
       drawRadarRings(ctx, vp, s.vessel.lat, s.vessel.lon, s.radar?.max_range_nm ?? 6, s.radar);

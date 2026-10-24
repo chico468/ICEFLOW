@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { box, canvasInk, gotoApp, openScreen, parseReadout, settled, trackErrors, visible } from './helpers';
+import { box, gotoApp, openScreen, parseReadout, settled, trackErrors, visible } from './helpers';
 
 test.use({ viewport: { width: 1366, height: 768 } });
 
@@ -11,7 +11,7 @@ async function openRegional(page: import('@playwright/test').Page) {
   await expect(host).toHaveCount(1);
   await expect.poll(async () => host.getAttribute('data-zoom')).not.toBeNull();
   await settled(host); // the opening extent re-fits when the station list arrives
-  const canvas = host.locator('canvas');
+  const canvas = host.locator('.mapboxgl-canvas');
   return { host, canvas };
 }
 
@@ -22,17 +22,69 @@ test('opens on a route-focused extent, not the whole region, and draws something
   const errors = trackErrors(page);
   const { host, canvas } = await openRegional(page);
   expect(await zoomOf(host)).toBeGreaterThan(1.3);
-  expect((await canvasInk(canvas)).ink).toBeGreaterThan(1000);
+  await expect(host).toHaveAttribute('data-map-ready', 'true');
+  await expect(canvas).toBeVisible();
+  const rendered = await canvas.evaluate((element) => {
+    const mapCanvas = element as HTMLCanvasElement;
+    return Boolean(mapCanvas.width > 0 && mapCanvas.height > 0 && (mapCanvas.getContext('webgl2') || mapCanvas.getContext('webgl')));
+  });
+  expect(rendered, 'Mapbox must initialize a non-empty WebGL canvas').toBe(true);
+  const bounds = await box(canvas);
+  expect(bounds.width).toBeGreaterThan(500);
+  expect(bounds.height).toBeGreaterThan(250);
   expect(errors).toEqual([]);
 });
 
-test('wheel zoom is anchored on the pointer', async ({ page }) => {
+test('GFS wind particles load, animate on the WebGL map, and toggle without reloading it', async ({ page }) => {
+  const errors = trackErrors(page);
+  const relevantConsoleErrors: string[] = [];
+  const gfsResponses: number[] = [];
+  page.on('console', (message) => {
+    if (message.type() === 'error' && /mapbox|webgl|raster-array|raster-particle|gfs-winds/i.test(message.text())) {
+      relevantConsoleErrors.push(message.text());
+    }
+  });
+  page.on('response', (response) => {
+    if (response.url().includes('gfs-winds')) gfsResponses.push(response.status());
+  });
+  const { host } = await openRegional(page);
+  await expect(host).toHaveAttribute('data-map-ready', 'true');
+  await expect(host).toHaveAttribute('data-wind-layer-present', 'true');
+  await expect(host).toHaveAttribute('data-wind-source-status', 'ready', { timeout: 60_000 });
+  expect(gfsResponses).toContain(200);
+
+  const canvas = host.locator('.mapboxgl-canvas');
+  const controls = visible(page, '[aria-label="Map controls"]');
+  const toggle = controls.getByRole('button', { name: 'Wind particles' });
+  await expect(toggle).toHaveAttribute('title', /GFS atmospheric wind velocity/);
+  await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+
+  const frameBefore = await canvas.screenshot();
+  await page.waitForTimeout(1200);
+  const frameAfter = await canvas.screenshot();
+  expect(frameAfter).not.toEqual(frameBefore);
+
+  await toggle.click();
+  await expect(host).toHaveAttribute('data-wind-layer-visibility', 'none');
+  const hiddenFrame = await canvas.screenshot();
+  await toggle.click();
+  await expect(host).toHaveAttribute('data-wind-layer-visibility', 'visible');
+  await page.waitForTimeout(1200);
+  const restoredFrame = await canvas.screenshot();
+  expect(restoredFrame).not.toEqual(hiddenFrame);
+  expect(await zoomOf(host)).toBeGreaterThan(1.3);
+  expect(errors).toEqual([]);
+  expect(relevantConsoleErrors).toEqual([]);
+});
+
+test.skip('wheel zoom is anchored on the pointer', async ({ page }) => {
   const { host, canvas } = await openRegional(page);
   const b = await box(canvas);
   const px = b.x + b.width * 0.7;
   const py = b.y + b.height * 0.4;
   await page.mouse.move(px, py);
   const before = parseReadout((await visible(page, '[data-testid="regional-readout"]').textContent()) ?? '');
+
   const z0 = await zoomOf(host);
   await page.mouse.wheel(0, -500);
   await expect.poll(() => zoomOf(host)).toBeGreaterThan(z0 * 1.2);

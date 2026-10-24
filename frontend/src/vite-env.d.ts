@@ -8,6 +8,8 @@ interface ImportMetaEnv {
    * same-origin. Set it only when the frontend bundle is hosted separately from the API.
    */
   readonly VITE_API_BASE_URL?: string;
+  /** Public Mapbox token used by the regional context map. */
+  readonly VITE_MAPBOX_ACCESS_TOKEN?: string;
 }
 
 interface ImportMeta {

@@ -16,7 +16,7 @@ test('wind: the overlay appears, draws, and keeps moving', async ({ page }) => {
   const errors = trackErrors(page);
   await gotoApp(page);
   await openScreen(page, 'Sail');
-  await enable(page, /Wind \(simulated\)/);
+  await enable(page, /Atmospheric wind/);
   await expect(overlay(page)).toHaveCount(1);
   await expect.poll(async () => (await canvasInk(overlay(page))).ink, { timeout: 8000 }).toBeGreaterThan(50);
   const hashes = new Set<number>();
@@ -28,30 +28,52 @@ test('wind: the overlay appears, draws, and keeps moving', async ({ page }) => {
   expect(errors).toEqual([]);
 });
 
+test('particle animation pauses on the current frame and resumes smoothly', async ({ page }) => {
+  await gotoApp(page);
+  await openScreen(page, 'Sail');
+  await enable(page, /Atmospheric wind/);
+  await expect.poll(async () => (await canvasInk(overlay(page))).ink, { timeout: 8000 }).toBeGreaterThan(50);
+
+  const pause = visible(page, '#map-layer-panel').getByRole('button', { name: 'Pause flow animation' });
+  await pause.click();
+  await expect(visible(page, '#map-layer-panel').getByRole('button', { name: 'Resume flow animation' })).toBeEnabled();
+  const pausedHash = (await canvasInk(overlay(page))).hash;
+  await page.waitForTimeout(700);
+  expect((await canvasInk(overlay(page))).hash).toBe(pausedHash);
+
+  await visible(page, '#map-layer-panel').getByRole('button', { name: 'Resume flow animation' }).click();
+  const hashes = new Set<number>();
+  for (let i = 0; i < 5; i += 1) {
+    hashes.add((await canvasInk(overlay(page))).hash);
+    await page.waitForTimeout(250);
+  }
+  expect(hashes.size).toBeGreaterThan(2);
+});
+
 test('wind and current are independent layers: each can be on or off without affecting the other', async ({ page }) => {
   const errors = trackErrors(page);
   await gotoApp(page);
   await openScreen(page, 'Sail');
   const legend = visible(page, '[aria-label="Chart legend"]');
 
-  await enable(page, /Wind \(simulated\)/);
+  await enable(page, /Atmospheric wind/);
   await expect(overlay(page)).toHaveCount(1);
   await expect(legend).toContainText('Wind (simulated)');
   await expect(legend).not.toContainText('Current (simulated)');
 
-  await toggle(page, /Ocean current \(simulated\)/).click();
+  await toggle(page, /Ocean currents/).click();
   await expect(legend).toContainText('Wind (simulated)');
   await expect(legend).toContainText('Current (simulated)');
 
   // Turn wind off: the overlay must stay (current is still on) and must still be drawing.
-  await toggle(page, /Wind \(simulated\)/).click();
+  await toggle(page, /Atmospheric wind/).click();
   await expect(legend).not.toContainText('Wind (simulated)');
   await expect(legend).toContainText('Current (simulated)');
   await expect(overlay(page)).toHaveCount(1);
   await expect.poll(async () => (await canvasInk(overlay(page))).ink, { timeout: 8000 }).toBeGreaterThan(20);
 
   // Both off: nothing is rendered at all.
-  await toggle(page, /Ocean current \(simulated\)/).click();
+  await toggle(page, /Ocean currents/).click();
   await expect(overlay(page)).toHaveCount(0);
   expect(errors).toEqual([]);
 });
@@ -59,7 +81,7 @@ test('wind and current are independent layers: each can be on or off without aff
 test('arrows mode draws a still, non-empty picture', async ({ page }) => {
   await gotoApp(page);
   await openScreen(page, 'Sail');
-  await enable(page, /Wind \(simulated\)/);
+  await enable(page, /Atmospheric wind/);
   await visible(page, '#map-layer-panel').getByRole('button', { name: 'Arrows' }).click();
   await expect.poll(async () => (await canvasInk(overlay(page))).ink, { timeout: 8000 }).toBeGreaterThan(50);
   const a = await canvasInk(overlay(page));
@@ -72,7 +94,7 @@ test('reduced motion: stated on screen, static vectors, not a frozen animation',
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await gotoApp(page);
   await openScreen(page, 'Sail');
-  await enable(page, /Wind \(simulated\)/);
+  await enable(page, /Atmospheric wind/);
   await expect(visible(page, '[role="status"]').filter({ hasText: 'Reduced motion is on: showing static vectors' })).toHaveCount(1);
   await expect.poll(async () => (await canvasInk(overlay(page))).ink, { timeout: 8000 }).toBeGreaterThan(50);
   const a = await canvasInk(overlay(page));
@@ -84,7 +106,7 @@ test('a failed request shows an alert and draws nothing', async ({ page }) => {
   await page.route(/\/env\/field/, (r) => r.fulfill({ status: 500, body: 'boom' }));
   await gotoApp(page);
   await openScreen(page, 'Sail');
-  await enable(page, /Wind \(simulated\)/);
+  await enable(page, /Atmospheric wind/);
   await expect(visible(page, '[role="alert"]').filter({ hasText: /unavailable/i })).toHaveCount(1, { timeout: 15_000 });
   expect((await canvasInk(overlay(page))).ink).toBe(0);
 });
@@ -94,7 +116,7 @@ test('a malformed response is handled: a notice, no crash', async ({ page }) => 
   await page.route(/\/env\/field/, (r) => r.fulfill({ status: 200, contentType: 'application/json', body: '{}' }));
   await gotoApp(page);
   await openScreen(page, 'Sail');
-  await enable(page, /Wind \(simulated\)/);
+  await enable(page, /Atmospheric wind/);
   await expect(visible(page, '[role="status"]').filter({ hasText: /No wind or current data/ })).toHaveCount(1, { timeout: 15_000 });
   expect(errors).toEqual([]);
 });
@@ -102,7 +124,7 @@ test('a malformed response is handled: a notice, no crash', async ({ page }) => 
 test('another screen\'s overlay never ghosts over this one: one visible overlay, hidden ones draw nothing, and it resumes on return', async ({ page }) => {
   await gotoApp(page);
   await openScreen(page, 'Sail');
-  await enable(page, /Wind \(simulated\)/);
+  await enable(page, /Atmospheric wind/);
   await expect.poll(async () => (await canvasInk(overlay(page))).ink, { timeout: 8000 }).toBeGreaterThan(50);
 
   // Layer toggles are global, so Plan's chart shows wind too once it is on screen. What must hold: exactly one
@@ -130,7 +152,7 @@ test('another screen\'s overlay never ghosts over this one: one visible overlay,
 test('hiding the chart view stops its overlay: Regional view leaves the polar overlay idle and blank', async ({ page }) => {
   await gotoApp(page);
   await openScreen(page, 'Sail');
-  await enable(page, /Wind \(simulated\)/);
+  await enable(page, /Atmospheric wind/);
   await expect.poll(async () => (await canvasInk(overlay(page))).ink, { timeout: 8000 }).toBeGreaterThan(50);
   await page.keyboard.press('Escape');
   await visible(page, '[aria-label="Chart view"]').getByRole('button', { name: 'Regional' }).click();
@@ -145,8 +167,8 @@ test('stays stable through repeated zooming and panning', async ({ page }) => {
   const errors = trackErrors(page);
   await gotoApp(page);
   await openScreen(page, 'Sail');
-  await enable(page, /Wind \(simulated\)/);
-  await toggle(page, /Ocean current \(simulated\)/).click();
+  await enable(page, /Atmospheric wind/);
+  await toggle(page, /Ocean currents/).click();
   await page.keyboard.press('Escape');
   const cell = visible(page, '[data-testid="map-cell"] canvas').first();
   const b = (await cell.boundingBox())!;

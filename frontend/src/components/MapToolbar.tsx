@@ -25,6 +25,7 @@ export function MapToolbar({ lead, groups }: { lead?: ReactNode; groups: ReactNo
 
 export function ToolButton({
   label,
+  hint,
   onClick,
   children,
   pressed,
@@ -33,6 +34,7 @@ export function ToolButton({
   expanded,
 }: {
   label: string;
+  hint?: string;
   onClick: () => void;
   children: ReactNode;
   pressed?: boolean;
@@ -44,7 +46,7 @@ export function ToolButton({
     <button
       type="button"
       className={`map-tool ${pressed ? 'map-tool-on' : ''}`}
-      title={label}
+      title={hint ?? label}
       aria-label={label}
       aria-pressed={pressed}
       aria-expanded={expanded}

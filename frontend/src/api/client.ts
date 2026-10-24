@@ -24,6 +24,8 @@ import type {
   POLARISAssessment,
   RadarSweep,
   RegionalContext,
+  RealFlowField,
+  RouteAlternativesResponse,
   ResistanceResult,
   RiskMatrixResponse,
   RouteRequest,
@@ -155,6 +157,9 @@ export const getEnvField = (q: EnvFieldQuery) =>
     t_hours: q.tHours ?? 0,
   });
 
+export const getRealFlowField = (kind: 'wind' | 'current', date?: string) =>
+  get<RealFlowField>(`/flow-data/${kind}`, { date });
+
 export const getIceField = (q: IceFieldQuery) =>
   get<IceField>('/ice/field', {
     lat_min: q.latMin,
@@ -222,8 +227,11 @@ export const getRadarSweep = (lat: number, lon: number, headingDeg: number, spee
 
 export const getObservedIcebergs = () => get<ObservedIcebergsResponse>('/icebergs/observed');
 
-export const getIcebergs = (leadHours = 0) =>
-  get<IcebergsResponse>('/icebergs', { lead_hours: leadHours });
+export const getIcebergs = (leadHours = 0, targetModelHours?: number) =>
+  get<IcebergsResponse>(
+    '/icebergs',
+    targetModelHours === undefined ? { lead_hours: leadHours } : { target_t_hours: targetModelHours },
+  );
 
 export const getIcebergDrift = (bergId: string, forecastHours = 72, ensembleMembers = 12) =>
   get<IcebergForecast>(`/icebergs/${encodeURIComponent(bergId)}/drift`, {
@@ -238,6 +246,9 @@ export const getIcebergRisk = (body: RouteRequest) =>
 
 export const optimizeRoute = (body: RouteRequest) =>
   post<OptimizationSummary>('/route/optimize', body);
+
+export const getRouteAlternatives = (body: RouteRequest) =>
+  post<RouteAlternativesResponse>('/route/alternatives', body);
 
 // -------------------------------------------------------------------------------- voyage
 

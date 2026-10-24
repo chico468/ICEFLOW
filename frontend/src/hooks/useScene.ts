@@ -13,11 +13,13 @@ import {
   useIceField,
   useIcebergs,
   useObservedIcebergs,
+  useRealFlowField,
   useStations,
 } from '../api/queries';
 import type { EnvFieldParams, IceFieldParams } from '../api/queries';
 import { emptyScene, type MapScene, type SceneStatus } from '../map/MapEngine';
 import { latestTick, useAppStore } from '../store/useAppStore';
+import { resolveIcebergTargetTime } from '../lib/icebergTime';
 
 /** Padding around the planned route, in degrees, so the chart has context around the track. */
 const PAD_LAT = 4;
@@ -43,9 +45,15 @@ export function useScene(options: SceneOptions = {}): {
   const stations = useStations();
 
   const plan = useAppStore((s) => s.plan);
+  const routeAlternatives = useAppStore((s) => s.routeAlternatives);
+  const selectedCandidateId = useAppStore((s) => s.selectedCandidateId);
   const ticks = useAppStore((s) => s.ticks);
+  const voyage = useAppStore((s) => s.voyage);
   const radar = useAppStore((s) => s.radar);
   const layers = useAppStore((s) => s.layers);
+  const windFlowSource = useAppStore((s) => s.windFlowSource);
+  const currentFlowSource = useAppStore((s) => s.currentFlowSource);
+  const flowValidDate = useAppStore((s) => s.flowValidDate);
   const rasterMode = useAppStore((s) => s.rasterMode);
   const rasterOpacity = useAppStore((s) => s.rasterOpacity);
   const rioColoredRoute = useAppStore((s) => s.rioColoredRoute);
@@ -55,8 +63,11 @@ export function useScene(options: SceneOptions = {}): {
   const bergDrift = useAppStore((s) => s.bergDrift);
 
   const leadHours = options.leadHoursOverride ?? storeLead;
+  const latestVoyageTick = latestTick(ticks);
+  const activeVoyageSimHours = voyage ? (latestVoyageTick?.sim_hours ?? voyage.sim_hours) : undefined;
 
-  const optimisedRoute = plan?.optimized?.waypoints ?? plan?.waypoints ?? [];
+  const selectedCandidate = routeAlternatives.find((candidate) => candidate.id === selectedCandidateId);
+  const optimisedRoute = selectedCandidate?.evaluation.waypoints ?? plan?.optimized?.waypoints ?? plan?.waypoints ?? [];
   const baselineRoute = plan?.baseline?.waypoints ?? [];
 
   // The points the chart should frame: the planned track if there is one, otherwise the
@@ -94,7 +105,13 @@ export function useScene(options: SceneOptions = {}): {
   }, [fitTargets, leadHours]);
 
   const iceField = useIceField(iceParams);
-  const icebergs = useIcebergs(leadHours);
+  const icebergTarget = activeVoyageSimHours === undefined
+    ? null
+    : resolveIcebergTargetTime(activeVoyageSimHours);
+  const icebergTargetHours = activeVoyageSimHours === undefined
+    ? undefined
+    : icebergTarget?.target_model_hours ?? activeVoyageSimHours;
+  const icebergs = useIcebergs(leadHours, icebergTargetHours);
 
   // 'change' mode subtracts the +0 h field, which must be on the very same grid. It is requested only
   // in that mode and only when there is a later lead time to compare against.
@@ -110,12 +127,16 @@ export function useScene(options: SceneOptions = {}): {
   // about 9 200 cells) costs the service about 0.14 s and ~660 KB (measured through the real route), and because its key never changes with
   // the route it is fetched once per forecast time and cached. It stops at 28 S because the simulated fields
   // have no land mask for continents; north of that nothing is drawn and the chart says why.
-  const flowOn = layers.windFlow || layers.currentFlow;
+  const simulatedFlowOn = (layers.windFlow && windFlowSource === 'simulated') || (layers.currentFlow && currentFlowSource === 'simulated');
+  const realWindOn = layers.windFlow && windFlowSource === 'noaa-gfs';
+  const realCurrentOn = layers.currentFlow && currentFlowSource === 'copernicus';
   const flowParams: EnvFieldParams | null = useMemo(
-    () => (flowOn ? { latMin: -78, latMax: -28, lonMin: -180, lonMax: 180, resolutionDeg: 1.0, tHours: leadHours } : null),
-    [flowOn, leadHours],
+    () => (simulatedFlowOn ? { latMin: -78, latMax: -28, lonMin: -180, lonMax: 180, resolutionDeg: 1.0, tHours: leadHours } : null),
+    [simulatedFlowOn, leadHours],
   );
   const envField = useEnvField(flowParams);
+  const realWindFlow = useRealFlowField('wind', flowValidDate, realWindOn);
+  const realCurrentFlow = useRealFlowField('current', flowValidDate, realCurrentOn);
 
   const observed = useObservedIcebergs(layers.observedBergs);
 
@@ -126,8 +147,8 @@ export function useScene(options: SceneOptions = {}): {
       iceError: iceField.error ? errorText(iceField.error) : null,
       baseLoading: iceBase.isLoading,
       baseError: iceBase.error ? errorText(iceBase.error) : null,
-      flowLoading: envField.isLoading,
-      flowError: envField.error ? errorText(envField.error) : null,
+      flowLoading: envField.isLoading || realWindFlow.isLoading || realCurrentFlow.isLoading,
+      flowError: [envField.error, realWindFlow.error, realCurrentFlow.error].filter(Boolean).map(errorText).join('; ') || null,
       observedLoading: observed.isLoading,
       observedError: observed.error ? errorText(observed.error) : null,
     }),
@@ -140,6 +161,10 @@ export function useScene(options: SceneOptions = {}): {
       iceBase.error,
       envField.isLoading,
       envField.error,
+      realWindFlow.isLoading,
+      realWindFlow.error,
+      realCurrentFlow.isLoading,
+      realCurrentFlow.error,
       observed.isLoading,
       observed.error,
     ],
@@ -147,7 +172,7 @@ export function useScene(options: SceneOptions = {}): {
 
   const scene: MapScene = useMemo(() => {
     const base = emptyScene();
-    const tick = latestTick(ticks);
+    const tick = latestVoyageTick;
     return {
       ...base,
       coastline: coastline.data?.features ?? [],
@@ -155,13 +180,19 @@ export function useScene(options: SceneOptions = {}): {
       ports: stations.data?.ports ?? [],
       iceField: iceField.data ?? null,
       iceFieldBase: baseParams ? (iceBase.data ?? null) : null,
-      envField: flowOn ? (envField.data ?? null) : null,
+      envField: simulatedFlowOn ? (envField.data ?? null) : null,
+      realWindFlow: realWindOn ? (realWindFlow.data ?? null) : null,
+      realCurrentFlow: realCurrentOn ? (realCurrentFlow.data ?? null) : null,
+      windFlowSource,
+      currentFlowSource,
       observed: layers.observedBergs ? (observed.data ?? null) : null,
       status,
       icebergs: icebergs.data?.icebergs ?? [],
       selectedBergId,
       bergDrift: options.showBergDrift ? bergDrift : null,
       optimisedRoute,
+      routeAlternatives,
+      selectedCandidateId,
       baselineRoute,
       track: ticks.map((t) => [t.latitude, t.longitude] as [number, number]),
       vessel: tick ? { lat: tick.latitude, lon: tick.longitude, heading: tick.heading_deg } : null,
@@ -179,7 +210,13 @@ export function useScene(options: SceneOptions = {}): {
     iceBase.data,
     baseParams,
     envField.data,
-    flowOn,
+    simulatedFlowOn,
+    realWindOn,
+    realCurrentOn,
+    windFlowSource,
+    currentFlowSource,
+    realWindFlow.data,
+    realCurrentFlow.data,
     observed.data,
     status,
     icebergs.data,
@@ -187,8 +224,12 @@ export function useScene(options: SceneOptions = {}): {
     bergDrift,
     options.showBergDrift,
     optimisedRoute,
+    routeAlternatives,
+    selectedCandidateId,
     baselineRoute,
     ticks,
+    voyage,
+    latestVoyageTick,
     radar,
     inspect,
     rasterMode,

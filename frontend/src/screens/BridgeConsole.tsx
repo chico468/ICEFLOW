@@ -38,6 +38,10 @@ export function BridgeConsole(): JSX.Element {
   const ticks = useAppStore((s) => s.ticks);
   const alerts = useAppStore((s) => s.alerts);
   const planner = useAppStore((s) => s.planner);
+  const routeAlternatives = useAppStore((s) => s.routeAlternatives);
+  const selectedCandidateId = useAppStore((s) => s.selectedCandidateId);
+  const setSelectedCandidateId = useAppStore((s) => s.setSelectedCandidateId);
+  const planStale = useAppStore((s) => s.planStale);
   const setInspect = useAppStore((s) => s.setInspect);
   const setRadar = useAppStore((s) => s.setRadar);
   const setScreen = useAppStore((s) => s.setScreen);
@@ -62,6 +66,8 @@ export function BridgeConsole(): JSX.Element {
   const running = phase === 'running';
   const busy = phase === 'creating' || phase === 'connecting';
   const started = Boolean(voyage);
+  const selectedCandidate = routeAlternatives.find((candidate) => candidate.id === selectedCandidateId);
+  const routeSelectionBlocked = planStale || (routeAlternatives.length > 0 && !selectedCandidate?.is_feasible);
 
   const openAlerts = useMemo(
     () => [...alerts].reverse().slice(0, 24),
@@ -73,7 +79,12 @@ export function BridgeConsole(): JSX.Element {
       id="sail"
       map={
         <>
-        <ChartViews scene={scene} fitTargets={fitTargets} onClickPoint={(ll) => setInspect(ll)} />
+        <ChartViews
+          scene={scene}
+          fitTargets={fitTargets}
+          onClickPoint={(ll) => setInspect(ll)}
+          onSelectRouteCandidate={setSelectedCandidateId}
+        />
 
         {busy && (
           <ComputeOverlay
@@ -99,21 +110,34 @@ export function BridgeConsole(): JSX.Element {
               <button
                 type="button"
                 className="btn btn-accent mt-2"
+                disabled={routeSelectionBlocked}
                 onClick={() =>
                   void controller.begin({
                     origin_id: planner.originId,
                     destination_id: planner.destinationId,
                     vessel_key: planner.vesselKey,
                     ice_class: planner.iceClass,
-                    weights: planner.weights,
+                    weights: selectedCandidate?.weights ?? planner.weights,
+                    route_profile_id: selectedCandidate?.id ?? 'balanced',
+                    departure_time_hours: planner.departureTimeHours,
                     grid_resolution_deg: planner.gridResolutionDeg,
                     avoid_icebergs: planner.avoidIcebergs,
                   })
                 }
               >
-                Start voyage: {planner.originId.replace(/_/g, ' ')} to{' '}
+                Start {selectedCandidate?.name ?? 'Balanced'} voyage: {planner.originId.replace(/_/g, ' ')} to{' '}
                 {planner.destinationId.replace(/_/g, ' ')}
               </button>
+              {planStale && (
+                <div role="alert" className="mt-2 text-2xs text-danger">
+                  Passage conditions changed after comparison. Return to Plan and recalculate candidates before sailing.
+                </div>
+              )}
+              {!planStale && routeAlternatives.length > 0 && !selectedCandidate?.is_feasible && (
+                <div role="alert" className="mt-2 text-2xs text-danger">
+                  Select a feasible route in Plan before starting this voyage.
+                </div>
+              )}
               <div className="mt-1 text-2xs text-ink-3">
                 Planning runs the full optimisation on the server and takes 15 to 30 seconds.
               </div>

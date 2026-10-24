@@ -24,6 +24,29 @@ export interface SyntheticFlagged {
   provenance?: Provenance;
 }
 
+/** Resolved calendar time plus independent simulation/model-relative offsets. */
+export interface EnvironmentTimeResolution {
+  mode: 'active_voyage' | 'planning_forecast';
+  status: 'resolved' | 'unavailable';
+  target_time_utc: string | null;
+  reference_time_utc: string | null;
+  elapsed_sim_hours: number | null;
+  lead_hours: number | null;
+  model_departure_time_hours: number | null;
+  tick_time_utc: string | null;
+  reason: string | null;
+}
+
+/** Iceberg drift uses its own catalogue-seed model clock, not voyage UTC. */
+export interface IcebergTimeResolution {
+  mode: 'active_voyage';
+  status: 'resolved' | 'unavailable';
+  target_model_hours: number | null;
+  forecast_lead_hours: number | null;
+  forcing_start_hours: number | null;
+  reason: string | null;
+}
+
 // -------------------------------------------------------------------------------- health
 
 export interface HealthResponse {
@@ -362,6 +385,7 @@ export interface IcebergsResponse {
   count: number;
   exclusion_radius_nm: number;
   provenance: Provenance;
+  time_alignment?: IcebergTimeResolution;
 }
 
 export interface TrajectoryPoint {
@@ -554,6 +578,32 @@ export interface OptimizationSummary {
   is_synthetic_environment: boolean;
 }
 
+export type RouteProfileId = 'safety-first' | 'balanced' | 'fuel-efficient' | 'fastest';
+
+export interface RouteAlternative {
+  id: RouteProfileId;
+  name: string;
+  description: string;
+  weights: RouteWeights;
+  evaluation: RouteEvaluation;
+  is_feasible: boolean;
+  goal_reached: boolean;
+  warnings: string[];
+  search: SearchDiagnostics;
+  is_synthetic_environment: boolean;
+}
+
+export interface RouteAlternativesResponse {
+  candidates: RouteAlternative[];
+  balanced_summary: OptimizationSummary | null;
+  comparison_reference_id: 'balanced';
+  omitted_profiles: { profile_id: RouteProfileId; reason: string }[];
+  distinct_alternatives_found: number;
+  planning_ms: number;
+  is_synthetic_environment: boolean;
+  environment_provenance: Record<string, Provenance>;
+}
+
 export interface RouteRequest {
   start_lat?: number;
   start_lon?: number;
@@ -565,6 +615,8 @@ export interface RouteRequest {
   vessel_key?: string;
   weights?: RouteWeights;
   departure_time_hours?: number;
+  planning_reference_iso?: string;
+  lead_hours?: number;
   grid_resolution_deg?: number;
   avoid_icebergs?: boolean;
 }
@@ -588,6 +640,7 @@ export interface VoyageTick {
   tick: number;
   sim_hours: number;
   timestamp_iso: string;
+  environment_time?: EnvironmentTimeResolution | null;
   latitude: number;
   longitude: number;
   heading_deg: number;
@@ -632,9 +685,12 @@ export interface VoyageState {
   status: VoyageStatus;
   created_iso: string;
   departure_iso: string;
+  environment_time?: EnvironmentTimeResolution | null;
+  model_departure_time_hours?: number;
   vessel_name: string;
   vessel_key: string;
   ice_class: string;
+  route_profile_id: RouteProfileId;
   origin: [number, number];
   destination: [number, number];
   origin_name: string;
@@ -662,8 +718,11 @@ export interface CreateVoyageRequest {
   vessel_key?: string;
   ice_class?: IceClassKey;
   weights?: RouteWeights;
+  route_profile_id?: RouteProfileId;
+  departure_time_hours?: number;
   grid_resolution_deg?: number;
   avoid_icebergs?: boolean;
+  departure_iso?: string;
 }
 
 // ---------------------------------------------------------------------- websocket frames
@@ -731,6 +790,35 @@ export interface EnvField extends SyntheticFlagged {
   current_v: number[][];
   current_speed_ms: number[][];
   sig_wave_height_m: number[][];
+}
+
+/** Cached real geographic velocity grid. Missing source cells remain null and cannot advect particles. */
+export interface RealFlowField {
+  available: boolean;
+  reason: string | null;
+  provenance: {
+    kind: 'wind' | 'current';
+    source?: string;
+    product?: string;
+    dataset_id?: string;
+    valid_time?: string;
+    retrieved_at?: string;
+    classification?: string;
+    units: 'm/s';
+    crs: 'EPSG:4326';
+    coordinate_units: string;
+    stale?: boolean;
+    age_hours?: number;
+    forecast_lead_hours?: number;
+    native_resolution_deg?: number;
+    cache_file?: string;
+    acquisition_command: string;
+    [key: string]: unknown;
+  };
+  lats?: number[];
+  lons?: number[];
+  u?: (number | null)[][];
+  v?: (number | null)[][];
 }
 
 export interface ObservedIceberg {

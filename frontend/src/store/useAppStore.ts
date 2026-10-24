@@ -10,6 +10,9 @@ import type {
   IceClassKey,
   OptimizationSummary,
   RadarSweep,
+  RouteAlternative,
+  RouteAlternativesResponse,
+  RouteProfileId,
   RouteWeights,
   VoyageAlert,
   VoyageState,
@@ -18,6 +21,7 @@ import type {
 import { DEFAULT_LAYERS, type LayerToggles } from '../map/MapEngine';
 import type { FlowStyle } from '../map/flow';
 import type { RasterMode } from '../map/layers';
+import { defaultRouteCandidate, isSelectableRouteCandidate } from '../lib/routeSelection';
 
 export type ScreenId = 'flow' | 'bridge' | 'planner' | 'forecast' | 'icebergs' | 'analytics';
 
@@ -51,6 +55,13 @@ interface AppState {
   planner: PlannerConfig;
   setPlanner: (patch: Partial<PlannerConfig>) => void;
   plan: OptimizationSummary | null;
+  routeAlternatives: RouteAlternative[];
+  selectedCandidateId: RouteProfileId | null;
+  alternativesPlanningMs: number | null;
+  omittedProfiles: RouteAlternativesResponse['omitted_profiles'];
+  planStale: boolean;
+  setRouteAlternatives: (response: RouteAlternativesResponse | null) => void;
+  setSelectedCandidateId: (id: RouteProfileId) => void;
   planPhase: PlanPhase;
   planError: string | null;
   planElapsedMs: number;
@@ -67,6 +78,14 @@ interface AppState {
   /** Moving particles or static arrows for the wind and current layers. */
   flowStyle: FlowStyle;
   setFlowStyle: (s: FlowStyle) => void;
+  flowPaused: boolean;
+  setFlowPaused: (paused: boolean) => void;
+  windFlowSource: 'simulated' | 'noaa-gfs';
+  setWindFlowSource: (source: 'simulated' | 'noaa-gfs') => void;
+  currentFlowSource: 'simulated' | 'copernicus';
+  setCurrentFlowSource: (source: 'simulated' | 'copernicus') => void;
+  flowValidDate: string;
+  setFlowValidDate: (date: string) => void;
   rasterOpacity: number;
   setRasterOpacity: (v: number) => void;
   rioColoredRoute: boolean;
@@ -127,8 +146,38 @@ export const useAppStore = create<AppState>((set) => ({
     avoidIcebergs: true,
     departureTimeHours: 0,
   },
-  setPlanner: (patch) => set((s) => ({ planner: { ...s.planner, ...patch } })),
+  setPlanner: (patch) => set((s) => ({
+    planner: { ...s.planner, ...patch },
+    plan: null,
+    routeAlternatives: [],
+    selectedCandidateId: null,
+    alternativesPlanningMs: null,
+    omittedProfiles: [],
+    planPhase: 'idle',
+    planError: null,
+    planStale: s.planStale || Boolean(s.plan || s.routeAlternatives.length > 0 || s.planPhase === 'planning'),
+  })),
   plan: null,
+  routeAlternatives: [],
+  selectedCandidateId: null,
+  alternativesPlanningMs: null,
+  omittedProfiles: [],
+  planStale: false,
+  setRouteAlternatives: (response) => {
+    const candidates = response?.candidates ?? [];
+    set({
+      routeAlternatives: candidates,
+      selectedCandidateId: defaultRouteCandidate(candidates),
+      alternativesPlanningMs: response?.planning_ms ?? null,
+      omittedProfiles: response?.omitted_profiles ?? [],
+      ...(response ? { planStale: false } : {}),
+    });
+  },
+  setSelectedCandidateId: (id) => set((s) => (
+    isSelectableRouteCandidate(s.routeAlternatives, id)
+      ? { selectedCandidateId: id }
+      : {}
+  )),
   planPhase: 'idle',
   planError: null,
   planElapsedMs: 0,
@@ -143,6 +192,14 @@ export const useAppStore = create<AppState>((set) => ({
   setRasterMode: (rasterMode) => set({ rasterMode }),
   flowStyle: 'animated',
   setFlowStyle: (flowStyle) => set({ flowStyle }),
+  flowPaused: false,
+  setFlowPaused: (flowPaused) => set({ flowPaused }),
+  windFlowSource: 'simulated',
+  setWindFlowSource: (windFlowSource) => set({ windFlowSource }),
+  currentFlowSource: 'simulated',
+  setCurrentFlowSource: (currentFlowSource) => set({ currentFlowSource }),
+  flowValidDate: '',
+  setFlowValidDate: (flowValidDate) => set({ flowValidDate }),
   rasterOpacity: 0.92,
   setRasterOpacity: (rasterOpacity) => set({ rasterOpacity }),
   rioColoredRoute: false,

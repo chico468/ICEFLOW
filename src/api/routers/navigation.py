@@ -4,9 +4,10 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from src.core.constants import DATA_PROVENANCE, ICEBERG_EXCLUSION_RADIUS_NM
+from src.core.environment_time import parse_utc_datetime, resolve_iceberg_target_time
 from src.core.geo import great_circle_path
 from src.core.iceberg_tracker import (
     ClosestApproach,
@@ -20,6 +21,7 @@ from src.core.polaris_risk import IceClass
 from src.core.route_optimizer import (
     OptimizationSummary,
     PolarRouteOptimizer,
+    RouteAlternativesResult,
     RouteWeights,
 )
 from src.data.icebergs import get_iceberg_profiles, get_profile
@@ -34,6 +36,7 @@ router = APIRouter(prefix="/api/v1", tags=["navigation"])
 def icebergs(
     lead_hours: int = Query(default=0, ge=0, le=240),
     t_hours: float = Query(default=0.0),
+    target_t_hours: Optional[float] = Query(default=None),
 ) -> Dict[str, Any]:
     """
     The tracked catalogue, optionally propagated forward by the drift model.
@@ -41,13 +44,31 @@ def icebergs(
     With `lead_hours` above zero every berg is integrated forward, so the positions returned are
     computed rather than looked up.
     """
+    target_alignment: Optional[Dict[str, Any]] = None
+    step_hours_override: Optional[int] = None
+    if target_t_hours is not None:
+        alignment = resolve_iceberg_target_time(target_t_hours)
+        target_alignment = alignment.model_dump()
+        if alignment.status != "resolved":
+            return {
+                "icebergs": [],
+                "count": 0,
+                "exclusion_radius_nm": ICEBERG_EXCLUSION_RADIUS_NM,
+                "provenance": DATA_PROVENANCE["iceberg_catalogue"],
+                "time_alignment": target_alignment,
+            }
+        lead_hours = alignment.forecast_lead_hours or 0
+        t_hours = alignment.forcing_start_hours or 0.0
+        step_hours_override = 1
+
     profiles = get_iceberg_profiles()
     out: List[Dict[str, Any]] = []
     for berg in profiles:
         entry: Dict[str, Any] = berg.model_dump() | {"size_class": berg.size_class()}
         if lead_hours > 0:
+            step_hours = step_hours_override if step_hours_override is not None else max(6, lead_hours // 8)
             fc = predict_iceberg_drift(
-                berg, forecast_hours=lead_hours, time_step_hours=max(6, lead_hours // 8),
+                berg, forecast_hours=lead_hours, time_step_hours=step_hours,
                 t0_hours=t_hours, ensemble_members=1,
             )
             last = fc.trajectory[-1]
@@ -59,12 +80,15 @@ def icebergs(
                 "mass_lost_percent": fc.mass_lost_percent,
             }
         out.append(entry)
-    return {
+    res: Dict[str, Any] = {
         "icebergs": out,
         "count": len(out),
         "exclusion_radius_nm": ICEBERG_EXCLUSION_RADIUS_NM,
         "provenance": DATA_PROVENANCE["iceberg_catalogue"],
     }
+    if target_alignment is not None:
+        res["time_alignment"] = target_alignment
+    return res
 
 
 class IcebergDriftRequest(BaseModel):
@@ -143,9 +167,18 @@ class RouteRequest(BaseModel):
     vessel_key: Optional[str] = None
     vessel: Optional[VesselParameters] = None
     weights: Optional[RouteWeights] = None
-    departure_time_hours: float = 0.0
+    departure_time_hours: float = Field(default=0.0, ge=0.0, allow_inf_nan=False)
+    planning_reference_iso: Optional[str] = None
+    lead_hours: float = 0.0
     grid_resolution_deg: float = Field(default=0.5, ge=0.25, le=2.0)
     avoid_icebergs: bool = True
+
+    @field_validator("planning_reference_iso")
+    @classmethod
+    def _validate_planning_reference(cls, value: Optional[str]) -> Optional[str]:
+        if value is not None:
+            parse_utc_datetime(value, "planning_reference_iso")
+        return value
 
 
 def _resolve_request(req: RouteRequest):
@@ -182,6 +215,24 @@ def optimize(req: RouteRequest) -> OptimizationSummary:
         installed_power_kw=vessel.installed_power_kw,
     )
     return optimizer.optimize_route(
+        start[0], start[1], dest[0], dest[1],
+        grid_resolution_deg=req.grid_resolution_deg,
+        departure_time_hours=req.departure_time_hours,
+        avoid_icebergs=req.avoid_icebergs,
+    )
+
+
+@router.post("/route/alternatives", response_model=RouteAlternativesResult)
+def alternatives(req: RouteRequest) -> RouteAlternativesResult:
+    """Compare distinct objective profiles using one shared environmental cache and iceberg forecast."""
+    start, dest, vessel = _resolve_request(req)
+    optimizer = PolarRouteOptimizer(
+        vessel=vessel,
+        ice_class=req.ice_class,
+        weights=req.weights,
+        installed_power_kw=vessel.installed_power_kw,
+    )
+    return optimizer.optimize_alternatives(
         start[0], start[1], dest[0], dest[1],
         grid_resolution_deg=req.grid_resolution_deg,
         departure_time_hours=req.departure_time_hours,

@@ -1,634 +1,959 @@
 /**
- * Regional context map: the voyage region in Mercator, drawn on its own canvas, independent of the polar chart.
+ * Regional context map, rendered with Mapbox GL JS and independent of the polar navigation chart.
  *
- * WHAT IT IS FOR
- * The polar chart is the navigation chart and cannot show where the ports are relative to Africa, India or
- * Australia. This map answers "where is this voyage on the planet?". It draws the SAME routes, vessel, ports
- * and stations the polar chart draws, from the same scene, so the two cannot disagree, and it outlines the part
- * of the world the polar chart is currently showing. It does NOT follow the polar chart's pan and zoom: the
- * two views are deliberately independent.
- *
- * WHAT IT IS NOT
- * Land comes from Natural Earth, simplified to about 4 km (scripts/build_regional_context.py). It is drawing
- * data, never used for the land mask, coastal clearance or routing, and the map says "not for navigation" on
- * its face. When that file has not been built the map says so and still draws the graticule, ports, stations
- * and route.
- *
- * INTERACTION
- *   wheel / trackpad scroll   zoom about the pointer         pinch (ctrl+wheel)   zoom about the pointer
- *   drag                      pan                            double-click         zoom in (shift: out)
- *   arrow keys                pan (shift: farther)           + / -                zoom about the centre
- *   0 or Home                 back to the route extent       F                    show the whole region
- * Keyboard shortcuts act only while the map itself has focus, so they never steal keys from form controls.
- * Button, double-click and keyboard moves ease over about 200 ms; wheel and drag are immediate. With the
- * system's reduced-motion setting on, nothing eases.
- *
- * COST
- * Nothing animates on its own. The map paints once per change, coalesced on one animation frame. Polygons
- * outside the view are skipped by bounding box. Every frame and listener is cancelled on unmount.
+ * The map reuses the voyage scene for routes, ports, stations and vessel position. Natural Earth
+ * polygons are display-only context; this map is not used for navigation or land clearance.
  */
-import { useCallback, useEffect, useMemo, useRef, type KeyboardEvent, type ReactNode } from 'react';
-import { Globe, Maximize2, Minus, Plus } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import type {
+  AnyLayer,
+  GeoJSONSource,
+  Map as MapboxMap,
+  RasterArraySourceSpecification,
+  RasterParticleLayerSpecification,
+} from 'mapbox-gl';
+import type { Feature, FeatureCollection, Geometry, Position } from 'geojson';
+import { Globe, Maximize2, Minus, Plus, Wind } from 'lucide-react';
+import type { RegionalContext, FlatRing } from '../api/types';
+import type { RouteProfileId } from '../api/types';
 import { useRegionalContext } from '../api/queries';
 import { MapToolbar, ToolButton } from '../components/MapToolbar';
 import { useReducedMotion } from '../hooks/useReducedMotion';
-import { LABEL_PRIORITY, MAX_COUNTRY_LABELS, MAX_MARK_LABELS, countryRankThreshold, showMarkLabel } from './labelPolicy';
+import { MAX_COUNTRY_LABELS, MAX_MARK_LABELS, countryRankThreshold, showMarkLabel } from './labelPolicy';
 import { formatLat, formatLon } from './MapCanvas';
 import type { MapEngine, MapScene } from './MapEngine';
-import {
-  RegionViewport,
-  boundsIntersect,
-  easeOutCubic,
-  graticuleStep,
-  lerpView,
-  mercLat,
-  metresPerPixelAt,
-  niceScaleBar,
-  ringBounds,
-  splitAtAntimeridian,
-  viewOutline,
-  type LonLat,
-  type RegionBounds,
-  type ViewState,
-} from './mercator';
+import { splitAtAntimeridian, viewOutline, type LonLat, type RegionBounds } from './mercator';
 import { MAP_COLORS } from './palette';
 
 const DEFAULT_REGION: RegionBounds = { lon_min: -30, lon_max: 165, lat_min: -75, lat_max: 40 };
-const FONT = '"Avenir Next", system-ui, sans-serif';
-const KEY_PAN_PX = 80;
-const KEY_PAN_FAR_PX = 240;
-const EASE_MS = 200;
+const MAX_RELATIVE_ZOOM = 40;
+const PAN_STEP = 80;
+const PAN_FAR_STEP = 240;
+const MAP_STYLE = 'mapbox://styles/mapbox/standard-satellite';
+const WIND_SOURCE_ID = 'iceflow-wind-source';
+const WIND_SOURCE_URL = 'mapbox://rasterarrayexamples.gfs-winds';
+const WIND_LAYER_ID = 'iceflow-wind-particles';
+const WIND_SOURCE_LAYER = '10winds';
+const EMPTY: FeatureCollection = { type: 'FeatureCollection', features: [] };
 
 interface Props {
   scene: MapScene;
-  /** False while another view is on display: the map then does no work at all. */
   visible: boolean;
-  /** The polar chart's engine, read (never written) to outline its current view. */
   polarEngine: MapEngine | null;
   originId: string;
   destinationId: string;
-  /** A first row for the toolbar, e.g. the Polar / Regional switch. */
   toolbarLead?: ReactNode;
+  onSelectRouteCandidate: (id: RouteProfileId) => void;
 }
 
-interface LabelJob {
-  text: string;
-  x: number;
-  y: number;
-  font: string;
-  fill: string;
-  halo: boolean;
-  center?: boolean;
-  priority: number;
+interface MarkProperties {
+  id: string;
+  name: string;
+  kind: 'port' | 'station';
+  endpoint: boolean;
+  indian: boolean;
 }
 
-export function RegionalMap({ scene, visible, polarEngine, originId, destinationId, toolbarLead }: Props): JSX.Element {
+interface Latest {
+  scene: MapScene;
+  data: RegionalContext | undefined;
+  originId: string;
+  destinationId: string;
+  polarEngine: MapEngine | null;
+  visible: boolean;
+}
+
+function closedRing(ring: FlatRing): Position[] {
+  const points: Position[] = [];
+  for (let i = 0; i + 1 < ring.length; i += 2) points.push([ring[i], ring[i + 1]]);
+  if (points.length > 0) {
+    const first = points[0];
+    const last = points[points.length - 1];
+    if (first[0] !== last[0] || first[1] !== last[1]) points.push(first);
+  }
+  return points.length >= 4 ? points : [];
+}
+
+function polygonCoordinates(rings: FlatRing[]): Position[][] {
+  return rings.map((ring) => closedRing(ring)).filter((ring) => ring.length > 0);
+}
+
+function featureCollection<G extends Geometry, P = Record<string, never>>(
+  features: Feature<G, P>[],
+): FeatureCollection<G, P> {
+  return { type: 'FeatureCollection', features };
+}
+
+function lineSegments(points: LonLat[]): Position[][] {
+  return splitAtAntimeridian(points)
+    .filter((run) => run.length > 1)
+    .map((run) => run.map((point) => [point.lon, point.lat]));
+}
+
+function makeLand(data: RegionalContext | undefined): FeatureCollection<Geometry> {
+  const polygons = (data?.available ? data.land : []).map(polygonCoordinates).filter((rings) => rings.length > 0);
+  return featureCollection(
+    polygons.length > 0
+      ? [{ type: 'Feature', properties: {}, geometry: { type: 'MultiPolygon', coordinates: polygons } }]
+      : [],
+  );
+}
+
+function makeCountries(data: RegionalContext | undefined): FeatureCollection<Geometry> {
+  const features: Feature<Geometry, { name: string }>[] = [];
+  if (data?.available) {
+    for (const country of data.countries) {
+      const polygons = country.polygons.map(polygonCoordinates).filter((rings) => rings.length > 0);
+      if (polygons.length > 0) {
+        features.push({
+          type: 'Feature',
+          properties: { name: country.name },
+          geometry: { type: 'MultiPolygon', coordinates: polygons },
+        });
+      }
+    }
+  }
+  return featureCollection(features);
+}
+
+function makeCountryLabels(data: RegionalContext | undefined, relativeZoom: number): FeatureCollection<Geometry> {
+  if (!data?.available) return EMPTY;
+  const threshold = countryRankThreshold(relativeZoom);
+  const features: Feature<Geometry, { name: string; rank: number }>[] = data.countries
+    .filter((country) => country.label_rank >= threshold)
+    .sort((a, b) => b.label_rank - a.label_rank)
+    .slice(0, MAX_COUNTRY_LABELS)
+    .map((country) => ({
+      type: 'Feature',
+      properties: { name: country.name.toUpperCase(), rank: country.label_rank },
+      geometry: { type: 'Point', coordinates: country.label },
+    }));
+  return featureCollection(features);
+}
+
+function makeMarks(latest: Latest): FeatureCollection<Geometry, MarkProperties> {
+  const { scene, originId, destinationId } = latest;
+  const marks: Feature<Geometry, MarkProperties>[] = [
+    ...scene.ports.map((port) => ({
+      type: 'Feature' as const,
+      properties: {
+        id: port.id,
+        name: port.name,
+        kind: 'port' as const,
+        endpoint: port.id === originId || port.id === destinationId,
+        indian: false,
+      },
+      geometry: { type: 'Point' as const, coordinates: [port.longitude, port.latitude] },
+    })),
+    ...scene.stations.map((station) => ({
+      type: 'Feature' as const,
+      properties: {
+        id: station.id,
+        name: station.name,
+        kind: 'station' as const,
+        endpoint: station.id === originId || station.id === destinationId,
+        indian: Boolean(station.is_indian),
+      },
+      geometry: { type: 'Point' as const, coordinates: [station.longitude, station.latitude] },
+    })),
+  ];
+  return featureCollection(marks);
+}
+
+function makeMarkLabels(marks: FeatureCollection<Geometry, MarkProperties>, relativeZoom: number): FeatureCollection<Geometry> {
+  const features = marks.features
+    .filter(({ properties }) => showMarkLabel(properties, relativeZoom))
+    .sort((a, b) => Number(b.properties.endpoint) - Number(a.properties.endpoint))
+    .slice(0, MAX_MARK_LABELS);
+  return featureCollection(features);
+}
+
+function makeLines(scene: MapScene): FeatureCollection<Geometry, { kind: string }> {
+  const features: Feature<Geometry, { kind: string; profile?: RouteProfileId; selected?: boolean }>[] = [];
+  const addLine = (kind: string, points: LonLat[]): void => {
+    const coordinates = lineSegments(points);
+    if (coordinates.length > 0) {
+      features.push({
+        type: 'Feature',
+        properties: { kind },
+        geometry: { type: 'MultiLineString', coordinates },
+      });
+    }
+  };
+  addLine('baseline', scene.baselineRoute.map((point) => ({ lat: point.latitude, lon: point.longitude })));
+  if (scene.routeAlternatives.length === 0) {
+    addLine('optimized', scene.optimisedRoute.map((point) => ({ lat: point.latitude, lon: point.longitude })));
+  } else {
+    const candidates = [...scene.routeAlternatives].sort((a, b) => (
+      Number(a.id === scene.selectedCandidateId) - Number(b.id === scene.selectedCandidateId)
+    ));
+    for (const candidate of candidates) {
+      const coordinates = lineSegments(candidate.evaluation.waypoints.map((point) => ({
+        lat: point.latitude,
+        lon: point.longitude,
+      })));
+      if (coordinates.length > 0) {
+        features.push({
+          type: 'Feature',
+          properties: {
+            kind: 'candidate',
+            profile: candidate.id,
+            selected: candidate.id === scene.selectedCandidateId,
+          },
+          geometry: { type: 'MultiLineString', coordinates },
+        });
+      }
+    }
+  }
+  addLine('track', scene.track.map(([lat, lon]) => ({ lat, lon })));
+  return featureCollection(features);
+}
+
+function makePolarOutline(engine: MapEngine | null): FeatureCollection<Geometry> {
+  if (!engine) return EMPTY;
+  const outline = viewOutline(engine.viewport);
+  const features = lineSegments(outline)
+    .map((coordinates): Feature<Geometry> => ({
+      type: 'Feature',
+      properties: {},
+      geometry: { type: 'LineString', coordinates },
+    }));
+  return featureCollection(features);
+}
+
+function makePolarLabel(engine: MapEngine | null): FeatureCollection<Geometry, { name: string }> {
+  if (!engine) return featureCollection<Geometry, { name: string }>([]);
+  const point = viewOutline(engine.viewport)[0];
+  if (!point) return featureCollection<Geometry, { name: string }>([]);
+  return featureCollection([
+    {
+      type: 'Feature',
+      properties: { name: 'Antarctic chart view' },
+      geometry: { type: 'Point', coordinates: [point.lon, point.lat] },
+    },
+  ]);
+}
+
+function updateSource(map: MapboxMap, id: string, data: FeatureCollection): void {
+  const source = map.getSource(id);
+  if (source?.type === 'geojson') (source as GeoJSONSource).setData(data);
+}
+
+function addGeoJSONSourceIfMissing(map: MapboxMap, id: string): void {
+  if (!map.getSource(id)) map.addSource(id, { type: 'geojson', data: EMPTY });
+}
+
+function addLayerIfMissing(map: MapboxMap, layer: AnyLayer, slot: 'bottom' | 'middle' | 'top' = 'top'): void {
+  if (!map.getLayer(layer.id)) map.addLayer({ ...layer, slot });
+}
+
+function addWindParticles(map: MapboxMap, enabled: boolean, onError: (reason: string) => void): boolean {
+  try {
+    if (!map.getSource(WIND_SOURCE_ID)) {
+      const source: RasterArraySourceSpecification = {
+        type: 'raster-array',
+        url: WIND_SOURCE_URL,
+        tileSize: 512,
+      };
+      map.addSource(WIND_SOURCE_ID, source);
+    }
+    if (!map.getLayer(WIND_LAYER_ID)) {
+      const layer: RasterParticleLayerSpecification = {
+        id: WIND_LAYER_ID,
+        type: 'raster-particle',
+        source: WIND_SOURCE_ID,
+        'source-layer': WIND_SOURCE_LAYER,
+        slot: 'bottom',
+        paint: {
+          'raster-particle-speed-factor': 0.4,
+          'raster-particle-fade-opacity-factor': 0.92,
+          'raster-particle-reset-rate-factor': 0.4,
+          'raster-particle-count': 1600,
+          'raster-particle-max-speed': 40,
+          'raster-particle-color': [
+            'interpolate',
+            ['linear'],
+            ['raster-particle-speed'],
+            0,
+            '#72B7D2',
+            3,
+            '#45B8C5',
+            7,
+            '#74C879',
+            12,
+            '#E7CF55',
+            20,
+            '#EA9147',
+            32,
+            '#D95454',
+            50,
+            '#B14A91',
+          ],
+        },
+      };
+      map.addLayer(layer);
+    }
+    map.setLayoutProperty(WIND_LAYER_ID, 'visibility', enabled ? 'visible' : 'none');
+    return true;
+  } catch (error) {
+    onError(error instanceof Error ? error.message : 'Unknown Mapbox raster-particle error');
+    return false;
+  }
+}
+
+function addLayers(map: MapboxMap, windEnabled: boolean, onWindError: (reason: string) => void): boolean {
+  const windLayerAdded = addWindParticles(map, windEnabled, onWindError);
+  addGeoJSONSourceIfMissing(map, 'regional-land');
+  addGeoJSONSourceIfMissing(map, 'regional-countries');
+  addGeoJSONSourceIfMissing(map, 'regional-country-labels');
+  addGeoJSONSourceIfMissing(map, 'regional-lines');
+  addGeoJSONSourceIfMissing(map, 'regional-marks');
+  addGeoJSONSourceIfMissing(map, 'regional-mark-labels');
+  addGeoJSONSourceIfMissing(map, 'regional-vessel');
+  addGeoJSONSourceIfMissing(map, 'regional-polar-outline');
+  addGeoJSONSourceIfMissing(map, 'regional-polar-label');
+
+  addLayerIfMissing(map, {
+    id: 'regional-land-fill',
+    type: 'fill',
+    source: 'regional-land',
+    paint: { 'fill-color': MAP_COLORS.land, 'fill-opacity': 0.12 },
+  });
+  addLayerIfMissing(map, {
+    id: 'regional-country-borders',
+    type: 'line',
+    source: 'regional-countries',
+    paint: { 'line-color': 'rgba(143,133,116,0.5)', 'line-width': 0.7 },
+  });
+  addLayerIfMissing(map, {
+    id: 'regional-polar-fill',
+    type: 'line',
+    source: 'regional-polar-outline',
+    paint: { 'line-color': '#0B5C8E', 'line-width': 1.6, 'line-dasharray': [3, 2], 'line-opacity': 0.95 },
+  });
+  addLayerIfMissing(map, {
+    id: 'regional-baseline-route',
+    type: 'line',
+    source: 'regional-lines',
+    filter: ['==', ['get', 'kind'], 'baseline'],
+    paint: { 'line-color': MAP_COLORS.routeBaseline, 'line-width': 1.5, 'line-dasharray': [3, 2] },
+    layout: { 'line-cap': 'round', 'line-join': 'round' },
+  });
+  addLayerIfMissing(map, {
+    id: 'regional-optimized-route',
+    type: 'line',
+    source: 'regional-lines',
+    filter: ['==', ['get', 'kind'], 'optimized'],
+    paint: { 'line-color': MAP_COLORS.routeOptimised, 'line-width': 2.4 },
+    layout: { 'line-cap': 'round', 'line-join': 'round' },
+  });
+  addLayerIfMissing(map, {
+    id: 'regional-candidate-route-halo',
+    type: 'line',
+    source: 'regional-lines',
+    filter: ['==', ['get', 'kind'], 'candidate'],
+    paint: {
+      'line-color': MAP_COLORS.routeHalo,
+      'line-width': ['case', ['boolean', ['get', 'selected'], false], 10, 7],
+      'line-opacity': 0.96,
+    },
+    layout: { 'line-cap': 'round', 'line-join': 'round' },
+  });
+  addLayerIfMissing(map, {
+    id: 'regional-candidate-route-casing',
+    type: 'line',
+    source: 'regional-lines',
+    filter: ['==', ['get', 'kind'], 'candidate'],
+    paint: {
+      'line-color': MAP_COLORS.routeDarkCasing,
+      'line-width': ['case', ['boolean', ['get', 'selected'], false], 7.5, 4.8],
+      'line-opacity': 0.92,
+    },
+    layout: { 'line-cap': 'round', 'line-join': 'round' },
+  });
+  addLayerIfMissing(map, {
+    id: 'regional-candidate-routes',
+    type: 'line',
+    source: 'regional-lines',
+    filter: ['==', ['get', 'kind'], 'candidate'],
+    paint: {
+      'line-color': [
+        'match', ['get', 'profile'],
+        'safety-first', MAP_COLORS.routeSafetyFirst,
+        'balanced', MAP_COLORS.routeBalanced,
+        'fuel-efficient', MAP_COLORS.routeFuelEfficient,
+        'fastest', MAP_COLORS.routeFastest,
+        '#334155',
+      ],
+      'line-width': ['case', ['boolean', ['get', 'selected'], false], 5.5, 3.3],
+      'line-opacity': ['case', ['boolean', ['get', 'selected'], false], 1, 0.94],
+    },
+    layout: { 'line-cap': 'round', 'line-join': 'round' },
+  });
+  addLayerIfMissing(map, {
+    id: 'regional-track',
+    type: 'line',
+    source: 'regional-lines',
+    filter: ['==', ['get', 'kind'], 'track'],
+    paint: { 'line-color': MAP_COLORS.track, 'line-width': 2.6 },
+    layout: { 'line-cap': 'round', 'line-join': 'round' },
+  });
+  addLayerIfMissing(map, {
+    id: 'regional-ports',
+    type: 'circle',
+    source: 'regional-marks',
+    filter: ['==', ['get', 'kind'], 'port'],
+    paint: {
+      'circle-radius': 4,
+      'circle-color': MAP_COLORS.port,
+      'circle-stroke-color': ['case', ['get', 'endpoint'], '#0E2433', 'rgba(255,255,255,0.9)'],
+      'circle-stroke-width': ['case', ['get', 'endpoint'], 2.2, 1],
+    },
+  });
+  addLayerIfMissing(map, {
+    id: 'regional-stations',
+    type: 'circle',
+    source: 'regional-marks',
+    filter: ['==', ['get', 'kind'], 'station'],
+    paint: {
+      'circle-radius': 4,
+      'circle-color': MAP_COLORS.station,
+      'circle-stroke-color': ['case', ['get', 'endpoint'], '#0E2433', 'rgba(255,255,255,0.9)'],
+      'circle-stroke-width': ['case', ['get', 'endpoint'], 2.2, 1],
+    },
+  });
+  addLayerIfMissing(map, {
+    id: 'regional-mark-labels',
+    type: 'symbol',
+    source: 'regional-mark-labels',
+    layout: {
+      'text-field': ['get', 'name'],
+      'text-font': ['Open Sans Regular', 'Arial Unicode MS Regular'],
+      'text-size': 11,
+      'text-offset': [0.8, 0],
+      'text-anchor': 'left',
+      'text-optional': true,
+      'symbol-sort-key': ['case', ['get', 'endpoint'], 0, 1],
+    },
+    paint: {
+      'text-color': '#0E2433',
+      'text-halo-color': 'rgba(255,255,255,0.9)',
+      'text-halo-width': 1.5,
+    },
+  });
+  addLayerIfMissing(map, {
+    id: 'regional-country-labels',
+    type: 'symbol',
+    source: 'regional-country-labels',
+    layout: {
+      'text-field': ['get', 'name'],
+      'text-font': ['Open Sans Regular', 'Arial Unicode MS Regular'],
+      'text-size': 10,
+      'text-allow-overlap': false,
+    },
+    paint: { 'text-color': 'rgba(14,36,51,0.58)' },
+  });
+  addLayerIfMissing(map, {
+    id: 'regional-vessel',
+    type: 'circle',
+    source: 'regional-vessel',
+    paint: {
+      'circle-radius': 6,
+      'circle-color': '#FFFFFF',
+      'circle-stroke-color': MAP_COLORS.track,
+      'circle-stroke-width': 2.2,
+    },
+  });
+  addLayerIfMissing(map, {
+    id: 'regional-polar-label',
+    type: 'symbol',
+    source: 'regional-polar-label',
+    layout: {
+      'text-field': ['get', 'name'],
+      'text-font': ['Open Sans Semibold', 'Arial Unicode MS Regular'],
+      'text-size': 11,
+      'text-offset': [0.5, 0.5],
+      'text-anchor': 'left',
+    },
+    paint: {
+      'text-color': '#0B5C8E',
+      'text-halo-color': 'rgba(255,255,255,0.9)',
+      'text-halo-width': 1.5,
+    },
+  });
+  return windLayerAdded;
+}
+
+function getRelativeZoom(map: MapboxMap, baseZoom: number): { relativeZoom: number; centre: string } {
+  const relativeZoom = Math.pow(2, map.getZoom() - baseZoom);
+  const center = map.getCenter();
+  return { relativeZoom, centre: `${center.lng.toFixed(3)},${center.lat.toFixed(3)}` };
+}
+
+function fitRegion(map: MapboxMap, bounds: RegionBounds): number {
+  map.fitBounds(
+    [
+      [bounds.lon_min, bounds.lat_min],
+      [bounds.lon_max, bounds.lat_max],
+    ],
+    { padding: 24, duration: 0 },
+  );
+  return map.getZoom();
+}
+
+function safeMapDiagnostic(reason: string, token: string): string {
+  return reason
+    .replaceAll(token, '[redacted]')
+    .replace(/([?&]access_token=)[^&\s"'`]+/gi, '$1[redacted]');
+}
+
+function isRouteProfileId(value: unknown): value is RouteProfileId {
+  return value === 'safety-first' || value === 'balanced' || value === 'fuel-efficient' || value === 'fastest';
+}
+
+export function RegionalMap({
+  scene,
+  visible,
+  polarEngine,
+  originId,
+  destinationId,
+  toolbarLead,
+  onSelectRouteCandidate,
+}: Props): JSX.Element {
   const hostRef = useRef<HTMLDivElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const mapContainerRef = useRef<HTMLDivElement>(null);
   const readoutRef = useRef<HTMLDivElement>(null);
-  const reduced = useReducedMotion();
+  const mapRef = useRef<MapboxMap | null>(null);
+  const pointerPointRef = useRef<[number, number] | null>(null);
+  const windEnabledRef = useRef(true);
+  const baseZoomRef = useRef(0);
+  const fittedKeyRef = useRef('');
+  const regionKeyRef = useRef('');
+  const reducedMotion = useReducedMotion();
   const context = useRegionalContext();
   const data = context.data;
-
   const region = data?.region ?? DEFAULT_REGION;
-  const vp = useMemo(
-    () => new RegionViewport(region),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [region.lon_min, region.lon_max, region.lat_min, region.lat_max],
-  );
+  const regionKey = `${region.lon_min},${region.lon_max},${region.lat_min},${region.lat_max}`;
+  const [mapReady, setMapReady] = useState(false);
+  const [mapError, setMapError] = useState<string | null>(null);
+  const [mapView, setMapView] = useState<{ zoom: number; centre: string } | null>(null);
+  const [windParticlesEnabled, setWindParticlesEnabled] = useState(true);
+  const [windSourceStatus, setWindSourceStatus] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [windLayerPresent, setWindLayerPresent] = useState(false);
+  const [windError, setWindError] = useState<string | null>(null);
+  const windErrorRef = useRef<string | null>(null);
+  const selectCandidateRef = useRef(onSelectRouteCandidate);
+  selectCandidateRef.current = onSelectRouteCandidate;
+  windEnabledRef.current = windParticlesEnabled;
 
-  const rafRef = useRef(0);
-  const animRef = useRef(0);
-  /** Where the animation in flight will end. New moves build on this, so rapid presses accumulate instead of restarting. */
-  const pendingRef = useRef<ViewState | null>(null);
-  const dragRef = useRef<{ x: number; y: number; moved: boolean } | null>(null);
-  const fittedKeyRef = useRef('');
-
-  // ---- the extent the map opens on and returns to: the route, else the two endpoints
   const routePoints = useMemo(
-    () => scene.optimisedRoute.map((w) => ({ lat: w.latitude, lon: w.longitude })),
+    () => scene.optimisedRoute.map((point) => ({ lat: point.latitude, lon: point.longitude })),
     [scene.optimisedRoute],
   );
   const endpointPoints = useMemo(() => {
     const find = (id: string): LonLat | null => {
-      const hit = scene.ports.find((p) => p.id === id) ?? scene.stations.find((s) => s.id === id);
-      return hit ? { lat: hit.latitude, lon: hit.longitude } : null;
+      const point = scene.ports.find((port) => port.id === id) ?? scene.stations.find((station) => station.id === id);
+      return point ? { lat: point.latitude, lon: point.longitude } : null;
     };
-    return [find(originId), find(destinationId)].filter((p): p is LonLat => p !== null);
+    return [find(originId), find(destinationId)].filter((point): point is LonLat => point !== null);
   }, [scene.ports, scene.stations, originId, destinationId]);
   const initialPoints = routePoints.length >= 2 ? routePoints : endpointPoints;
   const initialKey = `${originId}>${destinationId}|${routePoints.length}|${initialPoints.length}`;
 
-  // ---- per-polygon bounding boxes, computed once per dataset, so off-screen shapes cost nothing
-  const landBounds = useMemo(() => (data?.land ?? []).map((poly) => ringBounds(poly[0] ?? [])), [data?.land]);
-  const countryBounds = useMemo(
-    () => (data?.countries ?? []).map((c) => c.polygons.map((poly) => ringBounds(poly[0] ?? []))),
-    [data?.countries],
-  );
+  const latestRef = useRef<Latest>({ scene, data, originId, destinationId, polarEngine, visible });
+  latestRef.current = { scene, data, originId, destinationId, polarEngine, visible };
 
-  const latest = useRef({ scene, data, originId, destinationId, polarEngine, visible, landBounds, countryBounds });
-  latest.current = { scene, data, originId, destinationId, polarEngine, visible, landBounds, countryBounds };
-
-  // =================================================================== painting
-  const paint = useCallback((): void => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const { scene: sc, data: d, originId: oid, destinationId: did, polarEngine: pe, visible: vis } = latest.current;
-    const { landBounds: lb, countryBounds: cb } = latest.current;
-    if (!vis || vp.widthPx < 2 || vp.heightPx < 2) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    const dpr = window.devicePixelRatio || 1;
-    const w = vp.widthPx;
-    const h = vp.heightPx;
-    if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) {
-      canvas.width = Math.round(w * dpr);
-      canvas.height = Math.round(h * dpr);
-      canvas.style.width = `${w}px`;
-      canvas.style.height = `${h}px`;
-    }
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    const view = vp.visibleBounds();
-    const zoom = vp.zoom;
-    // Exposed for tests and diagnostics: the view's zoom (1 = whole region) and centre.
-    const host = hostRef.current;
-    if (host) {
-      host.dataset.zoom = zoom.toFixed(3);
-      host.dataset.centre = `${vp.centreLon.toFixed(3)},${mercLat(vp.centreY).toFixed(3)}`;
-    }
-
-    ctx.fillStyle = MAP_COLORS.ocean;
-    ctx.fillRect(0, 0, w, h);
-    drawGraticule(ctx, vp);
-
-    // ---- land and borders (Natural Earth, simplified; drawing data only)
-    if (d?.available) {
-      ctx.fillStyle = MAP_COLORS.land;
-      ctx.strokeStyle = MAP_COLORS.landEdge;
-      ctx.lineWidth = 0.8;
-      ctx.lineJoin = 'round';
-      ctx.beginPath();
-      d.land.forEach((polygon, i) => {
-        if (boundsIntersect(lb[i], view)) tracePolygon(ctx, vp, polygon);
-      });
-      ctx.fill('evenodd');
-      ctx.stroke();
-
-      ctx.strokeStyle = 'rgba(143,133,116,0.5)';
-      ctx.lineWidth = 0.6;
-      ctx.beginPath();
-      d.countries.forEach((c, ci) =>
-        c.polygons.forEach((polygon, pi) => {
-          if (boundsIntersect(cb[ci][pi], view)) tracePolygon(ctx, vp, polygon);
-        }),
-      );
-      ctx.stroke();
-    }
-
-    const jobs: LabelJob[] = [];
-
-    // ---- polar-chart view outline
-    if (pe) {
-      const outline = viewOutline(pe.viewport);
-      if (outline.length > 3) {
-        ctx.save();
-        ctx.setLineDash([6, 4]);
-        ctx.strokeStyle = '#0B5C8E';
-        ctx.fillStyle = 'rgba(11,92,142,0.07)';
-        ctx.lineWidth = 1.6;
-        for (const run of splitAtAntimeridian(outline)) {
-          ctx.beginPath();
-          run.forEach((p, i) => {
-            const s = vp.project(p.lat, p.lon);
-            if (i === 0) ctx.moveTo(s.x, s.y);
-            else ctx.lineTo(s.x, s.y);
-          });
-          ctx.fill();
-          ctx.stroke();
-        }
-        ctx.restore();
-        const anchor = vp.project(outline[0].lat, outline[0].lon);
-        jobs.push({
-          text: 'Antarctic chart view',
-          x: Math.min(w - 150, Math.max(8, anchor.x + 6)),
-          y: Math.min(h - 8, Math.max(16, anchor.y + 14)),
-          font: `600 11px ${FONT}`,
-          fill: '#0B5C8E',
-          halo: true,
-          priority: LABEL_PRIORITY.view,
-        });
-      }
-    }
-
-    // ---- routes
-    const line = (pts: LonLat[], style: string, width: number, dash: number[]): void => {
-      if (pts.length < 2) return;
-      ctx.save();
-      ctx.setLineDash(dash);
-      ctx.strokeStyle = style;
-      ctx.lineWidth = width;
-      ctx.lineJoin = 'round';
-      ctx.lineCap = 'round';
-      ctx.beginPath();
-      pts.forEach((p, i) => {
-        const s = vp.project(p.lat, p.lon);
-        if (i === 0) ctx.moveTo(s.x, s.y);
-        else ctx.lineTo(s.x, s.y);
-      });
-      ctx.stroke();
-      ctx.restore();
-    };
-    if (sc.layers.baselineRoute) {
-      line(sc.baselineRoute.map((q) => ({ lat: q.latitude, lon: q.longitude })), MAP_COLORS.routeBaseline, 1.5, [6, 4]);
-    }
-    if (sc.layers.optimisedRoute) {
-      line(sc.optimisedRoute.map((q) => ({ lat: q.latitude, lon: q.longitude })), MAP_COLORS.routeOptimised, 2.4, []);
-    }
-    if (sc.layers.track) line(sc.track.map(([lat, lon]) => ({ lat, lon })), MAP_COLORS.track, 2.6, []);
-
-    // ---- ports and stations: every one is drawn as a small symbol; names are earned by zoom
-    const marks = [
-      ...sc.ports.map((p) => ({ id: p.id, name: p.name, lat: p.latitude, lon: p.longitude, kind: 'port' as const, indian: false })),
-      ...sc.stations.map((s) => ({
-        id: s.id,
-        name: s.name,
-        lat: s.latitude,
-        lon: s.longitude,
-        kind: 'station' as const,
-        indian: Boolean(s.is_indian),
-      })),
-    ];
-    // Draw the endpoints last so they sit on top.
-    marks.sort((a, b) => Number(a.id === oid || a.id === did) - Number(b.id === oid || b.id === did));
-    for (const m of marks) {
-      const s = vp.project(m.lat, m.lon);
-      if (s.x < -10 || s.x > w + 10 || s.y < -10 || s.y > h + 10) continue;
-      const endpoint = m.id === oid || m.id === did;
-      ctx.beginPath();
-      if (m.kind === 'port') {
-        ctx.rect(s.x - 3.5, s.y - 3.5, 7, 7);
-        ctx.fillStyle = MAP_COLORS.port;
-      } else {
-        ctx.arc(s.x, s.y, 3.5, 0, Math.PI * 2);
-        ctx.fillStyle = MAP_COLORS.station;
-      }
-      ctx.fill();
-      ctx.lineWidth = endpoint ? 2.2 : 1;
-      ctx.strokeStyle = endpoint ? '#0E2433' : 'rgba(255,255,255,0.9)';
-      ctx.stroke();
-      if (showMarkLabel({ kind: m.kind, endpoint, indian: m.indian }, zoom)) {
-        jobs.push({
-          text: m.name,
-          x: s.x + 8,
-          y: s.y + 4,
-          font: `${endpoint ? 600 : 500} 11px ${FONT}`,
-          fill: '#0E2433',
-          halo: true,
-          priority: endpoint ? LABEL_PRIORITY.endpoint : m.kind === 'port' ? LABEL_PRIORITY.port : LABEL_PRIORITY.station,
-        });
-      }
-    }
-
-    // ---- vessel
-    if (sc.layers.vessel && sc.vessel) {
-      const s = vp.project(sc.vessel.lat, sc.vessel.lon);
-      ctx.beginPath();
-      ctx.arc(s.x, s.y, 5.5, 0, Math.PI * 2);
-      ctx.fillStyle = '#FFFFFF';
-      ctx.fill();
-      ctx.lineWidth = 2.2;
-      ctx.strokeStyle = MAP_COLORS.track;
-      ctx.stroke();
-    }
-
-    // ---- country names: only the largest visible, and only as many as the cap allows
-    if (d?.available) {
-      const threshold = countryRankThreshold(zoom);
-      let count = 0;
-      for (const c of d.countries) {
-        if (count >= MAX_COUNTRY_LABELS) break;
-        if (c.label_rank < threshold) continue;
-        const s = vp.project(c.label[1], c.label[0]);
-        if (s.x < 0 || s.x > w || s.y < 0 || s.y > h) continue;
-        count += 1;
-        jobs.push({
-          text: c.name.toUpperCase(),
-          x: s.x,
-          y: s.y,
-          font: `500 10px ${FONT}`,
-          fill: 'rgba(14,36,51,0.52)',
-          halo: false,
-          center: true,
-          priority: LABEL_PRIORITY.country,
-        });
-      }
-    }
-
-    // ---- place labels in priority order, dropping anything that would overlap or leave the map
-    const placed: { x0: number; y0: number; x1: number; y1: number }[] = [];
-    let markLabels = 0;
-    jobs.sort((a, b) => a.priority - b.priority);
-    for (const j of jobs) {
-      if (j.priority >= LABEL_PRIORITY.port && j.priority < LABEL_PRIORITY.country && markLabels >= MAX_MARK_LABELS) continue;
-      ctx.font = j.font;
-      const tw = ctx.measureText(j.text).width;
-      const x = j.center ? j.x - tw / 2 : j.x;
-      const box = { x0: x - 2, y0: j.y - 11, x1: x + tw + 2, y1: j.y + 3 };
-      if (box.x0 < 0 || box.y0 < 0 || box.x1 > w || box.y1 > h) continue;
-      if (placed.some((b) => box.x0 < b.x1 && box.x1 > b.x0 && box.y0 < b.y1 && box.y1 > b.y0)) continue;
-      placed.push(box);
-      if (j.priority >= LABEL_PRIORITY.port && j.priority < LABEL_PRIORITY.country) markLabels += 1;
-      if (j.halo) {
-        ctx.lineWidth = 3;
-        ctx.strokeStyle = 'rgba(255,255,255,0.85)';
-        ctx.strokeText(j.text, x, j.y);
-      }
-      ctx.fillStyle = j.fill;
-      ctx.fillText(j.text, x, j.y);
-    }
-
-    // ---- scale bar, true at the latitude of the view's centre (Mercator stretches away from the equator)
-    const centreLat = vp.unproject(w / 2, h / 2).lat;
-    const bar = niceScaleBar(metresPerPixelAt(vp.scale, centreLat), 120);
-    if (bar) {
-      const x0 = 14;
-      const y0 = h - 34;
-      ctx.save();
-      ctx.lineCap = 'butt';
-      ctx.strokeStyle = 'rgba(255,255,255,0.9)';
-      ctx.lineWidth = 4.5;
-      ctx.beginPath();
-      ctx.moveTo(x0, y0);
-      ctx.lineTo(x0 + bar.lengthPx, y0);
-      ctx.stroke();
-      ctx.strokeStyle = '#0E2433';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(x0, y0 - 4);
-      ctx.lineTo(x0, y0);
-      ctx.lineTo(x0 + bar.lengthPx, y0);
-      ctx.lineTo(x0 + bar.lengthPx, y0 - 4);
-      ctx.stroke();
-      ctx.font = `600 11px ${FONT}`;
-      ctx.fillStyle = '#0E2433';
-      ctx.fillText(`${bar.label}  ·  true at ${Math.abs(centreLat).toFixed(0)}°${centreLat < 0 ? 'S' : 'N'}`, x0, y0 - 8);
-      ctx.restore();
-    }
-
-    // ---- honesty strip
-    ctx.font = `600 11px ${FONT}`;
-    ctx.fillStyle = 'rgba(14,36,51,0.75)';
-    ctx.fillText('REGIONAL CONTEXT  ·  Mercator  ·  not for navigation', 14, h - 12);
-    if (d?.available) {
-      ctx.font = `10px ${FONT}`;
-      ctx.textAlign = 'right';
-      ctx.fillStyle = 'rgba(14,36,51,0.62)';
-      ctx.fillText('Land: Natural Earth (public domain), simplified ~4 km', w - 14, h - 12);
-      ctx.textAlign = 'left';
-    }
-  }, [vp]);
-
-  const schedule = useCallback((): void => {
-    if (rafRef.current) return;
-    rafRef.current = requestAnimationFrame(() => {
-      rafRef.current = 0;
-      paint();
-    });
-  }, [paint]);
-
-  // =================================================================== view changes
-  const cancelAnim = useCallback((): void => {
-    if (animRef.current) cancelAnimationFrame(animRef.current);
-    animRef.current = 0;
-    pendingRef.current = null;
+  const reportWindFailure = useCallback((reason: string): void => {
+    const token = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN?.trim() ?? '';
+    const safeReason = safeMapDiagnostic(reason, token);
+    if (windErrorRef.current === safeReason) return;
+    windErrorRef.current = safeReason;
+    setWindSourceStatus('error');
+    setWindError(safeReason);
+    if (import.meta.env.DEV) console.error(`[RegionalMap] GFS atmospheric wind particles failed: ${safeReason}`);
   }, []);
 
-  /** Run `frame(e)` for e easing 0 to 1 over `ms`; or jump straight to 1 when motion is reduced. */
-  const animate = useCallback(
-    (frame: (e: number) => void, ms = EASE_MS): void => {
-      if (animRef.current) cancelAnimationFrame(animRef.current);
-      animRef.current = 0;
-      if (reduced) {
-        frame(1);
-        pendingRef.current = null;
-        schedule();
-        return;
-      }
-      const t0 = performance.now();
-      const step = (now: number): void => {
-        const t = Math.min(1, (now - t0) / ms);
-        frame(easeOutCubic(t));
-        schedule();
-        if (t < 1) {
-          animRef.current = requestAnimationFrame(step);
-        } else {
-          animRef.current = 0;
-          pendingRef.current = null;
-        }
-      };
-      animRef.current = requestAnimationFrame(step);
+  const updateMapData = useCallback(
+    (map: MapboxMap): void => {
+      const latest = latestRef.current;
+      const { relativeZoom, centre } = getRelativeZoom(map, baseZoomRef.current);
+      setMapView({ zoom: relativeZoom, centre });
+      const marks = makeMarks(latest);
+      updateSource(map, 'regional-land', makeLand(latest.data));
+      updateSource(map, 'regional-countries', makeCountries(latest.data));
+      updateSource(map, 'regional-country-labels', makeCountryLabels(latest.data, relativeZoom));
+      updateSource(map, 'regional-lines', makeLines(latest.scene));
+      updateSource(map, 'regional-marks', marks);
+      updateSource(map, 'regional-mark-labels', makeMarkLabels(marks, relativeZoom));
+      updateSource(
+        map,
+        'regional-vessel',
+        latest.scene.layers.vessel && latest.scene.vessel
+          ? featureCollection([
+              {
+                type: 'Feature',
+                properties: {},
+                geometry: {
+                  type: 'Point',
+                  coordinates: [latest.scene.vessel.lon, latest.scene.vessel.lat],
+                },
+              },
+            ])
+          : EMPTY,
+      );
+      updateSource(map, 'regional-polar-outline', makePolarOutline(latest.polarEngine));
+      updateSource(map, 'regional-polar-label', makePolarLabel(latest.polarEngine));
+      map.setLayoutProperty('regional-baseline-route', 'visibility', latest.scene.layers.baselineRoute ? 'visible' : 'none');
+      map.setLayoutProperty('regional-optimized-route', 'visibility', latest.scene.layers.optimisedRoute ? 'visible' : 'none');
+      map.setLayoutProperty('regional-track', 'visibility', latest.scene.layers.track ? 'visible' : 'none');
+      map.setLayoutProperty('regional-vessel', 'visibility', latest.scene.layers.vessel ? 'visible' : 'none');
     },
-    [schedule, reduced],
+    [],
   );
 
-  /** The view a change would produce, built on the pending target of any animation in flight. */
-  const targetFrom = useCallback(
-    (apply: (v: RegionViewport) => void): ViewState => {
-      const now = vp.getView();
-      vp.setView(pendingRef.current ?? now);
-      apply(vp);
-      const target = vp.getView();
-      vp.setView(now);
-      return target;
-    },
-    [vp],
-  );
-
-  const zoomAbout = useCallback(
-    (factor: number, px: number, py: number): void => {
-      const target = targetFrom((v) => v.zoomAt(px, py, factor));
-      const from: ViewState = vp.getView();
-      const total = target.scale / from.scale;
-      pendingRef.current = target;
-      // Each frame re-applies the zoom from the start view, so the point under (px, py) never drifts mid-flight.
-      animate((e) => {
-        vp.setView(from);
-        vp.zoomAt(px, py, Math.pow(total, e));
-      });
-    },
-    [animate, targetFrom, vp],
-  );
-
-  const moveTo = useCallback(
-    (target: ViewState, ms = EASE_MS): void => {
-      const from = vp.getView();
-      pendingRef.current = target;
-      animate((e) => vp.setView(lerpView(from, target, e)), ms);
-    },
-    [animate, vp],
-  );
-
-  const panBy = useCallback((dx: number, dy: number): void => moveTo(targetFrom((v) => v.panBy(dx, dy)), 140), [moveTo, targetFrom]);
-
-  const resetView = useCallback((): void => moveTo(vp.viewAfterFit(initialPoints, 90), 260), [initialPoints, moveTo, vp]);
-  const wholeRegion = useCallback((): void => moveTo(vp.viewAfterFit([], 0), 260), [moveTo, vp]);
-  const zoomCentre = (factor: number): void => zoomAbout(factor, vp.widthPx / 2, vp.heightPx / 2);
-
-  // Size tracking. A hidden host still has layout, so it measures correctly; a zero size is ignored.
   useEffect(() => {
-    const host = hostRef.current;
-    if (!host) return undefined;
-    const apply = (): void => {
-      const r = host.getBoundingClientRect();
-      if (r.width < 2 || r.height < 2) return;
-      vp.resize(r.width, r.height);
-      schedule();
-    };
-    apply();
-    const ro = new ResizeObserver(apply);
-    ro.observe(host);
-    return () => {
-      ro.disconnect();
-      if (rafRef.current) cancelAnimationFrame(rafRef.current);
-      rafRef.current = 0;
-      cancelAnim();
-    };
-  }, [vp, schedule, cancelAnim]);
-
-  // Open on the route (or the two endpoints) the first time this view is shown, and again if the route changes.
-  useEffect(() => {
-    if (visible && fittedKeyRef.current !== initialKey && vp.widthPx > 2) {
-      fittedKeyRef.current = initialKey;
-      vp.setView(vp.viewAfterFit(initialPoints, 90));
+    const container = mapContainerRef.current;
+    const token = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN?.trim();
+    if (!visible || mapRef.current || !container) return undefined;
+    if (!token) {
+      setMapError('Mapbox is not configured. Set VITE_MAPBOX_ACCESS_TOKEN to enable the regional map.');
+      return undefined;
     }
-    schedule();
-  }, [visible, initialKey, initialPoints, data, scene, vp, schedule, originId, destinationId, polarEngine]);
 
-  // Wheel: a NATIVE, non-passive listener. React's onWheel is passive, so it cannot stop the page from
-  // scrolling or the browser from page-zooming on a pinch (which arrives as ctrl+wheel).
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return undefined;
-    const onWheel = (e: WheelEvent): void => {
-      e.preventDefault();
-      cancelAnim();
-      const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1;
-      const rate = e.ctrlKey ? 0.01 : 0.0018;
-      const r = canvas.getBoundingClientRect();
-      vp.zoomAt(e.clientX - r.left, e.clientY - r.top, Math.exp(-e.deltaY * unit * rate));
-      schedule();
+    let cancelled = false;
+    const initialize = async (): Promise<void> => {
+      const [mapbox, _style] = await Promise.all([import('mapbox-gl'), import('mapbox-gl/dist/mapbox-gl.css')]);
+      if (cancelled || !mapContainerRef.current) return;
+      const mapboxgl = mapbox.default;
+      setMapError(null);
+      setMapReady(false);
+      setWindSourceStatus('loading');
+      setWindError(null);
+      windErrorRef.current = null;
+      mapboxgl.accessToken = token;
+      const map = new mapboxgl.Map({
+        container: mapContainerRef.current,
+        style: MAP_STYLE,
+        center: [(region.lon_min + region.lon_max) / 2, (region.lat_min + region.lat_max) / 2],
+        zoom: 1,
+        attributionControl: false,
+        cooperativeGestures: false,
+        doubleClickZoom: true,
+        dragPan: true,
+        dragRotate: false,
+        keyboard: false,
+        maxPitch: 0,
+        pitchWithRotate: false,
+        renderWorldCopies: false,
+        scrollZoom: false,
+        touchZoomRotate: true,
+      });
+      mapRef.current = map;
+
+      const addRegionalLayers = (): void => {
+        if (!map.getSource(WIND_SOURCE_ID)) {
+          setWindSourceStatus('loading');
+          setWindError(null);
+          windErrorRef.current = null;
+        }
+        const added = addLayers(map, windEnabledRef.current, reportWindFailure);
+        setWindLayerPresent(added || Boolean(map.getLayer(WIND_LAYER_ID)));
+      };
+      map.on('style.load', () => {
+        if (!map.isStyleLoaded()) return;
+        addRegionalLayers();
+        updateMapData(map);
+      });
+      map.on('sourcedata', (event) => {
+        if (event.sourceId !== WIND_SOURCE_ID) return;
+        if (event.sourceDataType === 'error') {
+          reportWindFailure(`Mapbox reported an error loading raster-array source ${WIND_SOURCE_ID}.`);
+        } else if (event.sourceDataType === 'content' && event.isSourceLoaded) {
+          windErrorRef.current = null;
+          setWindSourceStatus((status) => status === 'error' ? status : 'ready');
+          setWindError(null);
+        }
+      });
+      map.on('error', (event) => {
+        const message = event.error.message;
+        if ([WIND_SOURCE_ID, WIND_LAYER_ID, WIND_SOURCE_URL, 'raster-array', 'raster-particle'].some((key) => message.includes(key))) {
+          reportWindFailure(message);
+        }
+      });
+
+      const onLoad = (): void => {
+        addRegionalLayers();
+        baseZoomRef.current = fitRegion(map, region);
+        map.setMinZoom(baseZoomRef.current);
+        map.setMaxZoom(baseZoomRef.current + Math.log2(MAX_RELATIVE_ZOOM));
+        map.addControl(new mapboxgl.ScaleControl({ maxWidth: 120, unit: 'metric' }), 'top-left');
+        map.getCanvas().tabIndex = -1;
+        regionKeyRef.current = regionKey;
+        map.getCanvas().setAttribute('aria-label', 'Regional map with routes, ports, stations, vessel and polar chart extent');
+        map.getCanvas().setAttribute('role', 'img');
+        const updateAfterCameraChange = (): void => {
+          if (map.isStyleLoaded()) updateMapData(map);
+        };
+        map.on('zoomend', updateAfterCameraChange);
+        map.on('moveend', updateAfterCameraChange);
+        map.on('mousemove', (event) => {
+          pointerPointRef.current = [event.point.x, event.point.y];
+          const readout = readoutRef.current;
+          if (readout) {
+            readout.textContent = `${formatLat(event.lngLat.lat)}   ${formatLon(event.lngLat.lng)}`;
+          }
+        });
+        map.on('click', 'regional-candidate-routes', (event) => {
+          const profile = event.features?.[0]?.properties?.profile;
+          if (isRouteProfileId(profile)) selectCandidateRef.current(profile);
+        });
+        map.on('mouseenter', 'regional-candidate-routes', () => {
+          map.getCanvasContainer().style.cursor = 'pointer';
+        });
+        map.on('mouseleave', 'regional-candidate-routes', () => {
+          map.getCanvasContainer().style.cursor = '';
+        });
+        const canvas = map.getCanvas();
+        const onWheel = (event: WheelEvent): void => {
+          event.preventDefault();
+          const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? 400 : 1;
+          const rate = event.ctrlKey ? 0.01 : 0.0018;
+          const rect = map.getContainer().getBoundingClientRect();
+          const point = pointerPointRef.current ?? [event.clientX - rect.left, event.clientY - rect.top];
+          const anchor = map.unproject(point);
+          map.easeTo({
+            zoom: map.getZoom() - (event.deltaY * unit * rate) / Math.LN2,
+            around: anchor,
+            duration: 0,
+          });
+        };
+        canvas.addEventListener('wheel', onWheel, { passive: false });
+        map.on('remove', () => canvas.removeEventListener('wheel', onWheel));
+        map.on('mouseleave', () => {
+          if (readoutRef.current) readoutRef.current.textContent = '—';
+        });
+        map.on('idle', () => {
+          setMapReady(true);
+          if (map.getSource(WIND_SOURCE_ID) && map.isSourceLoaded(WIND_SOURCE_ID)) {
+            setWindSourceStatus((status) => status === 'error' ? status : 'ready');
+          }
+        });
+        updateMapData(map);
+        setMapReady(true);
+      };
+
+      const onError = (): void => {
+        setMapError('Mapbox could not load the map. Check the public token, network connection and Mapbox style access.');
+      };
+      map.on('load', onLoad);
+      map.on('error', onError);
     };
-    canvas.addEventListener('wheel', onWheel, { passive: false });
-    return () => canvas.removeEventListener('wheel', onWheel);
-  }, [vp, schedule, cancelAnim]);
+    void initialize().catch(() => {
+      if (!cancelled) setMapError('Unable to initialize Mapbox. Check the installed map package and public token configuration.');
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [visible, updateMapData, reportWindFailure]);
 
-  // =================================================================== pointer and keyboard
-  const setReadout = (clientX: number, clientY: number | null): void => {
-    const el = readoutRef.current;
-    const canvas = canvasRef.current;
-    if (!el || !canvas) return;
-    if (clientY === null) {
-      el.textContent = '—';
+  useEffect(
+    () => () => {
+      const map = mapRef.current;
+      map?.remove();
+      mapRef.current = null;
+    },
+    [],
+  );
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady || !map.isStyleLoaded() || regionKeyRef.current === regionKey) return;
+    map.setMinZoom(0);
+    map.setMaxZoom(24);
+    baseZoomRef.current = fitRegion(map, region);
+    map.setMinZoom(baseZoomRef.current);
+    map.setMaxZoom(baseZoomRef.current + Math.log2(MAX_RELATIVE_ZOOM));
+    regionKeyRef.current = regionKey;
+    fittedKeyRef.current = '';
+    updateMapData(map);
+  }, [mapReady, regionKey, region, reducedMotion, updateMapData]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady || !map.isStyleLoaded()) return;
+    updateMapData(map);
+  }, [mapReady, scene, data, originId, destinationId, polarEngine, updateMapData]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady || !map.isStyleLoaded() || !map.getLayer(WIND_LAYER_ID)) return;
+    map.setLayoutProperty(WIND_LAYER_ID, 'visibility', windParticlesEnabled ? 'visible' : 'none');
+    setWindLayerPresent(true);
+  }, [mapReady, windParticlesEnabled]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady || !visible || !polarEngine) return undefined;
+    const updateOutline = (): void => {
+      updateSource(map, 'regional-polar-outline', makePolarOutline(polarEngine));
+      updateSource(map, 'regional-polar-label', makePolarLabel(polarEngine));
+    };
+    updateOutline();
+    return polarEngine.subscribe(updateOutline);
+  }, [mapReady, visible, polarEngine]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady || fittedKeyRef.current === initialKey) return;
+    fittedKeyRef.current = initialKey;
+    if (initialPoints.length >= 2) {
+      const longitudes = initialPoints.map((point) => point.lon);
+      const latitudes = initialPoints.map((point) => point.lat);
+      map.fitBounds(
+        [
+          [Math.min(...longitudes), Math.min(...latitudes)],
+          [Math.max(...longitudes), Math.max(...latitudes)],
+        ],
+        { padding: 90, duration: reducedMotion ? 0 : 260, maxZoom: baseZoomRef.current + Math.log2(16) },
+      );
+    } else if (initialPoints.length === 1) {
+      map.flyTo({
+        center: [initialPoints[0].lon, initialPoints[0].lat],
+        zoom: baseZoomRef.current + 2,
+        duration: reducedMotion ? 0 : 260,
+      });
+    }
+  }, [mapReady, initialKey, initialPoints, reducedMotion]);
+
+  const fitInitial = useCallback((): void => {
+    const map = mapRef.current;
+    if (!map || initialPoints.length === 0) return;
+    if (initialPoints.length === 1) {
+      map.flyTo({
+        center: [initialPoints[0].lon, initialPoints[0].lat],
+        zoom: baseZoomRef.current + 2,
+        duration: reducedMotion ? 0 : 260,
+      });
       return;
     }
-    const r = canvas.getBoundingClientRect();
-    const ll = vp.unproject(clientX - r.left, clientY - r.top);
-    el.textContent = `${formatLat(ll.lat)}   ${formatLon(ll.lon)}`;
-  };
+    const longitudes = initialPoints.map((point) => point.lon);
+    const latitudes = initialPoints.map((point) => point.lat);
+    map.fitBounds(
+      [
+        [Math.min(...longitudes), Math.min(...latitudes)],
+        [Math.max(...longitudes), Math.max(...latitudes)],
+      ],
+      { padding: 90, duration: reducedMotion ? 0 : 260, maxZoom: baseZoomRef.current + Math.log2(16) },
+    );
+  }, [initialPoints, reducedMotion]);
 
-  const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>): void => {
-    if (e.button !== 0) return;
-    cancelAnim();
-    e.currentTarget.setPointerCapture(e.pointerId);
-    e.currentTarget.style.cursor = 'grabbing';
-    dragRef.current = { x: e.clientX, y: e.clientY, moved: false };
-    hostRef.current?.focus({ preventScroll: true });
-  };
-  const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>): void => {
-    setReadout(e.clientX, e.clientY);
-    const d = dragRef.current;
-    if (!d) return;
-    d.moved = d.moved || Math.hypot(e.clientX - d.x, e.clientY - d.y) > 3;
-    vp.panBy(e.clientX - d.x, e.clientY - d.y);
-    d.x = e.clientX;
-    d.y = e.clientY;
-    schedule();
-  };
-  const endDrag = (e: React.PointerEvent<HTMLCanvasElement>): void => {
-    dragRef.current = null;
-    e.currentTarget.style.cursor = 'grab';
-  };
-  const onDoubleClick = (e: React.MouseEvent<HTMLCanvasElement>): void => {
-    const r = e.currentTarget.getBoundingClientRect();
-    zoomAbout(e.shiftKey ? 1 / 2 : 2, e.clientX - r.left, e.clientY - r.top);
-  };
+  const showWholeRegion = useCallback((): void => {
+    const map = mapRef.current;
+    if (map) map.fitBounds(
+      [
+        [region.lon_min, region.lat_min],
+        [region.lon_max, region.lat_max],
+      ],
+      { padding: 24, duration: reducedMotion ? 0 : 260 },
+    );
+  }, [region, reducedMotion]);
 
-  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>): void => {
-    // Only when the map itself has focus: a button or field inside keeps its own keys.
-    if (e.target !== e.currentTarget || e.altKey || e.ctrlKey || e.metaKey) return;
-    const step = e.shiftKey ? KEY_PAN_FAR_PX : KEY_PAN_PX;
-    const pan = panBy;
-    switch (e.key) {
-      case 'ArrowLeft': pan(step, 0); break;
-      case 'ArrowRight': pan(-step, 0); break;
-      case 'ArrowUp': pan(0, step); break;
-      case 'ArrowDown': pan(0, -step); break;
-      case '+': case '=': zoomCentre(1.5); break;
-      case '-': case '_': zoomCentre(1 / 1.5); break;
-      case '0': case 'Home': resetView(); break;
-      case 'f': case 'F': wholeRegion(); break;
+  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
+    const map = mapRef.current;
+    if (!map || event.altKey || event.ctrlKey || event.metaKey) return;
+    const target = event.target;
+    if (target !== hostRef.current && target !== map.getCanvas()) return;
+    const pan = event.shiftKey ? PAN_FAR_STEP : PAN_STEP;
+    switch (event.key) {
+      case 'ArrowLeft': map.panBy([-pan, 0], { duration: reducedMotion ? 0 : 140 }); break;
+      case 'ArrowRight': map.panBy([pan, 0], { duration: reducedMotion ? 0 : 140 }); break;
+      case 'ArrowUp': map.panBy([0, -pan], { duration: reducedMotion ? 0 : 140 }); break;
+      case 'ArrowDown': map.panBy([0, pan], { duration: reducedMotion ? 0 : 140 }); break;
+      case '+':
+      case '=': map.zoomTo(map.getZoom() + Math.log2(1.5), { duration: reducedMotion ? 0 : 200 }); break;
+      case '-':
+      case '_': map.zoomTo(map.getZoom() - Math.log2(1.5), { duration: reducedMotion ? 0 : 200 }); break;
+      case '0':
+      case 'Home': fitInitial(); break;
+      case 'f':
+      case 'F': showWholeRegion(); break;
       default: return;
     }
-    e.preventDefault();
+    event.preventDefault();
   };
 
   const unavailable = context.isError || (data && !data.available);
+  const zoomIn = (): void => {
+    const map = mapRef.current;
+    if (map) map.zoomTo(map.getZoom() + Math.log2(1.5), { duration: reducedMotion ? 0 : 200 });
+  };
+  const zoomOut = (): void => {
+    const map = mapRef.current;
+    if (map) map.zoomTo(map.getZoom() - Math.log2(1.5), { duration: reducedMotion ? 0 : 200 });
+  };
 
   return (
     <div
       ref={hostRef}
+      data-zoom={mapView?.zoom.toFixed(3)}
+      data-centre={mapView?.centre}
+      data-map-ready={mapReady ? 'true' : undefined}
+      data-wind-source-status={windSourceStatus}
+      data-wind-layer-present={windLayerPresent ? 'true' : 'false'}
+      data-wind-layer-visibility={windLayerPresent ? (windParticlesEnabled ? 'visible' : 'none') : undefined}
       tabIndex={0}
       role="application"
       aria-label="Regional context map"
       aria-describedby="regional-map-help"
+      onPointerDown={(event) => {
+        if (event.target instanceof Node && mapContainerRef.current?.contains(event.target)) {
+          hostRef.current?.focus({ preventScroll: true });
+        }
+      }}
+      onClick={(event) => {
+        if (event.target instanceof Node && mapContainerRef.current?.contains(event.target)) {
+          hostRef.current?.focus({ preventScroll: true });
+        }
+      }}
       onKeyDown={onKeyDown}
       className="relative h-full w-full overflow-hidden outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent"
     >
       <p id="regional-map-help" className="sr-only">
-        Arrow keys pan, plus and minus zoom, zero returns to the route extent, F shows the whole region.
-        Scroll or pinch to zoom, drag to pan, double-click to zoom in.
+        Arrow keys pan, plus and minus zoom, zero returns to the route extent, and F shows the whole region.
+        Scroll or pinch to zoom, drag to pan, and double-click to zoom in.
       </p>
-      <canvas
-        ref={canvasRef}
-        className="absolute inset-0 touch-none select-none"
-        style={{ cursor: 'grab' }}
-        role="img"
-        aria-label="Map of the voyage region with the route, ports and stations, and the Antarctic chart view outlined"
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={endDrag}
-        onPointerCancel={endDrag}
-        onPointerLeave={(e) => {
-          if (!dragRef.current) setReadout(e.clientX, null);
-        }}
-        onDoubleClick={onDoubleClick}
+      <div
+        ref={mapContainerRef}
+        data-testid="regional-map-renderer"
+        className="overflow-hidden"
+        style={{ position: 'absolute', top: 0, bottom: 0, left: '4%', right: '4%', width: 'auto', height: 'auto' }}
       />
-
       <MapToolbar
         lead={toolbarLead}
         groups={[
           <>
-            <ToolButton label="Zoom in" onClick={() => zoomCentre(1.5)}>
+            <ToolButton label="Zoom in" onClick={zoomIn}>
               <Plus size={15} />
             </ToolButton>
-            <ToolButton label="Zoom out" onClick={() => zoomCentre(1 / 1.5)}>
+            <ToolButton label="Zoom out" onClick={zoomOut}>
               <Minus size={15} />
             </ToolButton>
-            <ToolButton label="Reset to the route extent" onClick={resetView}>
+            <ToolButton label="Reset to the route extent" onClick={fitInitial}>
               <Maximize2 size={15} />
             </ToolButton>
-            <ToolButton label="Show the whole region" onClick={wholeRegion}>
+            <ToolButton label="Show the whole region" onClick={showWholeRegion}>
               <Globe size={15} />
+            </ToolButton>
+          </>,
+          <>
+            <ToolButton
+              label="Wind particles"
+              hint="GFS atmospheric wind velocity; not sea-ice drift or ocean currents."
+              onClick={() => setWindParticlesEnabled((enabled) => !enabled)}
+              pressed={windParticlesEnabled}
+              disabled={!windLayerPresent}
+            >
+              <Wind size={15} />
             </ToolButton>
           </>,
         ]}
@@ -637,82 +962,38 @@ export function RegionalMap({ scene, visible, polarEngine, originId, destination
       <div
         ref={readoutRef}
         data-testid="regional-readout"
-        className="pointer-events-none absolute bottom-7 right-3 z-10 rounded border border-hair bg-panel px-2 py-0.5 num text-2xs text-ink-2"
+        className="pointer-events-none absolute bottom-7 right-[5%] z-10 rounded border border-hair bg-panel px-2 py-0.5 num text-2xs text-ink-2"
         aria-live="off"
       >
         —
       </div>
-
-      {context.isLoading && <Note title="Loading regional coastline…" />}
+      <div className="pointer-events-none absolute bottom-2 left-[5%] z-10 rounded bg-panel/90 px-2 py-1 text-[10px] font-semibold tracking-wide text-ink-2">
+        REGIONAL CONTEXT · Mercator · NOT FOR NAVIGATION
+      </div>
+      <div className="pointer-events-none absolute bottom-2 right-[5%] z-10 rounded bg-panel/90 px-2 py-1 text-[10px] text-ink-2">
+        © Mapbox · © OpenStreetMap contributors · Natural Earth
+      </div>
+      {context.isLoading && <MapNote title="Loading regional coastline…" />}
       {unavailable && (
-        <Note
-          title="Regional coastline not built"
-          lines={
-            context.isError
-              ? ['The regional geography could not be fetched from the service.']
-              : [
-                  data?.reason ?? '',
-                  'The ports, stations and route are still drawn in their true positions.',
-                  `Build it once:  ${data?.setup?.[0] ?? 'python -m scripts.build_regional_context'}`,
-                ]
-          }
+        <MapNote
+          title="Regional coastline unavailable"
+          detail={context.data?.reason ?? context.error?.message ?? 'The map still shows routes, ports and stations.'}
         />
       )}
+      {mapError && <MapNote title="Regional map unavailable" detail={mapError} alert />}
+      {windError && <MapNote title="Atmospheric wind particles unavailable" detail={windError} alert />}
     </div>
   );
 }
 
-function Note({ title, lines = [] }: { title: string; lines?: string[] }): JSX.Element {
+function MapNote({ title, detail, alert = false }: { title: string; detail?: string; alert?: boolean }): JSX.Element {
   return (
     <div
-      role="status"
-      className="float absolute bottom-14 left-1/2 z-10 w-[min(520px,90%)] -translate-x-1/2 px-4 py-3 text-xs text-ink-2"
+      role={alert ? 'alert' : 'status'}
+      className="float pointer-events-none absolute bottom-12 left-1/2 z-20 max-w-[min(560px,80%)] -translate-x-1/2 px-3 py-2 text-center text-2xs text-ink-2"
     >
-      <div className="font-medium text-ink">{title}</div>
-      {lines.filter(Boolean).map((l) => (
-        <div key={l} className="mt-0.5 text-2xs text-ink-3">
-          {l}
-        </div>
-      ))}
+      <strong className={alert ? 'text-warn' : 'text-ink'}>{title}</strong>
+      {detail && <div className="mt-0.5">{detail}</div>}
     </div>
   );
-}
-
-function tracePolygon(ctx: CanvasRenderingContext2D, vp: RegionViewport, rings: number[][]): void {
-  for (const ring of rings) {
-    for (let i = 0; i + 1 < ring.length; i += 2) {
-      const s = vp.project(ring[i + 1], ring[i]);
-      if (i === 0) ctx.moveTo(s.x, s.y);
-      else ctx.lineTo(s.x, s.y);
-    }
-    ctx.closePath();
-  }
-}
-
-function drawGraticule(ctx: CanvasRenderingContext2D, vp: RegionViewport): void {
-  const tl = vp.unproject(0, 0);
-  const br = vp.unproject(vp.widthPx, vp.heightPx);
-  const step = graticuleStep(Math.abs(br.lon - tl.lon));
-  ctx.save();
-  ctx.lineWidth = 1;
-  ctx.font = `10px ${FONT}`;
-  ctx.fillStyle = MAP_COLORS.graticuleLabel;
-  ctx.strokeStyle = MAP_COLORS.graticule;
-  for (let lon = Math.ceil(tl.lon / step) * step; lon <= br.lon; lon += step) {
-    const x = vp.project(0, lon).x;
-    ctx.beginPath();
-    ctx.moveTo(x, 0);
-    ctx.lineTo(x, vp.heightPx);
-    ctx.stroke();
-    ctx.fillText(`${Math.abs(lon)}°${lon < 0 ? 'W' : lon > 0 ? 'E' : ''}`, x + 3, 12);
-  }
-  for (let lat = Math.ceil(br.lat / step) * step; lat <= tl.lat; lat += step) {
-    const y = vp.project(lat, 0).y;
-    ctx.beginPath();
-    ctx.moveTo(0, y);
-    ctx.lineTo(vp.widthPx, y);
-    ctx.stroke();
-    ctx.fillText(`${Math.abs(lat)}°${lat < 0 ? 'S' : lat > 0 ? 'N' : ''}`, 4, y - 3);
-  }
-  ctx.restore();
 }

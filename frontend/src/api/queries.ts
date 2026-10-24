@@ -21,6 +21,7 @@ import type {
   ObservedIcebergsResponse,
   RadarSweep,
   RegionalContext,
+  RealFlowField,
   RiskMatrixResponse,
   SpeedPowerResponse,
   StationsResponse,
@@ -78,10 +79,14 @@ export function useSpeedPowerCurve(vesselKey: string, concentration: number): Us
   });
 }
 
-export function useIcebergs(leadHours: number): UseQueryResult<IcebergsResponse> {
+export function useIcebergs(leadHours: number, targetModelHours?: number): UseQueryResult<IcebergsResponse> {
   return useQuery({
-    queryKey: ['icebergs', leadHours],
-    queryFn: () => api.getIcebergs(leadHours),
+    queryKey: [
+      'icebergs',
+      targetModelHours === undefined ? 'forecast-lead' : 'model-target',
+      targetModelHours ?? leadHours,
+    ],
+    queryFn: () => api.getIcebergs(leadHours, targetModelHours),
     staleTime: 5 * 60_000,
   });
 }
@@ -156,6 +161,16 @@ export function useEnvField(p: EnvFieldParams | null): UseQueryResult<EnvField> 
     enabled: Boolean(p),
     staleTime: Infinity,
     placeholderData: (prev) => prev,
+  });
+}
+
+export function useRealFlowField(kind: 'wind' | 'current', date: string, enabled: boolean): UseQueryResult<RealFlowField> {
+  return useQuery({
+    queryKey: ['real-flow', kind, date],
+    queryFn: () => api.getRealFlowField(kind, date || undefined),
+    enabled,
+    staleTime: 5 * 60_000,
+    retry: 0,
   });
 }
 

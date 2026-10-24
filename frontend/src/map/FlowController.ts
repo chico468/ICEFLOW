@@ -84,6 +84,7 @@ export class FlowController {
   private drawnOnce = false;
   private outsideNow = false;
   private disposed = false;
+  private paused = false;
 
   constructor(options: ControllerOptions) {
     this.o = options;
@@ -104,6 +105,17 @@ export class FlowController {
     return n;
   }
 
+  /** Freeze the visible frame while retaining particle positions and trails for a clean resume. */
+  setPaused(paused: boolean): void {
+    if (this.disposed || this.paused === paused) return;
+    this.paused = paused;
+    if (!paused) {
+      // Do not apply the time spent paused as a single large advection step.
+      this.lastStep = null;
+      this.lastDraw = -Infinity;
+    }
+  }
+
   /** Handle one animation frame. Returns what it did, for tests. */
   frame(now: number): 'drew' | 'skipped' | 'disposed' | 'no-size' {
     this.stats.frames += 1;
@@ -115,21 +127,26 @@ export class FlowController {
 
     const nextSig = `${vp.centreX}|${vp.centreY}|${vp.metresPerPixel}|${w}|${h}`;
     const viewChanged = nextSig !== this.sig;
+    const dpr = this.o.devicePixelRatio();
+    const backingChanged = this.sized.w !== w || this.sized.h !== h || this.sized.dpr !== dpr;
+    if (this.paused && !viewChanged && !backingChanged) {
+      this.stats.skipped += 1;
+      return 'skipped';
+    }
     // Arrows need a repaint only when something changed; particles are capped to 60 frames a second.
     if (mode === 'arrows') {
       if (this.drawnOnce && !viewChanged) {
         this.stats.skipped += 1;
         return 'skipped';
       }
-    } else if (now - this.lastDraw < FRAME_MS - 2) {
+    } else if (!this.paused && now - this.lastDraw < FRAME_MS - 2) {
       this.stats.skipped += 1;
       return 'skipped';
     }
     this.sig = nextSig;
     this.lastDraw = now;
 
-    const dpr = this.o.devicePixelRatio();
-    if (this.sized.w !== w || this.sized.h !== h || this.sized.dpr !== dpr) {
+    if (backingChanged) {
       canvas.width = Math.max(1, Math.round(w * dpr));
       canvas.height = Math.max(1, Math.round(h * dpr));
       canvas.style.width = `${w}px`;
@@ -152,6 +169,14 @@ export class FlowController {
     if (mode === 'arrows') {
       if (windGrid) drawArrows(ctx, vp, 'wind', windGrid, w, h, 0);
       if (currentGrid) drawArrows(ctx, vp, 'current', currentGrid, w, h, windGrid ? 23 : 0);
+      this.drawnOnce = true;
+      this.stats.draws += 1;
+      return 'drew';
+    }
+
+    if (this.paused) {
+      this.reprojectTrails();
+      for (const l of this.layers) drawParticles(ctx, l);
       this.drawnOnce = true;
       this.stats.draws += 1;
       return 'drew';
@@ -200,6 +225,23 @@ export class FlowController {
         return null;
       };
       l.particles.step({ project, spawn, widthPx: w, heightPx: h, marginPx: 24, dtSec, reproject });
+    }
+  }
+
+  /** Reproject existing geographic trails after a pan, zoom, resize or display-scale change. */
+  private reprojectTrails(): void {
+    const project = (lat: number, lon: number): { x: number; y: number } => this.o.view.lonLatToScreen(lat, lon);
+    for (const layer of this.layers) {
+      const p = layer.particles;
+      for (let i = 0; i < p.count; i += 1) {
+        if (!p.alive[i]) continue;
+        const base = i * p.trailLength;
+        for (let k = 0; k < p.trailCount[i]; k += 1) {
+          const screen = project(p.trailLat[base + k], p.trailLon[base + k]);
+          p.trailX[base + k] = screen.x;
+          p.trailY[base + k] = screen.y;
+        }
+      }
     }
   }
 }
@@ -256,6 +298,53 @@ export function drawParticles(ctx: CanvasRenderingContext2D, layer: Layer): void
         any = true;
       }
       if (any) ctx.stroke();
+    }
+  }
+
+  // Put a small direction mark on the leading end of each streak. Trails are
+  // stored newest-first, so index 0 is the tip and index 1 supplies its bearing.
+  // Open marks identify wind; filled marks identify ocean current even where
+  // their colours overlap the ice raster or the two layers cross.
+  for (let b = 0; b < buckets; b += 1) {
+    const [r, g, bl] = spec.ramp[b];
+    const color = `rgb(${r},${g},${bl})`;
+    ctx.beginPath();
+    let any = false;
+    for (let i = 0; i < p.count; i += 1) {
+      if (!p.alive[i] || shown(i) < 2 || speedBucket(p.speed[i], spec.maxSpeed, buckets) !== b) continue;
+      const base = i * K;
+      const dx = p.trailX[base] - p.trailX[base + 1];
+      const dy = p.trailY[base] - p.trailY[base + 1];
+      const angle = Math.atan2(dy, dx);
+      const x = p.trailX[base];
+      const y = p.trailY[base];
+      const length = layer.kind === 'wind' ? 4.2 : 4.8;
+      const spread = layer.kind === 'wind' ? 0.62 : 0.72;
+      const leftX = x - length * Math.cos(angle + spread);
+      const leftY = y - length * Math.sin(angle + spread);
+      const rightX = x - length * Math.cos(angle - spread);
+      const rightY = y - length * Math.sin(angle - spread);
+      ctx.moveTo(leftX, leftY);
+      ctx.lineTo(x, y);
+      ctx.lineTo(rightX, rightY);
+      if (layer.kind === 'current') {
+        ctx.lineTo(leftX, leftY);
+      }
+      any = true;
+    }
+    if (any) {
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+      ctx.lineWidth = layer.kind === 'wind' ? 3.2 : 2.8;
+      ctx.stroke();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = layer.kind === 'wind' ? 1.25 : 1.15;
+      ctx.stroke();
+      if (layer.kind === 'current') {
+        ctx.fillStyle = color;
+        ctx.fill();
+      }
     }
   }
   ctx.restore();

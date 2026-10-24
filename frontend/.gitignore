@@ -2,3 +2,33 @@ node_modules
 dist
 .vite
 *.local
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.venv-*/
+venv/
+
+# Node.js
+node_modules/
+frontend/node_modules/
+
+# Frontend build output
+frontend/dist/
+dist/
+
+# Test and tool caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# macOS
+.DS_Store

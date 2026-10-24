@@ -7,6 +7,7 @@
  * control stack and this panel as a sibling, so the panel is positioned against the chart, not the stack.
  */
 import { useEffect } from 'react';
+import { Pause, Play } from 'lucide-react';
 import type { LayerToggles } from '../map/MapEngine';
 import type { ModeAvailability } from '../map/iceModes';
 import type { RasterMode } from '../map/layers';
@@ -36,8 +37,8 @@ const GROUPS: { title: string; rows: Row[] }[] = [
   {
     title: 'Wind and current',
     rows: [
-      { key: 'windFlow', label: 'Wind (simulated)', hint: 'Animated particles on the 10 m wind field' },
-      { key: 'currentFlow', label: 'Ocean current (simulated)', hint: 'Animated particles on the surface-current field' },
+      { key: 'windFlow', label: 'Atmospheric wind', hint: '10 m eastward/northward velocity vectors' },
+      { key: 'currentFlow', label: 'Ocean currents', hint: 'Surface eastward/northward velocity vectors' },
     ],
   },
   {
@@ -80,6 +81,14 @@ export function MapLayerPanel({
   const setLeadHours = useAppStore((s) => s.setLeadHours);
   const flowStyle = useAppStore((s) => s.flowStyle);
   const setFlowStyle = useAppStore((s) => s.setFlowStyle);
+  const flowPaused = useAppStore((s) => s.flowPaused);
+  const setFlowPaused = useAppStore((s) => s.setFlowPaused);
+  const windFlowSource = useAppStore((s) => s.windFlowSource);
+  const setWindFlowSource = useAppStore((s) => s.setWindFlowSource);
+  const currentFlowSource = useAppStore((s) => s.currentFlowSource);
+  const setCurrentFlowSource = useAppStore((s) => s.setCurrentFlowSource);
+  const flowValidDate = useAppStore((s) => s.flowValidDate);
+  const setFlowValidDate = useAppStore((s) => s.setFlowValidDate);
   const reduced = useReducedMotion();
 
   useEffect(() => {
@@ -153,6 +162,26 @@ export function MapLayerPanel({
           ))}
           {g.title === 'Wind and current' && (
             <div className="mt-1.5">
+              <label className="mb-1 block text-2xs text-ink-3" htmlFor="flow-valid-date">Real data valid date (UTC)</label>
+              <input
+                id="flow-valid-date"
+                type="date"
+                value={flowValidDate}
+                onChange={(event) => setFlowValidDate(event.currentTarget.value)}
+                className="field mb-2 w-full"
+                aria-describedby="flow-date-hint"
+              />
+              <p id="flow-date-hint" className="mb-2 text-2xs text-ink-3">Leave blank to use the latest cached date. Real data never falls back to simulated vectors.</p>
+              <label className="mb-1 block text-2xs text-ink-3" htmlFor="wind-source">Wind source</label>
+              <select id="wind-source" className="field mb-2 w-full" value={windFlowSource} onChange={(e) => setWindFlowSource(e.currentTarget.value as typeof windFlowSource)}>
+                <option value="simulated">Simulation (demo)</option>
+                <option value="noaa-gfs">NOAA GFS (forecast)</option>
+              </select>
+              <label className="mb-1 block text-2xs text-ink-3" htmlFor="current-source">Current source</label>
+              <select id="current-source" className="field mb-2 w-full" value={currentFlowSource} onChange={(e) => setCurrentFlowSource(e.currentTarget.value as typeof currentFlowSource)}>
+                <option value="simulated">Simulation (demo)</option>
+                <option value="copernicus">Copernicus Marine (analysis)</option>
+              </select>
               <div className="mb-1 text-2xs text-ink-3">Display</div>
               <div className="grid grid-cols-2 gap-1" role="group" aria-label="Wind and current display">
                 {(
@@ -177,6 +206,17 @@ export function MapLayerPanel({
                   );
                 })}
               </div>
+              <button
+                type="button"
+                className="btn mt-1.5 flex w-full items-center justify-center gap-1.5"
+                aria-label={flowPaused ? 'Resume flow animation' : 'Pause flow animation'}
+                title={flowPaused ? 'Resume animated particles' : 'Pause animated particles'}
+                disabled={reduced || flowStyle !== 'animated' || !(layers.windFlow || layers.currentFlow)}
+                onClick={() => setFlowPaused(!flowPaused)}
+              >
+                {flowPaused ? <Play size={13} aria-hidden="true" /> : <Pause size={13} aria-hidden="true" />}
+                {flowPaused ? 'Resume particles' : 'Pause particles'}
+              </button>
               {reduced && <p className="mt-1 text-2xs text-ink-3">Your system asks for reduced motion, so particles are off.</p>}
             </div>
           )}

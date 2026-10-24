@@ -64,8 +64,8 @@ export function legendSummary(scene: MapScene, leadHours: number): string {
             : 'Ice concentration';
     parts.push(scene.iceField?.is_synthetic ? `${name} (simulated)` : name);
   }
-  if (L.windFlow) parts.push('Wind (simulated)');
-  if (L.currentFlow) parts.push('Current (simulated)');
+  if (L.windFlow) parts.push(scene.windFlowSource === 'simulated' ? 'Wind (simulated)' : 'Wind (NOAA GFS)');
+  if (L.currentFlow) parts.push(scene.currentFlowSource === 'simulated' ? 'Current (simulated)' : 'Current (Copernicus)');
   if (L.observedBergs && scene.observed?.available) parts.push(scene.observed.stale ? 'Observed bergs (stale)' : 'Observed bergs');
   if (L.icebergs) parts.push('Bergs (simulated)');
   return parts.join(' · ');
@@ -315,7 +315,7 @@ function FlowSection({ scene }: { scene: MapScene }): JSX.Element {
     <div>
       <div className="mb-1 flex items-baseline justify-between">
         <span className="font-medium text-ink">Flow</span>
-        {f?.is_synthetic && <span className="rounded bg-panel-3 px-1.5 py-px text-[10px] text-ink-2">SIMULATED</span>}
+        {(L.windFlow && scene.windFlowSource === 'simulated' || L.currentFlow && scene.currentFlowSource === 'simulated') && <span className="rounded bg-panel-3 px-1.5 py-px text-[10px] text-ink-2">SIMULATED</span>}
       </div>
       {kinds.map((k) => (
         <div key={k.kind} className="mb-1.5">
@@ -334,14 +334,16 @@ function FlowSection({ scene }: { scene: MapScene }): JSX.Element {
       <p className="text-ink-3">
         Direction is where the {L.windFlow && L.currentFlow ? 'wind blows and the water flows' : L.windFlow ? 'wind blows' : 'water flows'}.
         Colour is the true speed. Particle speed and arrow length are a visual aid, scaled differently for wind and
-        current, and are not a real-time drift. Arrows are longer where the flow is faster; wind arrows have an open
-        head and current arrows a solid one.
+        current, and are not a real-time drift. Wind particles use open chevrons; current particles use filled tips.
+        Arrows are longer where the flow is faster and use the same distinct head shapes.
       </p>
       {f && (
         <p className="mt-1 text-ink-3">
           Model hour +{f.valid_time_hours}. {f.source ?? ''}
         </p>
       )}
+      {L.windFlow && scene.windFlowSource === 'noaa-gfs' && <RealFlowNote field={scene.realWindFlow} label="NOAA GFS 10 m wind" />}
+      {L.currentFlow && scene.currentFlowSource === 'copernicus' && <RealFlowNote field={scene.realCurrentFlow} label="Copernicus surface current" />}
       {rawF && !flowOk && (
         <p role="alert" className="mt-1 text-danger">
           The wind and current response is malformed, so nothing is drawn.
@@ -365,6 +367,19 @@ function FlowSection({ scene }: { scene: MapScene }): JSX.Element {
         </p>
       )}
     </div>
+  );
+}
+
+function RealFlowNote({ field, label }: { field: MapScene['realWindFlow']; label: string }): JSX.Element {
+  if (!field) return <p role="status" className="mt-1 text-warn">{label}: waiting for local cache data.</p>;
+  if (!field.available) return <p role="status" className="mt-1 text-warn">{label} unavailable: {field.reason} Acquisition: {field.provenance.acquisition_command}</p>;
+  const p = field.provenance;
+  const valid = p.valid_time ? new Date(p.valid_time).toLocaleString('en-GB', { timeZone: 'UTC', timeZoneName: 'short' }) : 'valid time unknown';
+  const retrieved = p.retrieved_at ? ` Retrieved ${new Date(p.retrieved_at).toLocaleString('en-GB', { timeZone: 'UTC', timeZoneName: 'short' })}.` : '';
+  return (
+    <p className={`mt-1 ${p.stale ? 'text-warn' : 'text-ink-3'}`}>
+      {label}: {p.source}, {p.product}; {p.classification}; valid {valid}; {p.units}; {p.native_resolution_deg ?? '?'}° grid.{retrieved} {p.stale ? 'STALE CACHE.' : ''}
+    </p>
   );
 }
 
