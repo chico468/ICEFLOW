@@ -10,16 +10,15 @@ from datetime import date, timedelta
 from pathlib import Path
 from urllib.request import Request, urlopen
 
-from src.data.nsidc_sea_ice import NSIDCSeaIceReader, BASE_URL, DATASET_NAME, default_cache_dir
+from src.data.nsidc_sea_ice import NSIDCSeaIceReader, BASE_URL_V6, DATASET_NAME, default_cache_dir
 
 
 def discover_range():
-    """Discover available range by probing."""
-    # Try to find years
+    """Discover available range by probing V6."""
     available_years = []
-    for year in range(2026, 2010, -1):  # check recent years
+    for year in range(2026, 1977, -1):
         try:
-            req = Request(f"{BASE_URL}/{year}/", headers={"User-Agent": "ICEFLOW"})
+            req = Request(f"{BASE_URL_V6}/{year}/", headers={"User-Agent": "ICEFLOW"})
             resp = urlopen(req, timeout=10)
             if resp.status == 200:
                 available_years.append(year)
@@ -28,19 +27,17 @@ def discover_range():
     available_years = sorted(available_years)
     if not available_years:
         raise RuntimeError("Could not discover available years")
-    # Find actual date range in earliest available year
     first_date = None
     last_date = None
     for year in available_years:
         try:
-            req = Request(f"{BASE_URL}/{year}/", headers={"User-Agent": "ICEFLOW"})
+            req = Request(f"{BASE_URL_V6}/{year}/", headers={"User-Agent": "ICEFLOW"})
             resp = urlopen(req, timeout=10)
             html = resp.read().decode('utf-8', errors='ignore')
-            # crude parse
             import re
-            matches = re.findall(r'sic_pss25_(\d{8})_am2_icdr_v04r00\.nc', html)
+            matches = re.findall(r'sic_pss25_(\d{8})_([A-Za-z0-9]+)_v06r00\.nc', html)
             if matches:
-                dates = sorted(matches)
+                dates = sorted([m[0] for m in matches])
                 d0 = date(int(dates[0][:4]), int(dates[0][4:6]), int(dates[0][6:8]))
                 d1 = date(int(dates[-1][:4]), int(dates[-1][4:6]), int(dates[-1][6:8]))
                 if first_date is None or d0 < first_date:
@@ -54,17 +51,15 @@ def discover_range():
 
 def pilot_download(cache_dir: Path, year: int, month: int):
     reader = NSIDCSeaIceReader(cache_dir=cache_dir)
-    # find a file in that month
-    req = Request(f"{BASE_URL}/{year}/", headers={"User-Agent": "ICEFLOW"})
+    req = Request(f"{BASE_URL_V6}/{year}/", headers={"User-Agent": "ICEFLOW"})
     resp = urlopen(req, timeout=10)
     html = resp.read().decode('utf-8', errors='ignore')
     import re
-    matches = re.findall(r'sic_pss25_(\d{8})_am2_icdr_v04r00\.nc', html)
-    month_matches = [m for m in matches if int(m[4:6]) == month]
+    matches = re.findall(r'sic_pss25_(\d{8})_([A-Za-z0-9]+)_v06r00\.nc', html)
+    month_matches = [m for m in matches if int(m[0][4:6]) == month]
     if not month_matches:
         raise RuntimeError("No files in pilot month")
-    # download first file
-    d = date(int(month_matches[0][:4]), int(month_matches[0][4:6]), int(month_matches[0][6:8]))
+    d = date(int(month_matches[0][0][:4]), int(month_matches[0][0][4:6]), int(month_matches[0][0][6:8]))
     filename = reader._filename(d)
     url = reader._url(d)
     start = time.time()
@@ -73,7 +68,6 @@ def pilot_download(cache_dir: Path, year: int, month: int):
     data = resp2.read()
     elapsed = time.time() - start
     size_kb = len(data) / 1024
-    # save
     target = cache_dir / filename
     target.write_bytes(data)
     return size_kb, elapsed, len(month_matches)
@@ -137,8 +131,8 @@ def main():
     # Full download with politeness
     manifest = {
         "product": DATASET_NAME,
-        "version": "v04r00",
-        "url_pattern": f"{BASE_URL}/YYYY/sic_pss25_YYYYMMDD_am2_icdr_v04r00.nc",
+        "version": "v06r00",
+        "url_pattern": f"{BASE_URL_V6}/YYYY/sic_pss25_YYYYMMDD_<sensor>_v06r00.nc",
         "date_range": [str(first_date), str(last_date)],
         "requested_range": [f"{args.start}-01-01", f"{args.end}-12-31"],
         "gaps": [],
@@ -165,17 +159,16 @@ def main():
                 else:
                     return d, 0, f"error:{e}"
 
-    # Collect all dates
     all_dates = []
     for y in range(args.start, args.end + 1):
         try:
-            req = Request(f"{BASE_URL}/{y}/", headers={"User-Agent": "ICEFLOW"})
+            req = Request(f"{BASE_URL_V6}/{y}/", headers={"User-Agent": "ICEFLOW"})
             resp = urlopen(req, timeout=10)
             html = resp.read().decode('utf-8', errors='ignore')
             import re
-            matches = re.findall(r'sic_pss25_(\d{8})_am2_icdr_v04r00\.nc', html)
+            matches = re.findall(r'sic_pss25_(\d{8})_([A-Za-z0-9]+)_v06r00\.nc', html)
             for m in matches:
-                all_dates.append(date(int(m[:4]), int(m[4:6]), int(m[6:8])))
+                all_dates.append(date(int(m[0][:4]), int(m[0][4:6]), int(m[0][6:8])))
         except Exception:
             continue
 

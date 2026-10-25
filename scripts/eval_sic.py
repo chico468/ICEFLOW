@@ -64,12 +64,17 @@ def main():
         "train_years": sorted(list(set(d.year for d in train_dates))),
         "test_years": sorted(list(set(d.year for d in test_dates))),
         "data_source": data_source,
+        "product": "NOAA/NSIDC CDR G02202 Version 6",
+        "version": "v06r00",
+        "product_version": "v06r00",
+        "date_range": [str(min(dates)), str(max(dates))],
         "disclaimer": "Baselines only; no ML model has been evaluated on real data.",
         "leads": leads,
         "sectors": SECTORS_SIMPLE,
         "iiie_definition": "Goessling et al. 2016: IIEE = area overestimated + underestimated at 15% threshold, weighted by cell area (m^2 from grid spacing dx*dy), exclude land/missing from both",
         "domains": ["all_ocean", "variable_ice_zone_5_95"],
         "climatology_trend": {"with_trend": True, "without_trend": True, "note": "2016-2023 regime change makes extrapolated trends unreliable"},
+        "sensor_caveat": "V6 uses AMSR2 from 1 Jan 2025 onward (different sensor). Held-out test block must end by 31 Dec 2024. 2025+ reported separately as different-sensor period.",
         "gaps": [],
         "results": {}
     }
@@ -118,3 +123,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+# Add sensor caveat

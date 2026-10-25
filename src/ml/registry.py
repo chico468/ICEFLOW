@@ -212,15 +212,22 @@ def ml_status() -> Dict[str, Any]:
     real_data_report = None
     if real_report_path.exists():
         try:
-            with open(real_report_path, "r", encoding="utf-8") as fh:
-                report = json.load(fh)
-            real_data_report = {
-                "path": str(real_report_path),
-                "date": report.get("generated_at") or report.get("date"),
-                "product": report.get("data_source") or report.get("product"),
-            }
+            # Must not report fixture files from tests/tmp
+            if "/tests/" in str(real_report_path) or str(real_report_path).startswith("/tmp/") or "/tmp/" in str(real_report_path):
+                pass
+            else:
+                with open(real_report_path, "r", encoding="utf-8") as fh:
+                    report = json.load(fh)
+                if report.get("data_source") == "real":
+                    real_data_report = {
+                        "path": str(real_report_path),
+                        "date": report.get("generated_at") or report.get("date"),
+                        "product": report.get("product") or report.get("data_source_name"),
+                        "product_version": report.get("product_version") or report.get("version"),
+                        "date_range": report.get("date_range"),
+                    }
         except Exception:
-            real_data_report = {"path": str(real_report_path)}
+            pass
 
     return {
         "any_trained": any_trained,

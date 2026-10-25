@@ -1,10 +1,8 @@
-"""Reader for Antarctic sea-ice concentration from NSIDC G10016 Version 4.
+"""Reader for Antarctic sea-ice concentration.
 
-This module reads observational data only. It does not generate synthetic values,
-forecast sea ice, or change ICEFLOW's existing SeaIceModel.
-
-Dataset documentation:
-https://nsidc.org/data/g10016/versions/4
+Supports:
+- NOAA/NSIDC CDR G02202 Version 6 (historical daily, long record) - preferred for evaluation
+- NOAA/NSIDC G10016 Version 4 (near-real-time) - also supported
 """
 
 from __future__ import annotations
@@ -23,17 +21,27 @@ import xarray as xr
 from pyproj import CRS, Transformer
 
 
-BASE_URL = (
+BASE_URL_V6 = (
+    "https://noaadata.apps.nsidc.org/NOAA/G02202_V6/"
+    "south/daily"
+)
+BASE_URL_V4 = (
     "https://noaadata.apps.nsidc.org/NOAA/G10016_V4/"
     "south/daily"
 )
-DATASET_NAME = "NOAA/NSIDC G10016 Version 4"
+BASE_URL = BASE_URL_V6  # default to V6 for historical evaluation
+DATASET_NAME = "NOAA/NSIDC CDR G02202 Version 6"
+DATASET_NAME_V4 = "NOAA/NSIDC G10016 Version 4"
 CRS_EPSG = "EPSG:3412"
 CONCENTRATION_VARIABLE = "cdr_seaice_conc"
 
-_FILENAME_RE = re.compile(
+_FILENAME_RE_V6 = re.compile(
+    r"^sic_pss25_(\d{8})_(?:n07|F08|F11|F13|F17|am2)_v06r00\.nc$"
+)
+_FILENAME_RE_V4 = re.compile(
     r"^sic_pss25_(\d{8})_am2_icdr_v04r00\.nc$"
 )
+_FILENAME_RE = _FILENAME_RE_V6
 
 
 class NSIDCDataError(RuntimeError):
@@ -46,11 +54,7 @@ class NSIDCUnavailableError(RuntimeError):
 
 @dataclass(frozen=True)
 class SeaIceObservation:
-    """One daily observed Antarctic sea-ice concentration grid.
-
-    concentration is a fraction from 0 to 1. Missing or invalid cells are NaN.
-    x_m and y_m are projected grid-cell centres in metres.
-    """
+    """One daily observed Antarctic sea-ice concentration grid."""
 
     observation_date: date
     concentration: np.ndarray = field(repr=False)
@@ -80,11 +84,6 @@ class SeaIceObservation:
         return int(self.concentration.size - self.valid_cell_count)
 
     def lat_lon_grid(self) -> tuple[np.ndarray, np.ndarray]:
-        """Return (latitude, longitude) grids in degrees.
-
-        The full grid is transformed only when this method is called, avoiding
-        unnecessary coordinate arrays when callers only need concentration.
-        """
         transformer = Transformer.from_crs(
             self.crs,
             "EPSG:4326",
@@ -99,7 +98,6 @@ class SeaIceObservation:
 
 
 def default_cache_dir() -> Path:
-    """Choose a user-level cache directory outside the Git repository."""
     configured = os.environ.get("ICEFLOW_NSIDC_CACHE_DIR")
     if configured:
         return Path(configured).expanduser()
@@ -117,8 +115,6 @@ def default_cache_dir() -> Path:
         os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")
     ).expanduser()
     return cache_home / "iceflow" / "nsidc"
-
-
 def _date_from_filename(path: Path) -> date:
     match = _FILENAME_RE.fullmatch(path.name)
     if not match:
@@ -173,7 +169,8 @@ def read_nsidc_file(
                     raise NSIDCDataError(
                         "Projected x/y coordinate units must be metres."
                     )
-            if dataset[CONCENTRATION_VARIABLE].attrs.get("grid_mapping") != "crs":
+            grid_mapping = dataset[CONCENTRATION_VARIABLE].attrs.get("grid_mapping")
+            if grid_mapping != "crs":
                 raise NSIDCDataError(
                     "Concentration data must reference the file's crs mapping."
                 )
@@ -260,6 +257,9 @@ def read_nsidc_file(
             f"y/x coordinate lengths {(y_m.size, x_m.size)}."
         )
 
+    # V6 stores values 0-100; convert to fraction
+    if np.nanmax(values) > 1.5:
+        values = values / 100.0
     # Do not convert missing values to zero. Zero is a real measurement
     # indicating no sea-ice concentration; NaN indicates unavailable/invalid data.
     valid = np.isfinite(values) & (values >= 0.0) & (values <= 1.0)
@@ -306,12 +306,21 @@ class NSIDCSeaIceReader:
 
     @staticmethod
     def _filename(day: date) -> str:
-        return (
-            f"sic_pss25_{day:%Y%m%d}_am2_icdr_v04r00.nc"
-        )
+        # Prefer G02202 V6 naming
+        if day.year >= 2025:
+            return f"sic_pss25_{day:%Y%m%d}_am2_v06r00.nc"
+        if day.year >= 1988:
+            return f"sic_pss25_{day:%Y%m%d}_F17_v06r00.nc"
+        if day.year >= 1995:
+            return f"sic_pss25_{day:%Y%m%d}_F13_v06r00.nc"
+        if day.year >= 1992:
+            return f"sic_pss25_{day:%Y%m%d}_F11_v06r00.nc"
+        if day.year >= 1987:
+            return f"sic_pss25_{day:%Y%m%d}_F08_v06r00.nc"
+        return f"sic_pss25_{day:%Y%m%d}_n07_v06r00.nc"
 
     def _url(self, day: date) -> str:
-        return f"{BASE_URL}/{day:%Y}/{self._filename(day)}"
+        return f"{BASE_URL_V6}/{day:%Y}/{self._filename(day)}"
 
     def _read_cached(
         self,
