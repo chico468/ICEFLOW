@@ -832,3 +832,9 @@ supporting India's obligations under the Antarctic Act, 2022.
 
 Built for **Smart India Hackathon 2026**, problem statement 26059, for the Ministry of Earth
 Sciences and the National Centre for Polar and Ocean Research.
+
+### CORS / deployment
+
+- **Same-origin (Render/Docker):** When FastAPI serves `frontend/dist`, no CORS is needed. By default (no `ICEFLOW_CORS_ORIGINS` and `ICEFLOW_ENV` not `dev`), no `CORSMiddleware` is added (same-origin only).
+- **Local dev:** Set `ICEFLOW_ENV=dev` to allow `*` (or use the Vite proxy which is same-origin to the browser). `allow_credentials` is never combined with `*`.
+- **Vercel-hosted frontend calling a separate API:** Set `ICEFLOW_CORS_ORIGINS` to a comma-separated list of allowed origins (e.g. `https://your-app.vercel.app`). If unset in non-dev, same-origin only (will break cross-origin). See `frontend/src/api/client.ts` (`VITE_API_BASE_URL`).

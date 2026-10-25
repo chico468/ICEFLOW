@@ -125,13 +125,29 @@ app = FastAPI(
 
 # The bridge console is served from a separate origin during development, and on a ship it is a
 # local device on the same LAN. Neither case benefits from origin restrictions here.
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+_cors_env = os.environ.get("ICEFLOW_CORS_ORIGINS")
+_iceflow_env = os.environ.get("ICEFLOW_ENV", "").lower()
+if _cors_env is not None:
+    _origins = [o.strip() for o in _cors_env.split(",") if o.strip()]
+    if _origins:
+        if "*" in _origins and True:  # credentials cannot be combined with wildcard
+            pass
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=_origins,
+            allow_credentials=False if "*" in _origins else True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+elif _iceflow_env == "dev":
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=False,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+# else: no CORS middleware (same-origin only)
 
 app.include_router(geo_router.router)
 app.include_router(environment_router.router)
