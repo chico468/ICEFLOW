@@ -41,6 +41,6 @@
     "esbuild@0.21.5": true
   },
   "engines": {
-    "node": ">=20 <21"
+    "node": ">=20"
   }
 }
