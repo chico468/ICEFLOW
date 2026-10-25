@@ -1,0 +1,6 @@
+- Never say "done" without pasting raw output: the full pytest summary line from a clean clone of the committed branch.
+- git status must be empty before verification. Commit first.
+- Never hardcode a check result (no `ok = True`). Compute it, or delete the check.
+- Never weaken or delete an existing assertion. Explain any test change with its diff.
+- Never substitute data products or fall back silently; fail loudly.
+- No metric, skill or accuracy claim in code, docs or UI unless produced by a script run on real data.
