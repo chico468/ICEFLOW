@@ -65,6 +65,11 @@ class SeaIceObservation:
 
     @property
     def source(self) -> str:
+        # Keep backward compat for V4 filenames
+        if self.source_url and 'G10016' in self.source_url:
+            return DATASET_NAME_V4
+        if hasattr(self, '_source_name') and self._source_name:
+            return self._source_name
         return DATASET_NAME
 
     @property
@@ -116,11 +121,11 @@ def default_cache_dir() -> Path:
     ).expanduser()
     return cache_home / "iceflow" / "nsidc"
 def _date_from_filename(path: Path) -> date:
-    match = _FILENAME_RE.fullmatch(path.name)
+    match = _FILENAME_RE_V6.fullmatch(path.name) or _FILENAME_RE_V4.fullmatch(path.name)
     if not match:
         raise NSIDCDataError(
             f"Unexpected NSIDC filename: {path.name!r}. "
-            "Expected a daily Antarctic G10016 V4 AMSR2 file."
+            "Expected a daily Antarctic NSIDC file (G02202 V6 or G10016 V4)."
         )
     try:
         return datetime.strptime(match.group(1), "%Y%m%d").date()
@@ -275,7 +280,7 @@ def read_nsidc_file(
     x_m.setflags(write=False)
     y_m.setflags(write=False)
 
-    return SeaIceObservation(
+    obs = SeaIceObservation(
         observation_date=observation_date,
         concentration=concentration,
         x_m=x_m,
@@ -283,6 +288,8 @@ def read_nsidc_file(
         source_url=source_url or file_path.resolve().as_uri(),
         retrieved_from_cache=retrieved_from_cache,
     )
+    object.__setattr__(obs, '_source_name', DATASET_NAME_V4 if _FILENAME_RE_V4.fullmatch(file_path.name) else DATASET_NAME)
+    return obs
 
 
 class NSIDCSeaIceReader:
@@ -305,7 +312,9 @@ class NSIDCSeaIceReader:
         self.max_age_days = max_age_days
 
     @staticmethod
-    def _filename(day: date) -> str:
+    def _filename(day: date, prefer_v4: bool = False, v6: bool = True) -> str:
+        if prefer_v4 or not v6:
+            return f"sic_pss25_{day:%Y%m%d}_am2_icdr_v04r00.nc"
         # Prefer G02202 V6 naming
         if day.year >= 2025:
             return f"sic_pss25_{day:%Y%m%d}_am2_v06r00.nc"
@@ -319,8 +328,10 @@ class NSIDCSeaIceReader:
             return f"sic_pss25_{day:%Y%m%d}_F08_v06r00.nc"
         return f"sic_pss25_{day:%Y%m%d}_n07_v06r00.nc"
 
-    def _url(self, day: date) -> str:
-        return f"{BASE_URL_V6}/{day:%Y}/{self._filename(day)}"
+    def _url(self, day: date, v6: bool = True) -> str:
+        if v6:
+            return f"{BASE_URL_V6}/{day:%Y}/{self._filename(day, v6=True)}"
+        return f"{BASE_URL_V4}/{day:%Y}/{self._filename(day, v6=False)}"
 
     def _read_cached(
         self,
