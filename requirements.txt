@@ -29,6 +29,4 @@ xarray>=2024.10
 netCDF4>=1.7.2
 pyproj>=3.7
 # Optional real wind acquisition: decode NOAA GFS GRIB2 subsets.
-eccodes>=2.43.0
 # Optional real current acquisition via the official Copernicus Marine Toolbox CLI.
-copernicusmarine>=2.3.0

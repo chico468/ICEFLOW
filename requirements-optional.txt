@@ -1,0 +1,3 @@
+# Optional: real data acquisition (not required for core routing/physics)
+eccodes>=2.43.0  # GRIB decoding for NOAA GFS wind
+copernicusmarine>=2.3.0  # Copernicus Marine Toolbox CLI for surface currents

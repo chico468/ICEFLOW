@@ -63,7 +63,7 @@ def test_copernicus_fetch_reports_missing_toolbox_clearly(monkeypatch):
     try:
         fetch_copernicus_current.fetch("2026-10-23")
     except RuntimeError as exc:
-        assert "Install the `copernicusmarine` package" in str(exc)
+        assert "requirements-optional.txt" in str(exc)
     else:
         raise AssertionError("missing Copernicus Toolbox must be reported before attempting a fetch")
     assert spawned == []

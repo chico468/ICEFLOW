@@ -118,9 +118,10 @@ unavailable real source stays unavailable; it never silently uses the simulation
 # NOAA GFS 0.25° 10 m east/north wind; choose the model date, cycle, and forecast lead.
 ./.venv-test312/bin/python -m src.data.fetch_gfs_wind --date 2026-10-23 --cycle 00 --lead-hours 0
 
-# Install the official Copernicus Marine Toolbox and configure credentials once.
-./.venv-test312/bin/python -m pip install copernicusmarine
+# Install the official Copernicus Marine Toolbox and configure credentials once (optional).
+./.venv-test312/bin/python -m pip install -r requirements-optional.txt
 ./.venv-test312/bin/copernicusmarine login
+# Core routing, physics and the UI work without optional dependencies; only real wind/current download needs them.
 # Copernicus Marine daily surface-current uo/vo subset for the same UTC date.
 ./.venv-test312/bin/python -m src.data.fetch_copernicus_current --date 2026-10-23
 ```

@@ -322,7 +322,7 @@ def read_gfs_grib(path: str | Path) -> tuple[np.ndarray, np.ndarray, np.ndarray,
     try:
         import eccodes
     except ImportError as exc:
-        raise FlowDataError("Install the required GRIB decoder with `pip install eccodes`.") from exc
+        raise FlowDataError("Install optional data dependencies: pip install -r requirements-optional.txt") from exc
     grids: dict[str, tuple[np.ndarray, np.ndarray, np.ndarray, dict[str, int]]] = {}
     try:
         with Path(path).open("rb") as stream:

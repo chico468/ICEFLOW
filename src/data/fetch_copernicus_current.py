@@ -29,8 +29,8 @@ def fetch(day: str, cache_dir: str | None = None) -> Path:
     executable = _find_copernicus_executable()
     if executable is None:
         raise RuntimeError(
-            "Copernicus Marine Toolbox CLI is unavailable. Install the `copernicusmarine` "
-            "package in this Python environment and run `copernicusmarine login`."
+            "Copernicus Marine Toolbox CLI is unavailable. Install optional data dependencies: pip install -r requirements-optional.txt "
+            "and run `copernicusmarine login`."
         )
     with tempfile.TemporaryDirectory(prefix="iceflow-cmems-") as temp:
         command = [
