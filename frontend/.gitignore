@@ -32,3 +32,9 @@ htmlcov/
 
 # macOS
 .DS_Store
+
+# TypeScript build info
+*.tsbuildinfo
+
+# Local env
+.env.local

@@ -17,3 +17,20 @@ __pycache__/
 # Playwright generated output
 /frontend/playwright-report/
 /frontend/test-results/
+
+# Build outputs
+frontend/dist/
+frontend/playwright-report/
+frontend/test-results/
+*.tsbuildinfo
+
+# Local env
+.env.local
+
+# Models
+*.joblib
+
+# Data
+data/*.db
+data/*.db-wal
+data/*.db-shm

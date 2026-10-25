@@ -85,5 +85,4 @@ Accessible: `aria-expanded`, Escape and outside-click close.
 
 - The growler-radar scope stays dark deliberately, as an instrument window inside a light card.
 - A dark "night" theme is a token swap away but needs a theme-aware map palette; not built.
-- `Guide.tsx` and `SystemFlow.tsx` are no longer used and can be deleted.
 - Some chart colours were retuned by search and replace; check the Insights charts by eye.
