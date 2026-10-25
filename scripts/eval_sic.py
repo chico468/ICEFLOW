@@ -30,8 +30,8 @@ def main():
         print("WARNING: Using fixtures (synthetic test data) - clearly labelled as such")
         # Create tiny fixtures
         sic_by_date = {}
-        for i in range(100):
-            d = date(2025, 1, 1) + __import__('datetime').timedelta(days=i)
+        for i in range(800):
+            d = date(2023, 1, 1) + __import__('datetime').timedelta(days=i)
             sic_by_date[d] = np.random.RandomState(i).rand(10, 10) * 0.5
         data_source = "fixtures"
     else:
