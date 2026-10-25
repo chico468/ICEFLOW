@@ -139,13 +139,32 @@ def main():
         "files": []
     }
 
+    # Build date->filename map from listings
+    date_to_filename = {}
+    for y in range(args.start, args.end + 1):
+        try:
+            req = Request(f"{BASE_URL_V6}/{y}/", headers={"User-Agent": "ICEFLOW"})
+            resp = urlopen(req, timeout=10)
+            html = resp.read().decode('utf-8', errors='ignore')
+            import re
+            matches = re.findall(r'href="(sic_pss25_(\d{8})_[A-Za-z0-9]+_v06r00\.nc)"', html)
+            for m in matches:
+                fname = m[0]
+                dstr = m[1]
+                d = date(int(dstr[:4]), int(dstr[4:6]), int(dstr[6:8]))
+                date_to_filename[d] = fname
+        except Exception:
+            continue
+
+    all_dates = sorted(date_to_filename.keys())
+
     def download_file(d):
         reader = NSIDCSeaIceReader(cache_dir=cache_dir)
-        filename = reader._filename(d)
+        filename = date_to_filename.get(d) or reader._filename(d)
         target = cache_dir / filename
         if target.exists():
             return d, target.stat().st_size, "cached"
-        url = reader._url(d)
+        url = f"{BASE_URL_V6}/{d:%Y}/{filename}"
         for attempt in range(3):
             try:
                 req = Request(url, headers={"User-Agent": "ICEFLOW"})
@@ -159,21 +178,8 @@ def main():
                 else:
                     return d, 0, f"error:{e}"
 
-    all_dates = []
-    for y in range(args.start, args.end + 1):
-        try:
-            req = Request(f"{BASE_URL_V6}/{y}/", headers={"User-Agent": "ICEFLOW"})
-            resp = urlopen(req, timeout=10)
-            html = resp.read().decode('utf-8', errors='ignore')
-            import re
-            matches = re.findall(r'sic_pss25_(\d{8})_([A-Za-z0-9]+)_v06r00\.nc', html)
-            for m in matches:
-                all_dates.append(date(int(m[0][:4]), int(m[0][4:6]), int(m[0][6:8])))
-        except Exception:
-            continue
-
-    all_dates = sorted(set(all_dates))
     print(f"\nDownloading {len(all_dates)} files with max 4 concurrent...")
+    manifest["per_year"] = {}
     with ThreadPoolExecutor(max_workers=4) as ex:
         futs = [ex.submit(download_file, d) for d in all_dates]
         done = 0
@@ -182,7 +188,16 @@ def main():
             done += 1
             if done % 10 == 0:
                 print(f"  {done}/{len(all_dates)}...")
-            manifest["files"].append({"date": str(d), "size": size, "status": status})
+            manifest["files"].append({"date": str(d), "filename": date_to_filename.get(d), "size": size, "status": status})
+            y = d.year
+            if y not in manifest["per_year"]:
+                manifest["per_year"][y] = {"downloaded": 0, "cached": 0, "error": 0}
+            if status == "downloaded":
+                manifest["per_year"][y]["downloaded"] += 1
+            elif status == "cached":
+                manifest["per_year"][y]["cached"] += 1
+            elif status.startswith("error"):
+                manifest["per_year"][y]["error"] += 1
 
     # Write manifest next to cached files
     manifest_path = cache_dir / "manifest.json"
