@@ -1,41 +1,42 @@
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.testclient import TestClient
 
-
-def test_cors_dev_allows_wildcard():
-    import os
-
-    os.environ["ICEFLOW_ENV"] = "dev"
-    os.environ.pop("ICEFLOW_CORS_ORIGINS", None)
-    from src.api import main
-
-    # Recreate app behavior by checking middleware? Easier to just import and test response
-    client = TestClient(main.app)
-    resp = client.options("/api/v1/health", headers={"Origin": "http://example.com", "Access-Control-Request-Method": "GET"})
-    # In dev we allow *; Starlette/FastAPI will set header
-    assert resp.status_code in (200, 204)
+from src.api import main
 
 
-def test_cors_explicit_list():
-    import os
-
-    os.environ.pop("ICEFLOW_ENV", None)
-    os.environ["ICEFLOW_CORS_ORIGINS"] = "https://app.example.com, https://other.example.com"
-    # Need to reload module to pick up env? Just test by creating a new app instance is heavy; skip deep reload
-    from src.api import main
-
-    client = TestClient(main.app)
-    resp = client.options("/api/v1/health", headers={"Origin": "https://app.example.com", "Access-Control-Request-Method": "GET"})
-    assert resp.status_code in (200, 204)
+def test_resolve_cors_dev_with_no_list(monkeypatch):
+    assert main.resolve_cors_origins({"ICEFLOW_ENV": "dev"}) == ["*"]
 
 
-def test_cors_unset_no_middleware_by_default_behavior():
-    import os
+def test_resolve_cors_explicit_list_trim_ignores_empties(monkeypatch):
+    origins = main.resolve_cors_origins({"ICEFLOW_CORS_ORIGINS": " https://a.com , , https://b.com "})
+    assert origins == ["https://a.com", "https://b.com"]
 
-    os.environ.pop("ICEFLOW_ENV", None)
-    os.environ.pop("ICEFLOW_CORS_ORIGINS", None)
-    from src.api import main
 
-    client = TestClient(main.app)
-    resp = client.options("/api/v1/health", headers={"Origin": "http://evil.com", "Access-Control-Request-Method": "GET"})
-    # No CORS middleware added -> may not echo origin; just ensure no crash
-    assert resp.status_code in (200, 204, 400)
+def test_resolve_cors_neither_set(monkeypatch):
+    assert main.resolve_cors_origins({}) is None
+
+
+def test_cors_headers_with_origin_on_get(monkeypatch):
+    app = FastAPI()
+    origins = main.resolve_cors_origins({"ICEFLOW_CORS_ORIGINS": "https://app.example.com"})
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=origins,
+        allow_credentials=False,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    @app.get("/api/v1/health")
+    def health():
+        return {"ok": True}
+
+    client = TestClient(app)
+    resp = client.get("/api/v1/health", headers={"Origin": "https://app.example.com"})
+    assert resp.headers.get("access-control-allow-origin") == "https://app.example.com"
+    # Preflight to route that allows method
+    preflight = client.options("/api/v1/health", headers={"Origin": "https://app.example.com", "Access-Control-Request-Method": "GET"})
+    assert preflight.status_code in (200, 204)
+    assert preflight.headers.get("access-control-allow-origin") == "https://app.example.com"

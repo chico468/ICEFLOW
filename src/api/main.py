@@ -40,6 +40,22 @@ from src.api.routers import real_flow as real_flow_router
 from src.api.routers import physics as physics_router
 from src.api.routers import voyages as voyages_router
 
+def resolve_cors_origins(env: dict[str, str] | None = None) -> list[str] | None:
+    if env is None:
+        env = os.environ
+    cors_env = env.get("ICEFLOW_CORS_ORIGINS")
+    iceflow_env = (env.get("ICEFLOW_ENV") or "").lower()
+    if cors_env is not None:
+        origins = [o.strip() for o in cors_env.split(",") if o.strip()]
+        if origins:
+            return origins
+        return None
+    if iceflow_env == "dev":
+        return ["*"]
+    return None
+
+
+
 _STARTED_AT = time.time()
 _WARMUP: Dict[str, Any] = {"state": "pending", "seconds": 0.0, "detail": ""}
 
@@ -125,25 +141,12 @@ app = FastAPI(
 
 # The bridge console is served from a separate origin during development, and on a ship it is a
 # local device on the same LAN. Neither case benefits from origin restrictions here.
-_cors_env = os.environ.get("ICEFLOW_CORS_ORIGINS")
-_iceflow_env = os.environ.get("ICEFLOW_ENV", "").lower()
-if _cors_env is not None:
-    _origins = [o.strip() for o in _cors_env.split(",") if o.strip()]
-    if _origins:
-        if "*" in _origins and True:  # credentials cannot be combined with wildcard
-            pass
-        app.add_middleware(
-            CORSMiddleware,
-            allow_origins=_origins,
-            allow_credentials=False if "*" in _origins else True,
-            allow_methods=["*"],
-            allow_headers=["*"],
-        )
-elif _iceflow_env == "dev":
+_cors_origins = resolve_cors_origins()
+if _cors_origins is not None:
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=False,
+        allow_origins=_cors_origins,
+        allow_credentials=False if "*" in _cors_origins else True,
         allow_methods=["*"],
         allow_headers=["*"],
     )
