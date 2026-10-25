@@ -839,3 +839,9 @@ Sciences and the National Centre for Polar and Ocean Research.
 - **Same-origin (Render/Docker):** When FastAPI serves `frontend/dist`, no CORS is needed. By default (no `ICEFLOW_CORS_ORIGINS` and `ICEFLOW_ENV` not `dev`), no `CORSMiddleware` is added (same-origin only).
 - **Local dev:** Set `ICEFLOW_ENV=dev` to allow `*` (or use the Vite proxy which is same-origin to the browser). `allow_credentials` is never combined with `*`.
 - **Vercel-hosted frontend calling a separate API:** Set `ICEFLOW_CORS_ORIGINS` to a comma-separated list of allowed origins (e.g. `https://your-app.vercel.app`). If unset in non-dev, same-origin only (will break cross-origin). See `frontend/src/api/client.ts` (`VITE_API_BASE_URL`).
+
+## Evaluation on real data
+
+**Status:** Baselines only; no ML model has been evaluated on real data.
+
+This section will be populated by running `python -m scripts.eval_sic` on real NSIDC G10016 V4 observations (downloaded explicitly via `python -m scripts.fetch_real_sic`). The harness evaluates honest baselines (persistence, damped-anomaly persistence, climatology with/without trend fitted on training years only) with leakage-proof splits, 95% bootstrap CIs resampled by blocks of days, IIEE at 15% (Goessling et al. 2016) weighted by cell area, reported over all ocean cells and over the variable-ice zone (5-95% climatology) with the latter as headline. Leads: 1, 3, 7, 14 days; all seasons and austral departure season (Nov-Mar); sectors: Weddell Sea (-60W to 20E), Indian Ocean (20E to 90E, includes Prydz Bay/Bharati), Western Pacific (90E to 160E), Ross Sea (160E to 130W), Bellingshausen-Amundsen (130W to 60W). Maitri approach (~12E) is in the Weddell sector. Gaps are never interpolated silently; n reported per cell. 2016-2023 regime change makes extrapolated trends unreliable.
