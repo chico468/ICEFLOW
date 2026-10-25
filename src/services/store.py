@@ -14,6 +14,8 @@ NCPOR headquarters.
 from __future__ import annotations
 
 import json
+import logging
+import os
 import sqlite3
 import threading
 from datetime import datetime, timezone
@@ -22,7 +24,29 @@ from typing import Any, Dict, List, Optional
 
 from src.core.voyage import VoyageEngine, VoyageState
 
-DB_PATH = Path(__file__).resolve().parents[2] / "data" / "polarnav.db"
+logger = logging.getLogger(__name__)
+_DATA_DIR = Path(__file__).resolve().parents[2] / "data"
+
+
+def _resolve_db_path() -> Path:
+    """Resolve the voyage database path with the required precedence."""
+    env_path = os.environ.get("ICEFLOW_DB_PATH")
+    if env_path:
+        return Path(env_path)
+
+    polarnav_path = _DATA_DIR / "polarnav.db"
+    if polarnav_path.exists():
+        iceflow_path = _DATA_DIR / "iceflow.db"
+        if iceflow_path.exists():
+            logger.warning(
+                "Both data/polarnav.db and data/iceflow.db exist; using data/polarnav.db"
+            )
+        return polarnav_path
+
+    return _DATA_DIR / "iceflow.db"
+
+
+DB_PATH = _resolve_db_path()
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS voyages (

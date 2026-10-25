@@ -18,7 +18,7 @@ services:
         value: 8000
       # Skip the start-up route pre-plan. It costs about 30 seconds of CPU on boot, which is
       # wasteful on a free instance that sleeps after inactivity and would pay it on every wake.
-      - key: POLARNAV_SKIP_WARM_PLAN
+      - key: ICEFLOW_SKIP_WARM_PLAN
         value: "1"
 
     # Voyage history is written to SQLite at /app/data. Without a disk it is wiped on every

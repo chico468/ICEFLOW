@@ -69,8 +69,8 @@ def _warm_caches() -> None:
         # Pre-plan the default demonstration leg. This is what actually removes the stall: the
         # remaining cost is integrating iceberg drift tracks, which are cached per berg and
         # departure time, so doing it here means the first plan a user asks for is the fast path.
-        # Set POLARNAV_SKIP_WARM_PLAN=1 to skip it on a constrained machine.
-        if os.environ.get("POLARNAV_SKIP_WARM_PLAN") != "1":
+        # Set ICEFLOW_SKIP_WARM_PLAN=1 or POLARNAV_SKIP_WARM_PLAN=1 to skip it on a constrained machine.
+        if os.environ.get("ICEFLOW_SKIP_WARM_PLAN") != "1" and os.environ.get("POLARNAV_SKIP_WARM_PLAN") != "1":
             from src.core.route_optimizer import PolarRouteOptimizer
             from src.data.stations import resolve_endpoint
 
