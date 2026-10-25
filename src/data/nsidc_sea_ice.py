@@ -328,7 +328,10 @@ class NSIDCSeaIceReader:
             return f"sic_pss25_{day:%Y%m%d}_F08_v06r00.nc"
         return f"sic_pss25_{day:%Y%m%d}_n07_v06r00.nc"
 
-    def _url(self, day: date, v6: bool = True) -> str:
+    def _url(self, day: date, v6: bool = None) -> str:
+        if v6 is None:
+            # Default to V6 for new usage
+            v6 = True
         if v6:
             return f"{BASE_URL_V6}/{day:%Y}/{self._filename(day, v6=True)}"
         return f"{BASE_URL_V4}/{day:%Y}/{self._filename(day, v6=False)}"
@@ -409,7 +412,7 @@ class NSIDCSeaIceReader:
                     if cached is not None:
                         return cached
                     errors.append(f"{day}: HTTP {exc.code}")
-                    continue
+                    continue  # move to next day
 
                 errors.append(f"{day}: HTTP {exc.code}")
                 break
