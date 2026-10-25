@@ -16,24 +16,33 @@ def climatology_by_doy(doy_to_mean: Dict[Tuple[int, int], np.ndarray], doy: Tupl
 
 
 def fit_climatology(train_dates: list[date], sic_by_date: Dict[date, np.ndarray], use_trend: bool = True):
-    """Fit climatology on training years only."""
+    """Fit climatology on training years only. NaN-aware."""
     from collections import defaultdict
-    # Group by (month, day) - use day of year
     by_doy = defaultdict(list)
     for d in train_dates:
         if d in sic_by_date:
-            by_doy[(d.month, d.day)].append((d.year, sic_by_date[d]))
+            arr = sic_by_date[d]
+            if arr is not None and np.any(np.isfinite(arr)):
+                by_doy[(d.month, d.day)].append((d.year, arr))
     doy_to_mean = {}
     doy_to_trend = {}
     for k, vals in by_doy.items():
         years = np.array([v[0] for v in vals])
-        data = np.stack([v[1] for v in vals], axis=0)
+        data = np.stack([np.where(np.isfinite(v[1]), v[1], np.nan) for v in vals], axis=0)
         mean = np.nanmean(data, axis=0)
         if use_trend and len(years) >= 3:
-            # Linear trend per pixel
             try:
-                coeffs = np.polyfit(years, data.reshape(len(years), -1), 1)
-                trend = coeffs[0].reshape(mean.shape)
+                # NaN-aware polyfit per pixel
+                trend = np.zeros_like(mean)
+                for idx in np.ndindex(mean.shape):
+                    y = data[(slice(None),) + idx]
+                    mask = np.isfinite(y)
+                    if np.sum(mask) >= 3:
+                        try:
+                            coeffs = np.polyfit(years[mask], y[mask], 1)
+                            trend[idx] = coeffs[0]
+                        except Exception:
+                            trend[idx] = 0.0
             except Exception:
                 trend = np.zeros_like(mean)
         else:
