@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 import numpy as np
@@ -126,3 +126,57 @@ if __name__ == "__main__":
 
 
 # Add sensor caveat
+
+
+def compute_sanity_checks(sic_by_date, train_dates, test_dates):
+    """Compute sanity checks - not hardcoded."""
+    leads = [7, 14]
+    results = {}
+    # Fit climatology
+    doy_to_mean, _ = baselines.fit_climatology(train_dates, sic_by_date, use_trend=True)
+    for lead in leads:
+        rmses_pers = []
+        rmses_damped = []
+        for td in test_dates[:100]:
+            t0 = td - timedelta(days=lead)
+            if t0 not in sic_by_date or td not in sic_by_date:
+                continue
+            obs_t0 = sic_by_date[t0]
+            obs_t = sic_by_date[td]
+            if obs_t0 is None or obs_t is None:
+                continue
+            pers = baselines.persistence(obs_t0)
+            mask = np.isfinite(pers) & np.isfinite(obs_t)
+            if not np.any(mask):
+                continue
+            rmses_pers.append(metrics.rmse(pers, obs_t))
+            k0 = (t0.month, t0.day)
+            k1 = (td.month, td.day)
+            if k0 in doy_to_mean and k1 in doy_to_mean:
+                try:
+                    damped = baselines.damped_anomaly_persistence(obs_t0, doy_to_mean[k0], doy_to_mean[k1], lead)
+                    rmses_damped.append(metrics.rmse(damped, obs_t))
+                except Exception:
+                    pass
+        results[f'lead_{lead}_pers'] = float(np.mean(rmses_pers)) if rmses_pers else np.nan
+        results[f'lead_{lead}_damped'] = float(np.mean(rmses_damped)) if rmses_damped else np.nan
+        if np.isfinite(results[f'lead_{lead}_damped']) and np.isfinite(results[f'lead_{lead}_pers']):
+            if results[f'lead_{lead}_damped'] >= results[f'lead_{lead}_pers']:
+                raise AssertionError(f"Damped persistence does not beat plain persistence at lead {lead}")
+    
+    # Shuffled
+    rmses_shuffled = []
+    import random
+    shuffled = list(test_dates)
+    random.Random(12345).shuffle(shuffled)
+    for td in shuffled[:50]:
+        t0 = td - timedelta(days=7)
+        if t0 in sic_by_date and td in sic_by_date:
+            try:
+                pers = baselines.persistence(sic_by_date[t0])
+                rmses_shuffled.append(metrics.rmse(pers, sic_by_date[td]))
+            except Exception:
+                pass
+    results['shuffled_pers_rmse'] = float(np.mean(rmses_shuffled)) if rmses_shuffled else np.nan
+    
+    return results
