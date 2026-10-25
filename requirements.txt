@@ -8,6 +8,7 @@ uvicorn[standard]>=0.28.0
 pydantic>=2.6.0
 websockets>=12.0            # WebSocket transport for the live voyage stream
 httpx>=0.27.0               # used by fastapi.testclient
+Pillow>=10.0.0              # bounded PNG masking for Copernicus sea-ice WMTS tiles
 
 # --- Numerics ----------------------------------------------------------------------
 numpy>=1.26.0
@@ -29,3 +30,5 @@ netCDF4>=1.7.2
 pyproj>=3.7
 # Optional real wind acquisition: decode NOAA GFS GRIB2 subsets.
 eccodes>=2.43.0
+# Optional real current acquisition via the official Copernicus Marine Toolbox CLI.
+copernicusmarine>=2.3.0

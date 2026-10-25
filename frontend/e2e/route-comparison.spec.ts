@@ -61,6 +61,7 @@ test('calculated alternatives update the chart and the selected profile sails un
   expect(fastestFrame).not.toEqual(balancedFrame);
 
   await page.getByRole('button', { name: 'Continue to Sail' }).click();
+  await page.getByRole('button', { name: 'Regional' }).click();
   const voyageRequestPromise = page.waitForRequest(
     (request) => request.url().endsWith('/api/v1/voyage') && request.method() === 'POST',
     { timeout: 10_000 },
@@ -87,5 +88,20 @@ test('calculated alternatives update the chart and the selected profile sails un
     point.longitude,
   ])).toEqual(fastest?.evaluation.waypoints.map((point) => [point.latitude, point.longitude]));
   await expect(page.getByText('UNDER WAY').first()).toBeVisible({ timeout: 60_000 });
+  const regionalMap = page.getByRole('application', { name: 'Regional context map' });
+  const regionalControls = page.getByTestId('regional-voyage-controls');
+  await expect(regionalControls).toBeVisible();
+  await expect(regionalMap).toHaveAttribute('data-regional-vessel-present', 'true');
+  const firstPosition = {
+    latitude: await regionalMap.getAttribute('data-vessel-latitude'),
+    longitude: await regionalMap.getAttribute('data-vessel-longitude'),
+  };
+  await expect.poll(async () => ({
+    latitude: await regionalMap.getAttribute('data-vessel-latitude'),
+    longitude: await regionalMap.getAttribute('data-vessel-longitude'),
+  }), { timeout: 30_000 }).not.toEqual(firstPosition);
+  await page.screenshot({ path: '/tmp/iceflow-regional-sailing.png' });
+  await regionalControls.getByRole('button', { name: 'Pause regional voyage' }).click();
+  await expect(regionalMap).toHaveAttribute('data-regional-voyage-phase', 'paused');
   expect(errors).toEqual([]);
 });

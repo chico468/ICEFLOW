@@ -25,6 +25,10 @@ def _layer(
     <Layer>
       <ows:Title>{title}</ows:Title>
       <ows:Identifier>{identifier}</ows:Identifier>
+      <ows:WGS84BoundingBox>
+        <ows:LowerCorner>-180 -90</ows:LowerCorner>
+        <ows:UpperCorner>180 90</ows:UpperCorner>
+      </ows:WGS84BoundingBox>
       <Style isDefault="true"><ows:Identifier>{style}</ows:Identifier></Style>
       <Format>image/png</Format>
       <Dimension><ows:Identifier>time</ows:Identifier><Default>{time_value.split('/')[1] if '/' in time_value else time_value}</Default><Value>{time_value}</Value></Dimension>
@@ -53,9 +57,21 @@ def _capabilities(
             edge_time,
         ),
         _layer(
+            f"{product_ice}/osisaf_obs-si_glo_phy-siedge_nrt_sh-P1D_202107/status_flag",
+            "Observed Antarctic ice-edge status flag",
+            "cmap:rainbow",
+            edge_time,
+        ),
+        _layer(
             f"{product_ice}/osisaf_obs-si_glo_phy-sic-south_nrt_amsr2_l4_P1D-m_202304/ice_conc",
             "Observed Antarctic ice concentration",
             "cmap:ice",
+            concentration_time,
+        ),
+        _layer(
+            f"{product_ice}/osisaf_obs-si_glo_phy-sic-south_nrt_amsr2_l4_P1D-m_202304/status_flag",
+            "Observed Antarctic concentration status flag",
+            "cmap:rainbow",
             concentration_time,
         ),
         _layer(
@@ -96,6 +112,7 @@ def _capabilities(
     ]
     matrices = "".join(
         f"<TileMatrix><ows:Identifier>{zoom}</ows:Identifier>"
+        f"<ScaleDenominator>{559082264.0287178 / (2**zoom)}</ScaleDenominator>"
         "<TopLeftCorner>-20037508.3428 20037508.3428</TopLeftCorner>"
         "<TileWidth>256</TileWidth><TileHeight>256</TileHeight>"
         f"<MatrixWidth>{2**zoom}</MatrixWidth><MatrixHeight>{2**zoom}</MatrixHeight>"
@@ -138,9 +155,13 @@ def test_capabilities_discover_layers_styles_crs_time_and_kvp(capabilities):
         "2026-01-08T00:00:00Z/2026-01-10T00:00:00Z/P1D",
     )
     assert edge.tile_matrix_sets == ("EPSG:3857",)
+    assert edge.wgs84_bounds == (-180.0, -90.0, 180.0, 90.0)
     assert capabilities.tile_matrix_sets["EPSG:3857"].supported_crs.endswith("3857")
     assert capabilities.tile_matrix_sets["EPSG:3857"].matrix_ids == tuple(
         str(value) for value in range(11)
+    )
+    assert capabilities.tile_matrix_sets["EPSG:3857"].scale_denominators["0"] == pytest.approx(
+        559082264.0287178
     )
     current = next(
         layer for layer in capabilities.layers.values() if layer.identifier.endswith("/uo")
@@ -148,6 +169,22 @@ def test_capabilities_discover_layers_styles_crs_time_and_kvp(capabilities):
     assert current.units == "m s-1"
     assert current.standard_name == "eastward_sea_water_velocity"
     assert current.data_updated_at_utc == NOW
+
+
+def test_capabilities_normalize_latitude_longitude_axis_labels():
+    capabilities = cm.parse_capabilities(
+        """<Capabilities xmlns="http://www.opengis.net/wmts/1.0"
+          xmlns:ows="http://www.opengis.net/ows/1.1">
+          <Contents><Layer><ows:Identifier>test/ice_edge</ows:Identifier>
+            <ows:WGS84BoundingBox axisLabels="Lat Long">
+              <ows:LowerCorner>-85 -180</ows:LowerCorner>
+              <ows:UpperCorner>-35 180</ows:UpperCorner>
+            </ows:WGS84BoundingBox>
+          </Layer></Contents>
+        </Capabilities>"""
+    )
+    layer = capabilities.layers["test/ice_edge"]
+    assert layer.wgs84_bounds == (-180.0, -85.0, 180.0, -35.0)
 
 
 def test_live_discovery_names_match_current_products(capabilities):
@@ -160,26 +197,49 @@ def test_live_discovery_names_match_current_products(capabilities):
     assert any(value.endswith("/vo") for value in identifiers)
 
 
-def test_resolver_pairs_ice_observations_and_surface_currents(capabilities):
+def test_resolver_selects_concentration_and_pairs_surface_currents(capabilities):
     result = cm.resolve_environment_layers(
         NOW,
         now=NOW,
         capabilities=capabilities,
     )
     assert result["sea_ice_edge"]["source_valid_time_utc"] == datetime(
-        2026, 1, 9, tzinfo=timezone.utc
-    )
-    assert (
-        result["sea_ice_edge"]["source_valid_time_utc"]
-        == result["sea_ice_concentration"]["source_valid_time_utc"]
+        2026, 1, 10, tzinfo=timezone.utc
     )
     assert result["sea_ice_edge"]["status"] == "ready"
     assert result["sea_ice_edge"]["classification"] == "observation"
+    assert result["sea_ice_edge"]["render_quality_layer"].endswith("/status_flag")
+    assert result["sea_ice_edge"]["render_quality_valid_time_utc"] == result["sea_ice_edge"]["source_valid_time_utc"]
+    assert result["sea_ice_concentration"]["source_valid_time_utc"] == datetime(
+        2026, 1, 9, tzinfo=timezone.utc
+    )
+    assert "sea_ice_type" not in result
+    quality = result["sea_ice_concentration"]
+    assert quality["render_quality_layer"].endswith("/status_flag")
+    assert quality["render_quality_style"] == "cmap:rainbow"
+    assert quality["render_quality_valid_time_utc"] == quality["source_valid_time_utc"]
+    assert quality["render_quality_tile_dimensions"]["time"] == "2026-01-09T00:00:00Z"
+    assert "time=2026-01-09T00%3A00%3A00.000Z" in quality["render_quality_tile_template"]
     assert (
         result["ocean_current_eastward"]["source_valid_time_utc"]
         == result["ocean_current_northward"]["source_valid_time_utc"]
     )
     assert result["ocean_current_eastward"]["status"] == "ready"
+
+
+def test_resolver_can_skip_an_advertised_time_that_failed_tile_validation(capabilities):
+    excluded_time = datetime(2026, 1, 10, tzinfo=timezone.utc)
+    result = cm.resolve_environment_layers(
+        NOW,
+        now=NOW,
+        capabilities=capabilities,
+        excluded_source_times={"sea_ice_edge": {excluded_time}},
+    )
+    edge = result["sea_ice_edge"]
+    assert edge["source_valid_time_utc"] == datetime(2026, 1, 9, tzinfo=timezone.utc)
+    assert edge["tile_dimensions"]["time"] == "2026-01-09T00:00:00Z"
+    assert edge["render_quality_valid_time_utc"] == edge["source_valid_time_utc"]
+    assert edge["render_quality_tile_dimensions"]["time"] == "2026-01-09T00:00:00Z"
 
 
 def test_historical_target_never_selects_a_later_observation(capabilities):
@@ -265,7 +325,7 @@ def test_stale_and_outside_coverage_are_explicit(capabilities):
     assert outside["sea_ice_edge"]["status"] == "outside_coverage"
 
 
-def test_observed_pair_with_no_matching_valid_date_is_not_mixed(capabilities):
+def test_concentration_is_not_blocked_by_a_different_edge_observation_time():
     split = cm.parse_capabilities(
         _capabilities(
             edge_time="2026-01-08T00:00:00Z/2026-01-08T00:00:00Z/P1D",
@@ -273,10 +333,18 @@ def test_observed_pair_with_no_matching_valid_date_is_not_mixed(capabilities):
         )
     )
     result = cm.resolve_environment_layers(NOW, now=NOW, capabilities=split)
-    assert result["sea_ice_edge"]["status"] == "stale"
-    assert result["sea_ice_concentration"]["status"] == "stale"
-    assert result["sea_ice_edge"]["source_valid_time_utc"] is None
-    assert "common valid time" in result["sea_ice_edge"]["reason"]
+    assert result["sea_ice_edge"]["status"] == "ready"
+    assert result["sea_ice_edge"]["source_valid_time_utc"] == datetime(
+        2026, 1, 8, tzinfo=timezone.utc
+    )
+    assert result["sea_ice_concentration"]["status"] == "ready"
+    assert result["sea_ice_concentration"]["source_valid_time_utc"] == datetime(
+        2026, 1, 9, tzinfo=timezone.utc
+    )
+    assert (
+        result["sea_ice_concentration"]["render_quality_valid_time_utc"]
+        == result["sea_ice_concentration"]["source_valid_time_utc"]
+    )
 
 
 def test_layer_without_advertised_dataset_is_unavailable():
@@ -305,7 +373,7 @@ def test_tile_template_requires_advertised_kvp_png_style_and_matrix(capabilities
     assert "tilematrix={z}" in edge["tile_template"]
     assert "tilerow={y}" in edge["tile_template"]
     assert "tilecol={x}" in edge["tile_template"]
-    assert "time=2026-01-09T00%3A00%3A00.000Z" in edge["tile_template"]
+    assert "time=2026-01-10T00%3A00%3A00.000Z" in edge["tile_template"]
     assert edge["source_crs"].endswith("3857")
     assert edge["tile_max_zoom"] == 10
     assert edge["units"] is None
@@ -315,6 +383,24 @@ def test_tile_template_requires_advertised_kvp_png_style_and_matrix(capabilities
     assert cm.resolve_environment_layers(NOW, now=NOW, capabilities=no_kvp)[
         "sea_ice_edge"
     ]["tile_template"] is None
+
+
+def test_tile_template_rejects_matrix_with_non_xyz_scale_denominators(capabilities):
+    matrix_set = capabilities.tile_matrix_sets["EPSG:3857"]
+    scales = dict(matrix_set.scale_denominators)
+    scales["4"] *= 2
+    capabilities.tile_matrix_sets["EPSG:3857"] = cm.TileMatrixSet(
+        **{**matrix_set.__dict__, "scale_denominators": scales}
+    )
+    concentration = cm.resolve_environment_layers(
+        NOW,
+        now=NOW,
+        capabilities=capabilities,
+    )["sea_ice_concentration"]
+    assert concentration["tile_template"] is None
+    assert concentration["reason"] == (
+        "Layer lacks a verified public KVP tile template in EPSG:3857 with PNG format."
+    )
 
 
 def test_tile_template_rejects_non_public_or_non_https_operation_url():

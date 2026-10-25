@@ -37,6 +37,78 @@ export interface EnvironmentTimeResolution {
   reason: string | null;
 }
 
+export type EnvironmentLayerStatus =
+  | 'ready'
+  | 'stale'
+  | 'unavailable'
+  | 'outside_coverage'
+  | 'unsupported_time'
+  | 'error';
+
+export interface EnvironmentLayerMetadata {
+  key: string;
+  status: EnvironmentLayerStatus;
+  target_time_utc: string;
+  source_valid_time_utc: string | null;
+  source_valid_interval_start_utc: string | null;
+  source_valid_interval_end_utc: string | null;
+  observation_time_utc: string | null;
+  retrieved_at_utc: string | null;
+  classification: 'observation' | 'analysis' | 'forecast' | null;
+  forecast_lead_hours: number | null;
+  age_hours: number | null;
+  offset_hours: number | null;
+  product: string;
+  dataset: string | null;
+  layer: string | null;
+  variable: string;
+  units: string | null;
+  standard_name: string | null;
+  data_updated_at_utc: string | null;
+  metadata_updated_at_utc: string | null;
+  product_released_at_utc: string | null;
+  source_crs: string | null;
+  tile_matrix_set: string | null;
+  coverage_bounds_wgs84?: { west: number; south: number; east: number; north: number } | null;
+  coverage_bounds_reason?: string | null;
+  style: string | null;
+  tile_max_zoom: number | null;
+  tile_template: string | null;
+  render_quality_layer?: string | null;
+  render_quality_style?: string | null;
+  render_quality_valid_time_utc?: string | null;
+  render_quality_tile_matrix_set?: string | null;
+  render_quality_tile_max_zoom?: number | null;
+  render_quality_tile_template?: string | null;
+  render_quality_tile_dimensions?: Record<string, string>;
+  render_quality_reason?: string | null;
+  render_tile_template?: string | null;
+  render_status?: 'ready' | 'unavailable' | null;
+  render_reason?: string | null;
+  tile_dimensions: Record<string, string>;
+  attribution: string;
+  provenance: string;
+  reason: string | null;
+}
+
+export interface EnvironmentLayersResponse {
+  target_time_utc: string;
+  mode: 'active_voyage' | 'planning_forecast';
+  time_resolution: EnvironmentTimeResolution;
+  layers: Record<string, EnvironmentLayerMetadata>;
+}
+
+export interface EnvironmentLayersRequest {
+  target_time_utc: string;
+  mode: 'active_voyage' | 'planning_forecast';
+  departure_iso?: string;
+  sim_hours?: number;
+  timestamp_iso?: string;
+  planning_reference_iso?: string;
+  lead_hours?: number;
+  departure_time_hours?: number;
+}
+
 /** Iceberg drift uses its own catalogue-seed model clock, not voyage UTC. */
 export interface IcebergTimeResolution {
   mode: 'active_voyage';

@@ -3,7 +3,10 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from typing import Any, Dict, List, Literal, Optional
+
+logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse, PlainTextResponse, Response
@@ -250,23 +253,41 @@ async def voyage_socket(websocket: WebSocket, voyage_id: str) -> None:
 
     async def pump() -> None:
         nonlocal running
-        while running:
-            if engine.state.status in {"ARRIVED", "ABORTED"}:
-                await websocket.send_json({"type": "done", "payload": {"status": engine.state.status}})
-                running = False
-                break
-            tick = await asyncio.to_thread(engine.step, tick_hours)
-            await websocket.send_json({"type": "tick", "payload": json.loads(tick.model_dump_json())})
-            for alert in engine.state.alerts:
-                if alert.alert_id not in seen_alerts:
-                    seen_alerts.add(alert.alert_id)
-                    await websocket.send_json(
-                        {"type": "alert", "payload": json.loads(alert.model_dump_json())}
-                    )
-            await asyncio.sleep(interval)
-        store.save(engine.state)
+        try:
+            while running:
+                if engine.state.status in {"ARRIVED", "ABORTED"}:
+                    await websocket.send_json({"type": "done", "payload": {"status": engine.state.status}})
+                    running = False
+                    break
+                tick = await asyncio.to_thread(engine.step, tick_hours)
+                # A pause can arrive while the tick is computing. Never ship a tick after the
+                # operator asked to stop: it would overwrite the `paused` frame on the client
+                # and leave the voyage reading as `running`.
+                if not running:
+                    break
+                await websocket.send_json({"type": "tick", "payload": json.loads(tick.model_dump_json())})
+                for alert in engine.state.alerts:
+                    if alert.alert_id not in seen_alerts:
+                        seen_alerts.add(alert.alert_id)
+                        await websocket.send_json(
+                            {"type": "alert", "payload": json.loads(alert.model_dump_json())}
+                        )
+                await asyncio.sleep(interval)
+        finally:
+            store.save(engine.state)
 
     pump_task: Optional[asyncio.Task] = None
+
+    def _drain_pump_failure(task: asyncio.Task) -> None:
+        # The pump task is fire-and-forget; without this its CancelledError (and any real
+        # exception) would otherwise surface as "Task exception was never retrieved".
+        try:
+            task.result()
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            logger.exception("Voyage pump task failed for %s", voyage_id)
+
     try:
         while True:
             message = await websocket.receive_json()
@@ -278,8 +299,15 @@ async def voyage_socket(websocket: WebSocket, voyage_id: str) -> None:
                 if not running:
                     running = True
                     pump_task = asyncio.create_task(pump())
+                    pump_task.add_done_callback(_drain_pump_failure)
             elif action == "pause":
+                # Stop the pump and interrupt its sleep. Setting only `running = False` lets
+                # the current iteration finish and ship one more tick after the `paused`
+                # frame; the client's tick handler then forces `running` and the voyage never
+                # reads as paused.
                 running = False
+                if pump_task is not None and not pump_task.done():
+                    pump_task.cancel()
                 await websocket.send_json({"type": "paused", "payload": {"sim_hours": engine.state.sim_hours}})
             elif action == "step":
                 tick = await asyncio.to_thread(engine.step, float(message.get("tick_hours", tick_hours)))

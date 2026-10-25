@@ -42,6 +42,8 @@ class WmtsLayer:
     tile_matrix_sets: tuple[str, ...]
     dimensions: dict[str, tuple[str, ...]]
     dimension_defaults: dict[str, str]
+    wgs84_bounds: tuple[float, float, float, float] | None
+    wgs84_bounds_reason: str | None
     units: str | None
     standard_name: str | None
     data_updated_at_utc: datetime | None
@@ -58,6 +60,7 @@ class TileMatrixSet:
     tile_width: int | None
     tile_height: int | None
     matrix_dimensions: dict[str, tuple[int, int]]
+    scale_denominators: dict[str, float]
 
 
 @dataclass(frozen=True)
@@ -89,7 +92,7 @@ LAYER_SPECS = (
         "osisaf_obs-si_glo_phy-siedge_nrt_sh-P1D",
         "ice_edge",
         "observation",
-        "observed_sea_ice",
+        None,
         72,
     ),
     LayerSpec(
@@ -98,7 +101,7 @@ LAYER_SPECS = (
         "osisaf_obs-si_glo_phy-sic-south_nrt_amsr2_l4_P1D-m",
         "ice_conc",
         "observation",
-        "observed_sea_ice",
+        None,
         72,
     ),
     LayerSpec(
@@ -171,6 +174,15 @@ def _text(element: ET.Element | None, path: str) -> str | None:
     return child.text.strip()
 
 
+def _child_text(element: ET.Element | None, name: str) -> str | None:
+    if element is None:
+        return None
+    for child in element:
+        if _local_name(child.tag) == name and child.text:
+            return child.text.strip()
+    return None
+
+
 def _metadata_value(element: ET.Element, key: str) -> str | None:
     metadata = element.find("ows:Metadata", _NS)
     if metadata is None:
@@ -214,6 +226,53 @@ def _parse_layer(element: ET.Element) -> WmtsLayer | None:
                 for item in dimension.findall("wmts:Value", _NS)
                 if item.text and (value := item.text.strip())
             )
+    bounds: tuple[float, float, float, float] | None = None
+    bounds_reason: str | None = None
+    bounding_box = next(
+        (child for child in element if _local_name(child.tag) == "WGS84BoundingBox"),
+        None,
+    )
+    lower_corner = _child_text(bounding_box, "LowerCorner")
+    upper_corner = _child_text(bounding_box, "UpperCorner")
+    if bounding_box is not None:
+        if not lower_corner or not upper_corner:
+            bounds_reason = "WMTS layer advertises incomplete WGS84 coverage bounds."
+        else:
+            try:
+                lower = tuple(float(value) for value in lower_corner.split())
+                upper = tuple(float(value) for value in upper_corner.split())
+            except ValueError:
+                bounds_reason = "WMTS layer advertises malformed WGS84 coverage bounds."
+            else:
+                labels = bounding_box.attrib.get("axisLabels", "").lower().split()
+                axis_order = (
+                    "lat_lon"
+                    if labels in (["lat", "long"], ["latitude", "longitude"])
+                    else "lon_lat"
+                    if labels in (["long", "lat"], ["longitude", "latitude"])
+                    else None
+                )
+
+                def valid_box(west: float, south: float, east: float, north: float) -> bool:
+                    return (
+                        all(math.isfinite(value) for value in (west, south, east, north))
+                        and -180 <= west < east <= 180
+                        and -90 <= south < north <= 90
+                    )
+
+                if len(lower) == 2 and len(upper) == 2:
+                    lon_lat_valid = valid_box(lower[0], lower[1], upper[0], upper[1])
+                    lat_lon_valid = valid_box(lower[1], lower[0], upper[1], upper[0])
+                    if axis_order == "lat_lon" and lat_lon_valid:
+                        bounds = (lower[1], lower[0], upper[1], upper[0])
+                    elif axis_order == "lon_lat" and lon_lat_valid:
+                        bounds = (lower[0], lower[1], upper[0], upper[1])
+                    elif axis_order is None and lon_lat_valid:
+                        bounds = (lower[0], lower[1], upper[0], upper[1])
+                    elif axis_order is None and lat_lon_valid:
+                        bounds = (lower[1], lower[0], upper[1], upper[0])
+                if bounds is None:
+                    bounds_reason = "WMTS layer advertises invalid WGS84 coverage bounds."
     return WmtsLayer(
         identifier=identifier,
         title=title,
@@ -230,6 +289,8 @@ def _parse_layer(element: ET.Element) -> WmtsLayer | None:
         ),
         dimensions=dimensions,
         dimension_defaults=dimension_defaults,
+        wgs84_bounds=bounds,
+        wgs84_bounds_reason=bounds_reason,
         units=_metadata_value(element, "Unit"),
         standard_name=_metadata_value(element, "StandardName"),
         data_updated_at_utc=_metadata_datetime(element, "admp_updated_data"),
@@ -245,6 +306,7 @@ def _parse_tile_matrix_set(element: ET.Element) -> TileMatrixSet | None:
         return None
     matrix_elements = element.findall("wmts:TileMatrix", _NS)
     matrix_dimensions: dict[str, tuple[int, int]] = {}
+    scale_denominators: dict[str, float] = {}
     for matrix in matrix_elements:
         matrix_id = _text(matrix, "ows:Identifier")
         width = _text(matrix, "wmts:MatrixWidth")
@@ -253,7 +315,13 @@ def _parse_tile_matrix_set(element: ET.Element) -> TileMatrixSet | None:
             try:
                 matrix_dimensions[matrix_id] = (int(width), int(height))
             except ValueError:
-                continue
+                pass
+        scale = _text(matrix, "wmts:ScaleDenominator")
+        if matrix_id and scale:
+            try:
+                scale_denominators[matrix_id] = float(scale)
+            except ValueError:
+                pass
     top_left = _text(matrix_elements[0], "wmts:TopLeftCorner") if matrix_elements else None
     try:
         top_left_corner = (
@@ -280,6 +348,7 @@ def _parse_tile_matrix_set(element: ET.Element) -> TileMatrixSet | None:
         tile_width=tile_width,
         tile_height=tile_height,
         matrix_dimensions=matrix_dimensions,
+        scale_denominators=scale_denominators,
     )
 
 
@@ -497,6 +566,11 @@ def _tile_template(
         if matrix_set
         else []
     )
+    matrix_ids_are_xyz = bool(
+        matrix_set
+        and matrix_set.matrix_ids == tuple(str(zoom) for zoom in numeric_matrix_ids)
+        and numeric_matrix_ids == list(range(len(numeric_matrix_ids)))
+    )
     matrix_compatible = bool(
         matrix_set
         and matrix_set.supported_crs.endswith("3857")
@@ -509,6 +583,17 @@ def _tile_template(
             matrix_set.matrix_dimensions.get(str(zoom)) == (2**zoom, 2**zoom)
             for zoom in numeric_matrix_ids
         )
+        and all(
+            (scale := matrix_set.scale_denominators.get(str(zoom))) is not None
+            and math.isfinite(scale)
+            and math.isclose(
+                scale,
+                559_082_264.0287178 / (2**zoom),
+                rel_tol=1e-9,
+                abs_tol=1e-6,
+            )
+            for zoom in numeric_matrix_ids
+        )
     )
     if (
         not capabilities.get_tile_url
@@ -516,7 +601,7 @@ def _tile_template(
         or not matrix_set
         or not matrix_set.matrix_ids
         or not matrix_compatible
-        or numeric_matrix_ids != list(range(len(numeric_matrix_ids)))
+        or not matrix_ids_are_xyz
         or matrix_id not in layer.tile_matrix_sets
         or "image/png" not in layer.formats
         or style not in layer.styles
@@ -558,6 +643,52 @@ def _selected_dimensions(layer: WmtsLayer, source_time: datetime) -> dict[str, s
     }
 
 
+def _status_quality_reference(
+    capabilities: WmtsCapabilities,
+    observation: WmtsLayer,
+    source_time: datetime,
+) -> tuple[dict[str, object] | None, str | None]:
+    dataset = observation.identifier.rsplit("/", 1)[0]
+    quality = capabilities.layers.get(f"{dataset}/status_flag")
+    if quality is None:
+        return None, "The paired dataset does not advertise its status_flag quality layer."
+    if (
+        "image/png" not in quality.formats
+        or "EPSG:3857" not in quality.tile_matrix_sets
+        or "EPSG:3857" not in observation.tile_matrix_sets
+        or "cmap:rainbow" not in quality.styles
+        or observation.wgs84_bounds is None
+        or quality.wgs84_bounds != observation.wgs84_bounds
+    ):
+        return None, "The status_flag layer lacks matching PNG, style, matrix, or coverage metadata."
+    try:
+        quality_times = _axis_times(quality)
+    except (ValueError, OverflowError):
+        return None, "The status_flag layer has an unsupported time dimension."
+    if source_time not in quality_times:
+        return None, "The status_flag layer does not advertise the paired observation valid time."
+    tile, crs, matrix_set, max_zoom = _tile_template(
+        capabilities,
+        quality,
+        "cmap:rainbow",
+        source_time,
+    )
+    if tile is None or matrix_set != "EPSG:3857" or crs is None:
+        return None, "The status_flag layer does not provide a compatible EPSG:3857 PNG tile matrix."
+    return (
+        {
+            "render_quality_layer": quality.identifier,
+            "render_quality_style": "cmap:rainbow",
+            "render_quality_valid_time_utc": source_time,
+            "render_quality_tile_matrix_set": matrix_set,
+            "render_quality_tile_max_zoom": max_zoom,
+            "render_quality_tile_template": tile,
+            "render_quality_tile_dimensions": _selected_dimensions(quality, source_time),
+        },
+        None,
+    )
+
+
 def _base_result(spec: LayerSpec, target: datetime) -> dict:
     return {
         "key": spec.key,
@@ -584,6 +715,16 @@ def _base_result(spec: LayerSpec, target: datetime) -> dict:
         "style": None,
         "tile_max_zoom": None,
         "tile_template": None,
+        "render_quality_layer": None,
+        "render_quality_style": None,
+        "render_quality_valid_time_utc": None,
+        "render_quality_tile_matrix_set": None,
+        "render_quality_tile_max_zoom": None,
+        "render_quality_tile_template": None,
+        "render_quality_tile_dimensions": {},
+        "render_quality_reason": None,
+        "coverage_bounds_wgs84": None,
+        "coverage_bounds_reason": None,
         "tile_dimensions": {},
         "attribution": WMTS_ATTRIBUTION,
         "provenance": (
@@ -600,6 +741,7 @@ def _candidate_result(
     layer: WmtsLayer | None,
     target: datetime,
     now: datetime,
+    excluded_source_times: set[datetime] | None = None,
 ) -> tuple[dict, list[datetime]]:
     result = _base_result(spec, target)
     if layer is None:
@@ -609,6 +751,17 @@ def _candidate_result(
     result.update(
         dataset=layer.identifier.split("/")[-2],
         layer=layer.identifier,
+        coverage_bounds_wgs84=(
+            {
+                "west": layer.wgs84_bounds[0],
+                "south": layer.wgs84_bounds[1],
+                "east": layer.wgs84_bounds[2],
+                "north": layer.wgs84_bounds[3],
+            }
+            if layer.wgs84_bounds
+            else None
+        ),
+        coverage_bounds_reason=layer.wgs84_bounds_reason,
         units=layer.units,
         standard_name=layer.standard_name,
         data_updated_at_utc=layer.data_updated_at_utc,
@@ -649,8 +802,15 @@ def _candidate_result(
         )
         return result, times
 
-    eligible = [value for value in times if value <= target]
+    excluded = excluded_source_times or set()
+    eligible = [value for value in times if value <= target and value not in excluded]
     if not eligible:
+        if excluded and any(value <= target for value in times):
+            result.update(
+                status="unavailable",
+                reason="All advertised source times failed their renderer availability checks.",
+            )
+            return result, times
         result.update(
             status="outside_coverage",
             reason="No valid source time is available at or before the requested time.",
@@ -838,6 +998,7 @@ def resolve_environment_layers(
     *,
     now: datetime | None = None,
     capabilities: WmtsCapabilities | None = None,
+    excluded_source_times: Mapping[str, set[datetime]] | None = None,
 ) -> dict[str, dict]:
     """Resolve configured source layers against one timezone-aware UTC target."""
     target = parse_utc_datetime(target_time_utc, "target_time_utc")
@@ -857,7 +1018,12 @@ def resolve_environment_layers(
     for spec in LAYER_SPECS:
         source_layer = _find_layer(metadata, spec)
         result, available_times = _candidate_result(
-            metadata, spec, source_layer, target, current
+            metadata,
+            spec,
+            source_layer,
+            target,
+            current,
+            (excluded_source_times or {}).get(spec.key),
         )
         results[spec.key] = result
         time_axes[spec.key] = available_times
@@ -865,6 +1031,25 @@ def resolve_environment_layers(
     for pair_name in {spec.pair for spec in LAYER_SPECS if spec.pair}:
         pair_specs = [spec for spec in LAYER_SPECS if spec.pair == pair_name]
         _resolve_pair(metadata, pair_specs, results, time_axes, target, current)
+    for key in ("sea_ice_edge", "sea_ice_concentration"):
+        observation = results[key]
+        layer_id = observation.get("layer")
+        source_time = observation.get("source_valid_time_utc")
+        if (
+            isinstance(layer_id, str)
+            and isinstance(source_time, datetime)
+            and observation.get("status") in {"ready", "stale"}
+        ):
+            source_layer = metadata.layers.get(layer_id)
+            if source_layer is not None:
+                quality_reference, quality_reason = _status_quality_reference(
+                    metadata,
+                    source_layer,
+                    source_time,
+                )
+                if quality_reference:
+                    observation.update(quality_reference)
+                observation["render_quality_reason"] = quality_reason
     return results
 
 

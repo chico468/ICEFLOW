@@ -19,6 +19,7 @@ import type { RouteProfileId } from '../api/types';
 import { RegionalMap } from '../map/RegionalMap';
 import type { LatLon } from '../map/projection';
 import { useAppStore } from '../store/useAppStore';
+import type { VoyagePhase } from '../store/useAppStore';
 import { ScreenActiveContext, useScreenActive } from './screenActive';
 import { Segmented } from './MapToolbar';
 
@@ -36,11 +37,19 @@ export function ChartViews({
   fitTargets,
   onClickPoint,
   onSelectRouteCandidate,
+  voyagePhase,
+  onPlay,
+  onPause,
+  onStep,
 }: {
   scene: MapScene;
   fitTargets: { lat: number; lon: number }[];
   onClickPoint?: (ll: LatLon) => void;
   onSelectRouteCandidate?: (id: RouteProfileId) => void;
+  voyagePhase?: VoyagePhase;
+  onPlay?: () => void;
+  onPause?: () => void;
+  onStep?: () => void;
 }): JSX.Element {
   const [view, setView] = useState<View>('antarctic');
   const [polar, setPolar] = useState<MapCanvasHandle | null>(null);
@@ -74,6 +83,10 @@ export function ChartViews({
           originId={originId}
           destinationId={destinationId}
           onSelectRouteCandidate={onSelectRouteCandidate ?? (() => undefined)}
+          voyagePhase={voyagePhase}
+          onPlay={onPlay}
+          onPause={onPause}
+          onStep={onStep}
           toolbarLead={lead}
         />
       </div>

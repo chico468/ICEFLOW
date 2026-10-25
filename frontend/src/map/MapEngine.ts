@@ -291,7 +291,7 @@ export class MapEngine {
     // throwing on every frame. A field that is only missing its edge line still draws what it has.
     const ice = isUsableIceField(s.iceField) ? s.iceField : null;
     if (L.iceRaster && ice) drawIceRaster(ctx, vp, ice, s.rasterMode, s.rasterOpacity, s.iceFieldBase);
-    if (L.iceEdge && ice && Array.isArray(ice.ice_edge_lat)) drawIceEdge(ctx, vp, ice.lons, ice.ice_edge_lat);
+    const iceEdgeLat = ice && (Array.isArray(ice.ice_edge_lat) ? ice.ice_edge_lat : (Array.isArray((ice as unknown as { edge_lat?: number[] }).edge_lat) ? (ice as unknown as { edge_lat: number[] }).edge_lat : null)); if (L.iceEdge && ice && iceEdgeLat) drawIceEdge(ctx, vp, ice.lons, iceEdgeLat);
     if (L.compression && ice) drawCompression(ctx, vp, ice);
     if (L.land) drawLand(ctx, vp, s.coastline);
     if (L.drift && ice) drawDriftField(ctx, vp, ice);

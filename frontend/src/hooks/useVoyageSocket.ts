@@ -165,7 +165,10 @@ export function useVoyageSocket(): VoyageController {
 
   const pause = useCallback(() => {
     send({ action: 'pause' });
-  }, [send]);
+    // Reflect the operator's pause request immediately; the websocket `paused` frame
+    // remains authoritative and a later tick will restore `running` if the server continues.
+    setVoyagePhase('paused');
+  }, [send, setVoyagePhase]);
 
   const step = useCallback(() => {
     const { tickHours } = useAppStore.getState();

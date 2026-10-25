@@ -44,9 +44,12 @@ export function RadarScope({ sweep }: { sweep: RadarSweep | null }): JSX.Element
         <circle cx={CENTRE} cy={CENTRE} r={RADIUS} fill="url(#clutter)" />
 
         {rings.map((r, i) => (
-          <circle key={r} cx={CENTRE} cy={CENTRE} r={r} fill="none" stroke="#1E2E44" strokeDasharray="2 3">
-            <title>{`${num(((i + 1) / 4) * maxRange, 1)} nm`}</title>
-          </circle>
+          <g key={r}>
+            <circle cx={CENTRE} cy={CENTRE} r={r} fill="none" stroke="#2A3F5F" strokeDasharray="2 3" />
+            <text x={CENTRE + 3} y={CENTRE - r + 9} className="fill-ink-3" style={{ fontSize: 7 }}>
+              {num(((i + 1) / 4) * maxRange, 1)} nm
+            </text>
+          </g>
         ))}
 
         {/* The three-mile tactical perimeter. */}
@@ -56,16 +59,22 @@ export function RadarScope({ sweep }: { sweep: RadarSweep | null }): JSX.Element
 
         {[0, 45, 90, 135, 180, 225, 270, 315].map((deg) => {
           const rad = (deg * Math.PI) / 180;
+          const lx = CENTRE + (RADIUS - 9) * Math.sin(rad);
+          const ly = CENTRE - (RADIUS - 9) * Math.cos(rad);
           return (
-            <line
-              key={deg}
-              x1={CENTRE}
-              y1={CENTRE}
-              x2={CENTRE + RADIUS * Math.sin(rad)}
-              y2={CENTRE - RADIUS * Math.cos(rad)}
-              stroke="#1E2E44"
-              strokeWidth={0.5}
-            />
+            <g key={deg}>
+              <line
+                x1={CENTRE}
+                y1={CENTRE}
+                x2={CENTRE + RADIUS * Math.sin(rad)}
+                y2={CENTRE - RADIUS * Math.cos(rad)}
+                stroke="#1E2E44"
+                strokeWidth={0.5}
+              />
+              <text x={lx} y={ly + 3} textAnchor="middle" className="fill-ink-3" style={{ fontSize: 7 }}>
+                {deg}
+              </text>
+            </g>
           );
         })}
 
@@ -95,8 +104,8 @@ export function RadarScope({ sweep }: { sweep: RadarSweep | null }): JSX.Element
           );
         })}
 
-        <text x={CENTRE} y={12} textAnchor="middle" className="fill-ink-3" style={{ fontSize: 8 }}>
-          HEAD UP
+        <text x={CENTRE} y={12} textAnchor="middle" className="fill-accent" style={{ fontSize: 9, fontWeight: 700 }}>
+          HEAD UP 000°
         </text>
         <text x={SIZE - 4} y={SIZE - 4} textAnchor="end" className="fill-ink-3" style={{ fontSize: 8 }}>
           {num(maxRange, 0)} nm

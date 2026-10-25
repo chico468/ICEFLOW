@@ -2,7 +2,10 @@
 from __future__ import annotations
 
 import argparse
+import os
+import shutil
 import subprocess
+import sys
 import tempfile
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -12,9 +15,20 @@ from src.data.real_flow import CMEMS_DATASET, import_copernicus_current_file
 
 def fetch(day: str, cache_dir: str | None = None) -> Path:
     date.fromisoformat(day)
+    executable = shutil.which("copernicusmarine")
+    if executable is None:
+        suffix = ".exe" if os.name == "nt" else ""
+        candidate = Path(sys.executable).with_name(f"copernicusmarine{suffix}")
+        if candidate.is_file():
+            executable = str(candidate)
+        else:
+            raise RuntimeError(
+                "Copernicus Marine Toolbox CLI is unavailable. Install the `copernicusmarine` "
+                "package in this Python environment and run `copernicusmarine login`."
+            )
     with tempfile.TemporaryDirectory(prefix="iceflow-cmems-") as temp:
         command = [
-            "copernicusmarine", "subset",
+            executable, "subset",
             "--dataset-id", CMEMS_DATASET,
             "--variable", "uo", "--variable", "vo",
             "--start-datetime", day, "--end-datetime", day,

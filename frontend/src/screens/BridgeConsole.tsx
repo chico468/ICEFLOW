@@ -84,6 +84,10 @@ export function BridgeConsole(): JSX.Element {
           fitTargets={fitTargets}
           onClickPoint={(ll) => setInspect(ll)}
           onSelectRouteCandidate={setSelectedCandidateId}
+          voyagePhase={phase}
+          onPlay={controller.play}
+          onPause={controller.pause}
+          onStep={controller.step}
         />
 
         {busy && (

@@ -337,7 +337,7 @@ def read_gfs_grib(path: str | Path) -> tuple[np.ndarray, np.ndarray, np.ndarray,
                     if level_type != "heightAboveGround" or level != 10 or short_name not in {"10u", "10v"}:
                         continue
                     units = str(eccodes.codes_get(gid, "units")).replace(" ", "").lower()
-                    if units not in {"ms-1", "m/s", "m.s-1"}:
+                    if units not in {"ms-1", "ms**-1", "m/s", "m.s-1"}:
                         raise FlowDataError(f"Unexpected GFS wind unit: {units}.")
                     data_date = int(eccodes.codes_get(gid, "dataDate"))
                     data_time = int(eccodes.codes_get(gid, "dataTime"))
@@ -376,7 +376,7 @@ def read_gfs_grib(path: str | Path) -> tuple[np.ndarray, np.ndarray, np.ndarray,
     return lats, lons, u, v, {
         "source": GFS_SOURCE,
         "product": GFS_PRODUCT,
-        "classification": "forecast",
+        "classification": "model_analysis" if keys["forecast_hour"] == 0 else "forecast",
         "units": "m/s",
         "native_resolution_deg": 0.25,
         "model_run_time": run_time.isoformat(),

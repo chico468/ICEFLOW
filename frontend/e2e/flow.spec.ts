@@ -117,7 +117,7 @@ test('a malformed response is handled: a notice, no crash', async ({ page }) => 
   await gotoApp(page);
   await openScreen(page, 'Sail');
   await enable(page, /Atmospheric wind/);
-  await expect(visible(page, '[role="status"]').filter({ hasText: /No wind or current data/ })).toHaveCount(1, { timeout: 15_000 });
+  await expect(visible(page, '[role="status"]').filter({ hasText: /No selected flow data/ })).toHaveCount(1, { timeout: 15_000 });
   expect(errors).toEqual([]);
 });
 

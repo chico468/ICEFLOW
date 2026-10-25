@@ -11,6 +11,8 @@ import type {
   BandwidthReport,
   CoastlineResponse,
   EnvField,
+  EnvironmentLayersRequest,
+  EnvironmentLayersResponse,
   Endpoint,
   ForecastSkillResponse,
   HealthResponse,
@@ -40,6 +42,22 @@ export function useCoastline(): UseQueryResult<CoastlineResponse> {
 
 export function useRegionalContext(): UseQueryResult<RegionalContext> {
   return useQuery({ queryKey: ['regional-context'], queryFn: api.getRegionalContext, ...FOREVER });
+}
+
+export function useEnvironmentLayers(
+  request: EnvironmentLayersRequest | null,
+  enabled: boolean,
+): UseQueryResult<EnvironmentLayersResponse> {
+  return useQuery({
+    queryKey: ['environment-layers', request],
+    queryFn: () => {
+      if (!request) throw new Error('Environmental time is unavailable.');
+      return api.getEnvironmentLayers(request);
+    },
+    enabled: enabled && request !== null,
+    staleTime: 60_000,
+    retry: 1,
+  });
 }
 
 export function useStations(): UseQueryResult<StationsResponse> {

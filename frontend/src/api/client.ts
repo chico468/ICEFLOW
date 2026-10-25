@@ -11,6 +11,8 @@ import type {
   CreateVoyageRequest,
   EnvField,
   EnvSample,
+  EnvironmentLayersRequest,
+  EnvironmentLayersResponse,
   ForecastSkillResponse,
   HealthResponse,
   IceEdgeResponse,
@@ -105,6 +107,21 @@ export const getRegionalContext = () => get<RegionalContext>('/geo/regional');
 
 export const getEnvSample = (lat: number, lon: number, tHours = 0) =>
   get<EnvSample>('/env/sample', { lat, lon, t_hours: tHours });
+
+export const getEnvironmentLayers = (params: EnvironmentLayersRequest) =>
+  get<EnvironmentLayersResponse>(
+    '/environment/layers',
+    {
+      target_time_utc: params.target_time_utc,
+      mode: params.mode,
+      departure_iso: params.departure_iso,
+      sim_hours: params.sim_hours,
+      timestamp_iso: params.timestamp_iso,
+      planning_reference_iso: params.planning_reference_iso,
+      lead_hours: params.lead_hours,
+      departure_time_hours: params.departure_time_hours,
+    },
+  );
 
 export interface IceFieldQuery {
   latMin: number;

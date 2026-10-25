@@ -6,24 +6,35 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import type {
-  AnyLayer,
-  GeoJSONSource,
-  Map as MapboxMap,
-  RasterArraySourceSpecification,
-  RasterParticleLayerSpecification,
-} from 'mapbox-gl';
+    AnyLayer,
+    GeoJSONSource,
+    Map as MapboxMap,
+    RasterArraySourceSpecification,
+    RasterParticleLayerSpecification,
+    RasterSourceSpecification,
+  } from 'mapbox-gl';
 import type { Feature, FeatureCollection, Geometry, Position } from 'geojson';
 import { Globe, Maximize2, Minus, Plus, Wind } from 'lucide-react';
 import type { RegionalContext, FlatRing } from '../api/types';
 import type { RouteProfileId } from '../api/types';
-import { useRegionalContext } from '../api/queries';
+import type { IcebergProfile, ObservedIceberg } from '../api/types';
+import { useEnvironmentLayers, useRegionalContext } from '../api/queries';
 import { MapToolbar, ToolButton } from '../components/MapToolbar';
 import { useReducedMotion } from '../hooks/useReducedMotion';
+import {
+  buildRegionalEnvironmentRequest,
+  formatSeaIceValidTime,
+  resolveRegionalSeaIceEdgeSelection,
+  type RegionalSeaIceSelection,
+} from '../lib/regionalSeaIce';
+import { latestTick, useAppStore, type VoyagePhase } from '../store/useAppStore';
 import { MAX_COUNTRY_LABELS, MAX_MARK_LABELS, countryRankThreshold, showMarkLabel } from './labelPolicy';
 import { formatLat, formatLon } from './MapCanvas';
 import type { MapEngine, MapScene } from './MapEngine';
 import { splitAtAntimeridian, viewOutline, type LonLat, type RegionBounds } from './mercator';
 import { MAP_COLORS } from './palette';
+import { interpolateAlongRoute, interpolateVesselPose, type VesselPose } from './regionalVoyageAnimation';
+import { resolveWindBand, type WindBandMatch } from './windBandMatch';
 
 const DEFAULT_REGION: RegionBounds = { lon_min: -30, lon_max: 165, lat_min: -75, lat_max: 40 };
 const MAX_RELATIVE_ZOOM = 40;
@@ -34,7 +45,29 @@ const WIND_SOURCE_ID = 'iceflow-wind-source';
 const WIND_SOURCE_URL = 'mapbox://rasterarrayexamples.gfs-winds';
 const WIND_LAYER_ID = 'iceflow-wind-particles';
 const WIND_SOURCE_LAYER = '10winds';
+/** GFS 10 m wind runs are issued every 6 hours; allow a small tolerance around it. */
+const WIND_BAND_TOLERANCE_HOURS = 6;
+const SEA_ICE_EDGE_LAYER_ID = 'regional-copernicus-sea-ice-edge-layer';
+const SEA_ICE_TILE_SIZE = 256;
 const EMPTY: FeatureCollection = { type: 'FeatureCollection', features: [] };
+const REGIONAL_SHIP_ICON = 'regional-ship-icon';
+const REGIONAL_SIM_ICEBERG_ICON = 'regional-sim-iceberg-icon';
+const REGIONAL_OBS_ICEBERG_ICON = 'regional-obs-iceberg-icon';
+
+type SeaIceRenderStatus =
+  | 'loading'
+  | 'ready'
+  | 'stale'
+  | 'unavailable'
+  | 'outside_coverage'
+  | 'unsupported_time'
+  | 'error';
+
+interface ActiveSeaIceSource {
+  id: string;
+  layerId: string;
+  key: string;
+}
 
 interface Props {
   scene: MapScene;
@@ -44,6 +77,10 @@ interface Props {
   destinationId: string;
   toolbarLead?: ReactNode;
   onSelectRouteCandidate: (id: RouteProfileId) => void;
+  voyagePhase?: VoyagePhase;
+  onPlay?: () => void;
+  onPause?: () => void;
+  onStep?: () => void;
 }
 
 interface MarkProperties {
@@ -82,6 +119,126 @@ function featureCollection<G extends Geometry, P = Record<string, never>>(
   features: Feature<G, P>[],
 ): FeatureCollection<G, P> {
   return { type: 'FeatureCollection', features };
+}
+
+function validCoordinates(latitude: number, longitude: number): boolean {
+  return Number.isFinite(latitude) && Number.isFinite(longitude)
+    && latitude >= -90 && latitude <= 90 && longitude >= -180 && longitude <= 180;
+}
+
+function makeRegionalIcebergs(scene: MapScene): {
+  simulated: FeatureCollection<Geometry, { id: string; size: string; length: number; width: number }>;
+  observed: FeatureCollection<Geometry, { id: string; size: string; date: string; length: number; width: number }>;
+} {
+  const simulated = scene.icebergs
+    .filter((berg: IcebergProfile) => validCoordinates(
+      berg.forecast_latitude ?? berg.latitude,
+      berg.forecast_longitude ?? berg.longitude,
+    ))
+    .map((berg: IcebergProfile) => ({
+      type: 'Feature' as const,
+      properties: { id: berg.berg_id, size: berg.size_class, length: berg.length_m, width: berg.width_m },
+      geometry: {
+        type: 'Point' as const,
+        coordinates: [berg.forecast_longitude ?? berg.longitude, berg.forecast_latitude ?? berg.latitude],
+      },
+    }));
+  const observed = (scene.observed?.available ? scene.observed.icebergs : [])
+    .filter((berg: ObservedIceberg) => validCoordinates(berg.latitude, berg.longitude))
+    .map((berg: ObservedIceberg) => ({
+      type: 'Feature' as const,
+      properties: {
+        id: berg.id,
+        size: `${berg.length_nm.toFixed(1)} × ${berg.width_nm.toFixed(1)} nm`,
+        date: berg.observed_date,
+        length: berg.length_nm,
+        width: berg.width_nm,
+      },
+      geometry: { type: 'Point' as const, coordinates: [berg.longitude, berg.latitude] },
+    }));
+  return { simulated: featureCollection(simulated), observed: featureCollection(observed) };
+}
+
+function addRegionalIcons(map: MapboxMap): void {
+  const draw = (id: string, observed = false): void => {
+    if (map.hasImage(id)) return;
+    const canvas = document.createElement('canvas');
+    canvas.width = 64;
+    canvas.height = 64;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.translate(32, 32);
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    if (id === REGIONAL_SHIP_ICON) {
+      ctx.beginPath();
+      ctx.arc(0, 0, 27, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(7, 33, 49, 0.28)';
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(0, -27);
+      ctx.lineTo(11, -8);
+      ctx.lineTo(10, 17);
+      ctx.lineTo(0, 25);
+      ctx.lineTo(-10, 17);
+      ctx.lineTo(-11, -8);
+      ctx.closePath();
+      ctx.fillStyle = '#F8FBFC';
+      ctx.fill();
+      ctx.strokeStyle = '#082637';
+      ctx.lineWidth = 3.5;
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(0, -20);
+      ctx.lineTo(0, 13);
+      ctx.strokeStyle = '#0B6E8E';
+      ctx.lineWidth = 3;
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(-6, 15);
+      ctx.lineTo(6, 15);
+      ctx.strokeStyle = '#D97706';
+      ctx.lineWidth = 3;
+      ctx.stroke();
+    } else {
+      // Faceted iceberg silhouette rather than the generic diamond used by the Polar canvas.
+      ctx.beginPath();
+      ctx.moveTo(0, -24);
+      ctx.lineTo(7, -12);
+      ctx.lineTo(19, -14);
+      ctx.lineTo(13, -2);
+      ctx.lineTo(23, 12);
+      ctx.lineTo(11, 20);
+      ctx.lineTo(-17, 19);
+      ctx.lineTo(-24, 10);
+      ctx.lineTo(-14, 2);
+      ctx.lineTo(-17, -8);
+      ctx.lineTo(-5, -5);
+      ctx.closePath();
+      ctx.fillStyle = observed ? 'rgba(235, 250, 255, 0.96)' : 'rgba(165, 226, 242, 0.96)';
+      ctx.fill();
+      ctx.strokeStyle = observed ? '#1B6A9C' : '#084C61';
+      ctx.lineWidth = observed ? 3 : 2.5;
+      if (observed) ctx.setLineDash([4, 3]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.beginPath();
+      ctx.moveTo(-6, -4);
+      ctx.lineTo(0, -16);
+      ctx.lineTo(4, -2);
+      ctx.lineTo(13, -8);
+      ctx.moveTo(-7, 5);
+      ctx.lineTo(2, 13);
+      ctx.lineTo(11, 4);
+      ctx.strokeStyle = observed ? 'rgba(27, 106, 156, 0.75)' : 'rgba(8, 69, 94, 0.75)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+    map.addImage(id, ctx.getImageData(0, 0, canvas.width, canvas.height), { pixelRatio: 2 });
+  };
+  draw(REGIONAL_SHIP_ICON);
+  draw(REGIONAL_SIM_ICEBERG_ICON);
+  draw(REGIONAL_OBS_ICEBERG_ICON, true);
 }
 
 function lineSegments(points: LonLat[]): Position[][] {
@@ -239,6 +396,22 @@ function updateSource(map: MapboxMap, id: string, data: FeatureCollection): void
   if (source?.type === 'geojson') (source as GeoJSONSource).setData(data);
 }
 
+function updateVesselSource(map: MapboxMap, pose: VesselPose | null, enabled: boolean): void {
+  updateSource(
+    map,
+    'regional-vessel',
+    enabled && pose
+      ? featureCollection([
+          {
+            type: 'Feature',
+            properties: { heading: pose.heading },
+            geometry: { type: 'Point', coordinates: [pose.longitude, pose.latitude] },
+          },
+        ])
+      : EMPTY,
+  );
+}
+
 function addGeoJSONSourceIfMissing(map: MapboxMap, id: string): void {
   if (!map.getSource(id)) map.addSource(id, { type: 'geojson', data: EMPTY });
 }
@@ -301,8 +474,89 @@ function addWindParticles(map: MapboxMap, enabled: boolean, onError: (reason: st
   }
 }
 
+function syncSeaIceLayers(
+  map: MapboxMap,
+  selection: RegionalSeaIceSelection,
+  activeSources: { current: ActiveSeaIceSource[] },
+): SeaIceRenderStatus {
+  if (!hasLoadedStyle(map)) return 'loading';
+
+  const desiredLayers = [
+    {
+      id: 'regional-copernicus-sea-ice-edge-source',
+      layerId: SEA_ICE_EDGE_LAYER_ID,
+      tileTemplate: selection.tileTemplate,
+      maxZoom: selection.maxZoom,
+    },
+  ];
+  if (desiredLayers.some((layer) => !layer.tileTemplate || layer.maxZoom === null)) {
+    for (const source of activeSources.current) {
+      if (map.getLayer(source.layerId)) map.removeLayer(source.layerId);
+      if (map.getSource(source.id)) map.removeSource(source.id);
+    }
+    activeSources.current = [];
+    return 'unavailable';
+  }
+
+  const expectedSources = desiredLayers.map((layer) => ({
+    id: layer.id,
+    layerId: layer.layerId,
+    key: `${layer.tileTemplate}|${layer.maxZoom}`,
+  }));
+  const existingMatches = expectedSources.length === activeSources.current.length
+    && expectedSources.every((expected) => {
+      const active = activeSources.current.find((source) => source.id === expected.id);
+      return active?.key === expected.key
+        && map.getSource(expected.id)
+        && map.getLayer(expected.layerId);
+    });
+  if (existingMatches) {
+    if (expectedSources.some((source) => !map.isSourceLoaded(source.id))) return 'loading';
+    return selection.status === 'stale' ? 'stale' : 'ready';
+  }
+
+  for (const source of activeSources.current) {
+    if (map.getLayer(source.layerId)) map.removeLayer(source.layerId);
+    if (map.getSource(source.id)) map.removeSource(source.id);
+  }
+  activeSources.current = [];
+
+  for (const item of desiredLayers) {
+    const { tileTemplate, maxZoom, id, layerId } = item;
+    if (!tileTemplate || maxZoom === null) continue;
+    const source: RasterSourceSpecification = {
+      type: 'raster',
+      tiles: [tileTemplate],
+      tileSize: SEA_ICE_TILE_SIZE,
+      maxzoom: maxZoom,
+    };
+    map.addSource(id, source);
+    map.addLayer(
+      {
+        id: layerId,
+        type: 'raster',
+        source: id,
+        slot: 'bottom',
+        paint: {
+          'raster-opacity': 0.82,
+          'raster-fade-duration': 0,
+          'raster-resampling': 'linear',
+        },
+      },
+      map.getLayer(WIND_LAYER_ID) ? WIND_LAYER_ID : undefined,
+    );
+    activeSources.current.push({
+      id,
+      layerId,
+      key: `${tileTemplate}|${maxZoom}`,
+    });
+  }
+  return 'loading';
+}
+
 function addLayers(map: MapboxMap, windEnabled: boolean, onWindError: (reason: string) => void): boolean {
   const windLayerAdded = addWindParticles(map, windEnabled, onWindError);
+  addRegionalIcons(map);
   addGeoJSONSourceIfMissing(map, 'regional-land');
   addGeoJSONSourceIfMissing(map, 'regional-countries');
   addGeoJSONSourceIfMissing(map, 'regional-country-labels');
@@ -310,6 +564,8 @@ function addLayers(map: MapboxMap, windEnabled: boolean, onWindError: (reason: s
   addGeoJSONSourceIfMissing(map, 'regional-marks');
   addGeoJSONSourceIfMissing(map, 'regional-mark-labels');
   addGeoJSONSourceIfMissing(map, 'regional-vessel');
+  addGeoJSONSourceIfMissing(map, 'regional-simulated-icebergs');
+  addGeoJSONSourceIfMissing(map, 'regional-observed-icebergs');
   addGeoJSONSourceIfMissing(map, 'regional-polar-outline');
   addGeoJSONSourceIfMissing(map, 'regional-polar-label');
 
@@ -454,14 +710,41 @@ function addLayers(map: MapboxMap, windEnabled: boolean, onWindError: (reason: s
     paint: { 'text-color': 'rgba(14,36,51,0.58)' },
   });
   addLayerIfMissing(map, {
+    id: 'regional-simulated-icebergs',
+    type: 'symbol',
+    source: 'regional-simulated-icebergs',
+    layout: {
+      'icon-image': REGIONAL_SIM_ICEBERG_ICON,
+      'icon-size': ['interpolate', ['linear'], ['zoom'], 0, 0.38, 4, 0.62, 9, 0.82, 14, 0.9],
+      'icon-allow-overlap': true,
+      'icon-ignore-placement': true,
+      'icon-rotation-alignment': 'viewport',
+    },
+  });
+  addLayerIfMissing(map, {
+    id: 'regional-observed-icebergs',
+    type: 'symbol',
+    source: 'regional-observed-icebergs',
+    layout: {
+      'icon-image': REGIONAL_OBS_ICEBERG_ICON,
+      'icon-size': ['interpolate', ['linear'], ['zoom'], 0, 0.42, 4, 0.66, 9, 0.86, 14, 0.94],
+      'icon-allow-overlap': true,
+      'icon-ignore-placement': true,
+      'icon-rotation-alignment': 'viewport',
+    },
+  });
+  addLayerIfMissing(map, {
     id: 'regional-vessel',
-    type: 'circle',
+    type: 'symbol',
     source: 'regional-vessel',
-    paint: {
-      'circle-radius': 6,
-      'circle-color': '#FFFFFF',
-      'circle-stroke-color': MAP_COLORS.track,
-      'circle-stroke-width': 2.2,
+    layout: {
+      'icon-image': REGIONAL_SHIP_ICON,
+      'icon-size': ['interpolate', ['linear'], ['zoom'], 0, 0.48, 4, 0.72, 9, 0.88, 14, 0.94],
+      'icon-rotate': ['get', 'heading'],
+      'icon-rotation-alignment': 'map',
+      'icon-pitch-alignment': 'map',
+      'icon-allow-overlap': true,
+      'icon-ignore-placement': true,
     },
   });
   addLayerIfMissing(map, {
@@ -490,6 +773,11 @@ function getRelativeZoom(map: MapboxMap, baseZoom: number): { relativeZoom: numb
   return { relativeZoom, centre: `${center.lng.toFixed(3)},${center.lat.toFixed(3)}` };
 }
 
+function hasLoadedStyle(map: MapboxMap): boolean {
+  return map.getStyle().version === 8;
+}
+
+
 function fitRegion(map: MapboxMap, bounds: RegionBounds): number {
   map.fitBounds(
     [
@@ -511,6 +799,77 @@ function isRouteProfileId(value: unknown): value is RouteProfileId {
   return value === 'safety-first' || value === 'balanced' || value === 'fuel-efficient' || value === 'fastest';
 }
 
+interface WindSourceMeta {
+  name: string | null;
+  units: string | null;
+  range: [number, number] | null;
+  jobid: string | null;
+  bands: string[];
+}
+
+/**
+ * The GFS raster-array tileset advertises its available timestamps as band ids in its
+ * TileJSON. The particle layer selects one of those bands with `raster-particle-array-band`,
+ * so the band that matches ICEFLOW's environmental target time has to be resolved before the
+ * layer is painted. Bands are read from the TileJSON, never assumed.
+ */
+async function fetchWindSourceMeta(
+  map: MapboxMap,
+  sourceId: string,
+  token: string,
+): Promise<WindSourceMeta | null> {
+  const source = map.getSource(sourceId) as
+    | (RasterArraySourceSpecification & { url?: string; tiles?: string[] })
+    | undefined;
+  if (!source) return null;
+  const tilejsonUrl = typeof source.url === 'string' && source.url.endsWith('.json')
+    ? source.url
+    : (source.tiles?.[0]?.replace(/{z}\/{x}\/{y}\.mrt$/, 'json') ?? null);
+  if (!tilejsonUrl) return null;
+  try {
+    const response = await fetch(`${tilejsonUrl}${tilejsonUrl.includes('?') ? '&' : '?'}access_token=${encodeURIComponent(token)}`);
+    if (!response.ok) return null;
+    const tilejson = await response.json() as {
+      name?: string;
+      raster_layers?: Array<{
+        fields?: { bands?: string[]; units?: string; range?: [number, number] };
+        id?: string;
+      }>;
+      rasterarray_job_id?: string;
+    };
+    const layer = tilejson.raster_layers?.find((entry) => entry.id === WIND_SOURCE_LAYER)
+      ?? tilejson.raster_layers?.[0];
+    const bands = Array.isArray(layer?.fields?.bands)
+      ? layer.fields.bands.filter((value): value is string => typeof value === 'string')
+      : [];
+    return {
+      name: tilejson.name ?? null,
+      units: layer?.fields?.units ?? null,
+      range: Array.isArray(layer?.fields?.range) && layer.fields.range.length === 2
+        ? [layer.fields.range[0], layer.fields.range[1]]
+        : null,
+      jobid: tilejson.rasterarray_job_id ?? null,
+      bands,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Apply a resolved band match to the particle layer. Returns the paint property name used so
+ * callers can decide whether a re-paint is needed.
+ */
+function applyWindBand(map: MapboxMap, layerId: string, match: WindBandMatch | null): boolean {
+  if (!map.getLayer(layerId)) return false;
+  if (match?.band) {
+    map.setPaintProperty(layerId, 'raster-particle-array-band', match.band);
+  } else {
+    map.setPaintProperty(layerId, 'raster-particle-array-band', '0');
+  }
+  return true;
+}
+
 export function RegionalMap({
   scene,
   visible,
@@ -519,6 +878,10 @@ export function RegionalMap({
   destinationId,
   toolbarLead,
   onSelectRouteCandidate,
+  voyagePhase,
+  onPlay,
+  onPause,
+  onStep,
 }: Props): JSX.Element {
   const hostRef = useRef<HTMLDivElement>(null);
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -532,22 +895,80 @@ export function RegionalMap({
   const reducedMotion = useReducedMotion();
   const context = useRegionalContext();
   const data = context.data;
+  const voyage = useAppStore((state) => state.voyage);
+  const storedVoyagePhase = useAppStore((state) => state.voyagePhase);
+  const effectiveVoyagePhase = voyagePhase ?? storedVoyagePhase;
+  const ticks = useAppStore((state) => state.ticks);
+  const intervalMs = useAppStore((state) => state.intervalMs);
+  const plan = useAppStore((state) => state.plan);
+  const leadHours = useAppStore((state) => state.leadHours);
+  const latestVoyageTick = latestTick(ticks);
+  const displayedVesselRef = useRef<VesselPose | null>(null);
+  const previousVesselTargetRef = useRef<VesselPose | null>(null);
+  const vesselAnimationRef = useRef<{
+    from: VesselPose; to: VesselPose; startedAt: number; duration: number;
+  } | null>(null);
+  const vesselFrameRef = useRef<number | null>(null);
+  const [selectedIceberg, setSelectedIceberg] = useState<{
+    kind: 'observed' | 'simulated'; id: string; size: string; date?: string; x: number; y: number;
+  } | null>(null);
+  const [planningReferenceIso] = useState(() => new Date().toISOString());
+  const [windBandMatch, setWindBandMatch] = useState<WindBandMatch | null>(null);
+  const [windSourceMeta, setWindSourceMeta] = useState<WindSourceMeta | null>(null);
+  const [windBandError, setWindBandError] = useState<string | null>(null);
+  const environmentRequestResult = useMemo(() => {
+    try {
+      return {
+        request: buildRegionalEnvironmentRequest({
+          voyage,
+          tick: latestVoyageTick,
+          plan,
+          leadHours,
+          planningReferenceIso,
+        }),
+        error: null,
+      };
+    } catch (error) {
+      return {
+        request: null,
+        error: error instanceof Error ? error.message : 'Unable to resolve the environmental target time.',
+      };
+    }
+  }, [voyage, latestVoyageTick, plan, leadHours, planningReferenceIso]);
+  const environmentLayers = useEnvironmentLayers(
+    environmentRequestResult.request,
+    visible && environmentRequestResult.error === null,
+  );
+  const seaIceSelection = useMemo(
+    () => resolveRegionalSeaIceEdgeSelection(environmentLayers.data),
+    [environmentLayers.data],
+  );
   const region = data?.region ?? DEFAULT_REGION;
   const regionKey = `${region.lon_min},${region.lon_max},${region.lat_min},${region.lat_max}`;
   const [mapReady, setMapReady] = useState(false);
-  const [mapError, setMapError] = useState<string | null>(null);
   const [mapView, setMapView] = useState<{ zoom: number; centre: string } | null>(null);
   const [windParticlesEnabled, setWindParticlesEnabled] = useState(true);
   const [windSourceStatus, setWindSourceStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [windLayerPresent, setWindLayerPresent] = useState(false);
   const [windError, setWindError] = useState<string | null>(null);
+  const [seaIceRenderStatus, setSeaIceRenderStatus] = useState<SeaIceRenderStatus>('loading');
+  const [seaIceTileError, setSeaIceTileError] = useState<string | null>(null);
   const windErrorRef = useRef<string | null>(null);
+  const seaIceSelectionRef = useRef(seaIceSelection);
+  const activeSeaIceSourceRef = useRef<ActiveSeaIceSource[]>([]);
+  seaIceSelectionRef.current = seaIceSelection;
   const selectCandidateRef = useRef(onSelectRouteCandidate);
   selectCandidateRef.current = onSelectRouteCandidate;
   windEnabledRef.current = windParticlesEnabled;
 
   const routePoints = useMemo(
     () => scene.optimisedRoute.map((point) => ({ lat: point.latitude, lon: point.longitude })),
+    [scene.optimisedRoute],
+  );
+  const routeAnimationPoints = useMemo(
+    () => scene.optimisedRoute
+      .map((point) => ({ latitude: point.latitude, longitude: point.longitude }))
+      .filter((point) => validCoordinates(point.latitude, point.longitude)),
     [scene.optimisedRoute],
   );
   const endpointPoints = useMemo(() => {
@@ -573,6 +994,33 @@ export function RegionalMap({
     if (import.meta.env.DEV) console.error(`[RegionalMap] GFS atmospheric wind particles failed: ${safeReason}`);
   }, []);
 
+  const reportMapFailure = useCallback((reason: string): void => {
+    const token = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN?.trim() ?? '';
+    const safeReason = safeMapDiagnostic(
+      reason.trim() || 'Mapbox reported a resource error without a diagnostic message.',
+      token,
+    );
+    if (import.meta.env.DEV) console.error(`[RegionalMap] Mapbox resource error: ${safeReason}`);
+  }, []);
+
+  const syncSeaIce = useCallback((map: MapboxMap): void => {
+    const token = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN?.trim() ?? '';
+    try {
+      setSeaIceTileError(null);
+      const status = syncSeaIceLayers(map, seaIceSelectionRef.current, activeSeaIceSourceRef);
+      setSeaIceRenderStatus(status);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : 'Unknown Copernicus tile error.';
+      setSeaIceTileError(safeMapDiagnostic(reason, token));
+      setSeaIceRenderStatus('error');
+      for (const source of activeSeaIceSourceRef.current) {
+        if (map.getLayer(source.layerId)) map.removeLayer(source.layerId);
+        if (map.getSource(source.id)) map.removeSource(source.id);
+      }
+      activeSeaIceSourceRef.current = [];
+    }
+  }, []);
+
   const updateMapData = useCallback(
     (map: MapboxMap): void => {
       const latest = latestRef.current;
@@ -585,28 +1033,21 @@ export function RegionalMap({
       updateSource(map, 'regional-lines', makeLines(latest.scene));
       updateSource(map, 'regional-marks', marks);
       updateSource(map, 'regional-mark-labels', makeMarkLabels(marks, relativeZoom));
-      updateSource(
-        map,
-        'regional-vessel',
-        latest.scene.layers.vessel && latest.scene.vessel
-          ? featureCollection([
-              {
-                type: 'Feature',
-                properties: {},
-                geometry: {
-                  type: 'Point',
-                  coordinates: [latest.scene.vessel.lon, latest.scene.vessel.lat],
-                },
-              },
-            ])
-          : EMPTY,
-      );
+      const icebergs = makeRegionalIcebergs(latest.scene);
+      updateSource(map, 'regional-simulated-icebergs', latest.scene.layers.icebergs ? icebergs.simulated : EMPTY);
+      updateSource(map, 'regional-observed-icebergs', latest.scene.layers.observedBergs ? icebergs.observed : EMPTY);
+      const tickVessel = latest.scene.vessel
+        ? { latitude: latest.scene.vessel.lat, longitude: latest.scene.vessel.lon, heading: latest.scene.vessel.heading }
+        : null;
+      updateVesselSource(map, displayedVesselRef.current ?? tickVessel, latest.scene.layers.vessel);
       updateSource(map, 'regional-polar-outline', makePolarOutline(latest.polarEngine));
       updateSource(map, 'regional-polar-label', makePolarLabel(latest.polarEngine));
       map.setLayoutProperty('regional-baseline-route', 'visibility', latest.scene.layers.baselineRoute ? 'visible' : 'none');
       map.setLayoutProperty('regional-optimized-route', 'visibility', latest.scene.layers.optimisedRoute ? 'visible' : 'none');
       map.setLayoutProperty('regional-track', 'visibility', latest.scene.layers.track ? 'visible' : 'none');
       map.setLayoutProperty('regional-vessel', 'visibility', latest.scene.layers.vessel ? 'visible' : 'none');
+      map.setLayoutProperty('regional-simulated-icebergs', 'visibility', latest.scene.layers.icebergs ? 'visible' : 'none');
+      map.setLayoutProperty('regional-observed-icebergs', 'visibility', latest.scene.layers.observedBergs ? 'visible' : 'none');
     },
     [],
   );
@@ -616,7 +1057,7 @@ export function RegionalMap({
     const token = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN?.trim();
     if (!visible || mapRef.current || !container) return undefined;
     if (!token) {
-      setMapError('Mapbox is not configured. Set VITE_MAPBOX_ACCESS_TOKEN to enable the regional map.');
+      reportMapFailure('Mapbox is not configured. Set VITE_MAPBOX_ACCESS_TOKEN to enable the regional map.');
       return undefined;
     }
 
@@ -625,7 +1066,6 @@ export function RegionalMap({
       const [mapbox, _style] = await Promise.all([import('mapbox-gl'), import('mapbox-gl/dist/mapbox-gl.css')]);
       if (cancelled || !mapContainerRef.current) return;
       const mapboxgl = mapbox.default;
-      setMapError(null);
       setMapReady(false);
       setWindSourceStatus('loading');
       setWindError(null);
@@ -660,29 +1100,64 @@ export function RegionalMap({
         setWindLayerPresent(added || Boolean(map.getLayer(WIND_LAYER_ID)));
       };
       map.on('style.load', () => {
-        if (!map.isStyleLoaded()) return;
         addRegionalLayers();
+        syncSeaIce(map);
         updateMapData(map);
       });
       map.on('sourcedata', (event) => {
-        if (event.sourceId !== WIND_SOURCE_ID) return;
-        if (event.sourceDataType === 'error') {
-          reportWindFailure(`Mapbox reported an error loading raster-array source ${WIND_SOURCE_ID}.`);
-        } else if (event.sourceDataType === 'content' && event.isSourceLoaded) {
-          windErrorRef.current = null;
-          setWindSourceStatus((status) => status === 'error' ? status : 'ready');
-          setWindError(null);
+        if (event.sourceId === WIND_SOURCE_ID) {
+          if (event.sourceDataType === 'error') {
+            reportWindFailure(`Mapbox reported an error loading raster-array source ${WIND_SOURCE_ID}.`);
+          } else if (event.sourceDataType === 'content' && event.isSourceLoaded) {
+            windErrorRef.current = null;
+            setWindSourceStatus((status) => status === 'error' ? status : 'ready');
+            setWindError(null);
+          }
+          return;
+        }
+        if (activeSeaIceSourceRef.current.some((source) => source.id === event.sourceId)) {
+          if (event.sourceDataType === 'error') {
+            setSeaIceTileError('The Copernicus WMTS overlay tile failed to load. The basemap remains available.');
+            setSeaIceRenderStatus('error');
+          } else if (
+            event.isSourceLoaded
+            && event.sourceDataType !== 'metadata'
+            && event.sourceDataType !== 'visibility'
+          ) {
+            setSeaIceRenderStatus(
+              seaIceSelectionRef.current.status === 'stale' ? 'stale' : 'ready',
+            );
+            setSeaIceTileError(null);
+          }
         }
       });
       map.on('error', (event) => {
-        const message = event.error.message;
+        const message = event.error.message || 'Mapbox reported a resource error without a diagnostic message.';
+        const eventSourceId = 'sourceId' in event && typeof event.sourceId === 'string'
+          ? event.sourceId
+          : null;
+        if (
+          activeSeaIceSourceRef.current.some(
+            (source) => source.id === eventSourceId || message.includes(source.id),
+          )
+        ) {
+          const tokenValue = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN?.trim() ?? '';
+          const safeMessage = safeMapDiagnostic(message, tokenValue);
+          setSeaIceTileError(safeMessage);
+          setSeaIceRenderStatus('error');
+          if (import.meta.env.DEV) console.error(`[RegionalMap] Copernicus WMTS overlay error: ${safeMessage}`);
+          return;
+        }
         if ([WIND_SOURCE_ID, WIND_LAYER_ID, WIND_SOURCE_URL, 'raster-array', 'raster-particle'].some((key) => message.includes(key))) {
           reportWindFailure(message);
+          return;
         }
+        reportMapFailure(message);
       });
 
       const onLoad = (): void => {
         addRegionalLayers();
+        syncSeaIce(map);
         baseZoomRef.current = fitRegion(map, region);
         map.setMinZoom(baseZoomRef.current);
         map.setMaxZoom(baseZoomRef.current + Math.log2(MAX_RELATIVE_ZOOM));
@@ -713,6 +1188,35 @@ export function RegionalMap({
         map.on('mouseleave', 'regional-candidate-routes', () => {
           map.getCanvasContainer().style.cursor = '';
         });
+        const selectIceberg = (kind: 'observed' | 'simulated') => (event: import('mapbox-gl').MapMouseEvent & { features?: import('geojson').Feature[] }): void => {
+          const properties = event.features?.[0]?.properties;
+          if (!properties) return;
+          const mapRect = mapContainerRef.current?.getBoundingClientRect();
+          const hostRect = hostRef.current?.getBoundingClientRect();
+          setSelectedIceberg({
+            kind,
+            id: String(properties.id ?? 'Unknown'),
+            size: String(properties.size ?? 'Size unavailable'),
+            ...(kind === 'observed' ? { date: String(properties.date ?? 'Date unavailable') } : {}),
+            x: event.point.x + (mapRect && hostRect ? mapRect.left - hostRect.left : 0),
+            y: event.point.y + (mapRect && hostRect ? mapRect.top - hostRect.top : 0),
+          });
+        };
+        map.on('click', 'regional-simulated-icebergs', selectIceberg('simulated'));
+        map.on('click', 'regional-observed-icebergs', selectIceberg('observed'));
+        for (const layer of ['regional-simulated-icebergs', 'regional-observed-icebergs']) {
+          map.on('mouseenter', layer, () => { map.getCanvasContainer().style.cursor = 'pointer'; });
+          map.on('mouseleave', layer, () => { map.getCanvasContainer().style.cursor = ''; });
+        }
+        map.on('movestart', () => setSelectedIceberg(null));
+        map.doubleClickZoom.disable();
+        map.on('dblclick', (event) => {
+          map.easeTo({ zoom: Math.min(map.getMaxZoom(), map.getZoom() + 1),
+            around: event.lngLat,
+            duration: 0,
+          });
+          updateMapData(map);
+        });
         const canvas = map.getCanvas();
         const onWheel = (event: WheelEvent): void => {
           event.preventDefault();
@@ -726,6 +1230,7 @@ export function RegionalMap({
             around: anchor,
             duration: 0,
           });
+          updateMapData(map);
         };
         canvas.addEventListener('wheel', onWheel, { passive: false });
         map.on('remove', () => canvas.removeEventListener('wheel', onWheel));
@@ -742,28 +1247,123 @@ export function RegionalMap({
         setMapReady(true);
       };
 
-      const onError = (): void => {
-        setMapError('Mapbox could not load the map. Check the public token, network connection and Mapbox style access.');
-      };
       map.on('load', onLoad);
-      map.on('error', onError);
     };
-    void initialize().catch(() => {
-      if (!cancelled) setMapError('Unable to initialize Mapbox. Check the installed map package and public token configuration.');
+    void initialize().catch((error: unknown) => {
+      if (!cancelled) {
+        reportMapFailure(
+          error instanceof Error
+            ? `Unable to initialize Mapbox: ${error.message}`
+            : 'Unable to initialize Mapbox due to an unknown error.',
+        );
+      }
     });
     return () => {
       cancelled = true;
     };
-  }, [visible, updateMapData, reportWindFailure]);
+  }, [visible, updateMapData, reportWindFailure, reportMapFailure, syncSeaIce]);
 
   useEffect(
     () => () => {
+      if (vesselFrameRef.current !== null) cancelAnimationFrame(vesselFrameRef.current);
       const map = mapRef.current;
       map?.remove();
       mapRef.current = null;
     },
     [],
   );
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!visible || !map || !mapReady || !hasLoadedStyle(map)) return;
+    syncSeaIce(map);
+  }, [visible, mapReady, seaIceSelection, syncSeaIce]);
+
+  useEffect(() => {
+    let target: VesselPose | null = latestVoyageTick
+      ? {
+        latitude: latestVoyageTick.latitude,
+        longitude: latestVoyageTick.longitude,
+        heading: latestVoyageTick.heading_deg,
+      }
+      : scene.vessel
+        ? { latitude: scene.vessel.lat, longitude: scene.vessel.lon, heading: scene.vessel.heading }
+        : null;
+
+    // Prefer route-following animation along the selected/optimised route when available
+    if (target && routeAnimationPoints.length >= 2 && typeof latestVoyageTick?.progress_percent === 'number') {
+      const progress = Math.max(0, Math.min(1, latestVoyageTick.progress_percent / 100));
+      const along = interpolateAlongRoute(routeAnimationPoints, progress);
+      if (along) {
+        target = along;
+      }
+    }
+
+    const previous = previousVesselTargetRef.current;
+    if (!target) {
+      previousVesselTargetRef.current = null;
+      displayedVesselRef.current = null;
+      vesselAnimationRef.current = null;
+      const map = mapRef.current;
+      if (map) updateVesselSource(map, null, scene.layers.vessel);
+      if (hostRef.current) {
+        delete hostRef.current.dataset.vesselLatitude;
+        delete hostRef.current.dataset.vesselLongitude;
+      }
+      return;
+    }
+
+    const moved = previous && (
+      previous.latitude !== target.latitude
+      || previous.longitude !== target.longitude
+      || previous.heading !== target.heading
+    );
+    if (!previous || !moved || !latestRef.current.visible || reducedMotion || effectiveVoyagePhase === 'paused') {
+      if (!previous || moved || !displayedVesselRef.current) displayedVesselRef.current = target;
+      vesselAnimationRef.current = null;
+      const map = mapRef.current;
+      if (map) updateVesselSource(map, displayedVesselRef.current, scene.layers.vessel);
+      if (hostRef.current && displayedVesselRef.current) {
+        hostRef.current.dataset.vesselLatitude = displayedVesselRef.current.latitude.toFixed(5);
+        hostRef.current.dataset.vesselLongitude = displayedVesselRef.current.longitude.toFixed(5);
+      }
+    } else {
+      const from = displayedVesselRef.current ?? previous;
+      vesselAnimationRef.current = {
+        from,
+        to: target,
+        startedAt: performance.now(),
+        duration: Math.max(160, Math.min(intervalMs, 1200)),
+      };
+    }
+    previousVesselTargetRef.current = target;
+
+    if (vesselFrameRef.current !== null) cancelAnimationFrame(vesselFrameRef.current);
+    const animate = (now: number): void => {
+      const animation = vesselAnimationRef.current;
+      if (!animation || effectiveVoyagePhase === 'paused') {
+        vesselFrameRef.current = null;
+        return;
+      }
+      const progress = Math.min(1, (now - animation.startedAt) / animation.duration);
+      const eased = progress * progress * (3 - 2 * progress);
+      const pose = interpolateVesselPose(animation.from, animation.to, eased);
+      displayedVesselRef.current = pose;
+      const map = mapRef.current;
+      if (map) updateVesselSource(map, pose, latestRef.current.scene.layers.vessel);
+      if (hostRef.current) {
+        hostRef.current.dataset.vesselLatitude = pose.latitude.toFixed(5);
+        hostRef.current.dataset.vesselLongitude = pose.longitude.toFixed(5);
+      }
+      if (progress >= 1) {
+        vesselAnimationRef.current = null;
+        vesselFrameRef.current = null;
+      } else {
+        vesselFrameRef.current = requestAnimationFrame(animate);
+      }
+    };
+    if (vesselAnimationRef.current && effectiveVoyagePhase !== 'paused') vesselFrameRef.current = requestAnimationFrame(animate);
+  }, [latestVoyageTick, scene.vessel, scene.layers.vessel, intervalMs, reducedMotion, routeAnimationPoints, effectiveVoyagePhase]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -791,6 +1391,48 @@ export function RegionalMap({
     setWindLayerPresent(true);
   }, [mapReady, windParticlesEnabled]);
 
+  /**
+   * The particle layer must show the wind field that is valid at ICEFLOW's environmental
+   * target time, not the current wall-clock moment. The GFS tileset advertises its available
+   * timestamps as band ids in its TileJSON, so we resolve the matching band whenever the
+   * reference time or the advertised bands change. When no suitable band exists we surface an
+   * explicit stale/unavailable state instead of silently falling back to an unrelated band.
+   */
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady || !map.isStyleLoaded() || !map.getLayer(WIND_LAYER_ID)) return;
+    if (!windParticlesEnabled) return;
+    const token = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN?.trim() ?? '';
+    if (!token) return;
+
+    let cancelled = false;
+    const run = async (): Promise<void> => {
+      const meta = await fetchWindSourceMeta(map, WIND_SOURCE_ID, token);
+      if (cancelled) return;
+      if (!meta) {
+        setWindBandError('The GFS wind tileset did not advertise its available timestamps.');
+        setWindBandMatch(null);
+        setWindSourceMeta(null);
+        applyWindBand(map, WIND_LAYER_ID, null);
+        return;
+      }
+      setWindSourceMeta(meta);
+      const referenceTime = environmentLayers.data?.target_time_utc ?? null;
+      const match = resolveWindBand(referenceTime, meta.bands, WIND_BAND_TOLERANCE_HOURS);
+      if (cancelled) return;
+      setWindBandMatch(match);
+      setWindBandError(match.reason);
+      applyWindBand(map, WIND_LAYER_ID, match);
+    };
+    void run().catch(() => {
+      if (!cancelled) {
+        setWindBandError('Could not resolve the GFS wind timestamp bands.');
+        setWindBandMatch(null);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [mapReady, windParticlesEnabled, environmentLayers.data?.target_time_utc]);
+
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady || !visible || !polarEngine) return undefined;
@@ -814,15 +1456,16 @@ export function RegionalMap({
           [Math.min(...longitudes), Math.min(...latitudes)],
           [Math.max(...longitudes), Math.max(...latitudes)],
         ],
-        { padding: 90, duration: reducedMotion ? 0 : 260, maxZoom: baseZoomRef.current + Math.log2(16) },
+        { padding: 90, duration: 0, maxZoom: baseZoomRef.current + Math.log2(16) },
       );
     } else if (initialPoints.length === 1) {
       map.flyTo({
         center: [initialPoints[0].lon, initialPoints[0].lat],
         zoom: baseZoomRef.current + 2,
-        duration: reducedMotion ? 0 : 260,
+        duration: 0,
       });
     }
+    updateMapData(map);
   }, [mapReady, initialKey, initialPoints, reducedMotion]);
 
   const fitInitial = useCallback((): void => {
@@ -832,8 +1475,9 @@ export function RegionalMap({
       map.flyTo({
         center: [initialPoints[0].lon, initialPoints[0].lat],
         zoom: baseZoomRef.current + 2,
-        duration: reducedMotion ? 0 : 260,
+        duration: 0,
       });
+      updateMapData(map);
       return;
     }
     const longitudes = initialPoints.map((point) => point.lon);
@@ -843,8 +1487,9 @@ export function RegionalMap({
         [Math.min(...longitudes), Math.min(...latitudes)],
         [Math.max(...longitudes), Math.max(...latitudes)],
       ],
-      { padding: 90, duration: reducedMotion ? 0 : 260, maxZoom: baseZoomRef.current + Math.log2(16) },
+      { padding: 90, duration: 0, maxZoom: baseZoomRef.current + Math.log2(16) },
     );
+    updateMapData(map);
   }, [initialPoints, reducedMotion]);
 
   const showWholeRegion = useCallback((): void => {
@@ -854,8 +1499,9 @@ export function RegionalMap({
         [region.lon_min, region.lat_min],
         [region.lon_max, region.lat_max],
       ],
-      { padding: 24, duration: reducedMotion ? 0 : 260 },
+      { padding: 24, duration: 0 },
     );
+    if (map) updateMapData(map);
   }, [region, reducedMotion]);
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
@@ -865,31 +1511,65 @@ export function RegionalMap({
     if (target !== hostRef.current && target !== map.getCanvas()) return;
     const pan = event.shiftKey ? PAN_FAR_STEP : PAN_STEP;
     switch (event.key) {
-      case 'ArrowLeft': map.panBy([-pan, 0], { duration: reducedMotion ? 0 : 140 }); break;
-      case 'ArrowRight': map.panBy([pan, 0], { duration: reducedMotion ? 0 : 140 }); break;
-      case 'ArrowUp': map.panBy([0, -pan], { duration: reducedMotion ? 0 : 140 }); break;
-      case 'ArrowDown': map.panBy([0, pan], { duration: reducedMotion ? 0 : 140 }); break;
+      case 'ArrowLeft': map.panBy([-pan, 0], { duration: 0 }); break;
+      case 'ArrowRight': map.panBy([pan, 0], { duration: 0 }); break;
+      case 'ArrowUp': map.panBy([0, -pan], { duration: 0 }); break;
+      case 'ArrowDown': map.panBy([0, pan], { duration: 0 }); break;
       case '+':
-      case '=': map.zoomTo(map.getZoom() + Math.log2(1.5), { duration: reducedMotion ? 0 : 200 }); break;
+      case '=': map.zoomTo(map.getZoom() + Math.log2(1.5), { duration: 0 }); break;
       case '-':
-      case '_': map.zoomTo(map.getZoom() - Math.log2(1.5), { duration: reducedMotion ? 0 : 200 }); break;
+      case '_': map.zoomTo(map.getZoom() - Math.log2(1.5), { duration: 0 }); break;
       case '0':
       case 'Home': fitInitial(); break;
       case 'f':
       case 'F': showWholeRegion(); break;
       default: return;
     }
+    updateMapData(map);
     event.preventDefault();
   };
 
   const unavailable = context.isError || (data && !data.available);
+  const seaIceStatus: SeaIceRenderStatus =
+    environmentRequestResult.error || environmentLayers.isError || seaIceTileError
+      ? 'error'
+      : !environmentRequestResult.request || environmentLayers.isLoading
+        ? 'loading'
+        : !environmentLayers.data
+          ? 'unavailable'
+          : seaIceSelection.tileTemplate
+            ? seaIceRenderStatus
+            : seaIceSelection.status;
+  const seaIceStatusText = seaIceStatus === 'loading'
+    ? 'Loading paired Copernicus observations…'
+    : seaIceStatus === 'stale'
+      ? `STALE OBSERVATION · ${formatSeaIceValidTime(seaIceSelection.validTimeUtc)}`
+      : seaIceStatus === 'ready'
+        ? `Observation · ${formatSeaIceValidTime(seaIceSelection.validTimeUtc)}`
+        : seaIceStatus === 'error'
+          ? environmentRequestResult.error
+            ?? environmentLayers.error?.message
+            ?? seaIceTileError
+            ?? 'Copernicus sea-ice tiles could not be loaded.'
+          : seaIceStatus === 'outside_coverage'
+          ? 'Outside source coverage'
+            : seaIceStatus === 'unsupported_time'
+            ? 'Unsupported time'
+            : `${seaIceSelection.sourceStatus === 'stale' ? 'STALE SOURCE OBSERVATION · ' : ''}Unavailable`;
   const zoomIn = (): void => {
     const map = mapRef.current;
-    if (map) map.zoomTo(map.getZoom() + Math.log2(1.5), { duration: reducedMotion ? 0 : 200 });
+    if (map) {
+      const targetZoom = map.getZoom() + Math.log2(1.5);
+      map.zoomTo(targetZoom, { duration: 0 });
+      updateMapData(map);
+    }
   };
   const zoomOut = (): void => {
     const map = mapRef.current;
-    if (map) map.zoomTo(map.getZoom() - Math.log2(1.5), { duration: reducedMotion ? 0 : 200 });
+    if (map) {
+      map.zoomTo(map.getZoom() - Math.log2(1.5), { duration: 0 });
+      updateMapData(map);
+    }
   };
 
   return (
@@ -898,9 +1578,23 @@ export function RegionalMap({
       data-zoom={mapView?.zoom.toFixed(3)}
       data-centre={mapView?.centre}
       data-map-ready={mapReady ? 'true' : undefined}
-      data-wind-source-status={windSourceStatus}
-      data-wind-layer-present={windLayerPresent ? 'true' : 'false'}
-      data-wind-layer-visibility={windLayerPresent ? (windParticlesEnabled ? 'visible' : 'none') : undefined}
+data-wind-source-status={windSourceStatus}
+        data-wind-layer-present={windLayerPresent ? 'true' : 'false'}
+        data-wind-layer-visibility={windLayerPresent ? (windParticlesEnabled ? 'visible' : 'none') : undefined}
+        data-wind-band={windBandMatch?.band ?? undefined}
+        data-wind-band-exact={windBandMatch ? String(windBandMatch.exact) : undefined}
+        data-wind-band-offset-hours={windBandMatch?.offsetHours ?? undefined}
+        data-wind-band-source={windSourceMeta?.name ?? undefined}
+        data-wind-band-units={windSourceMeta?.units ?? undefined}
+        data-wind-band-count={windSourceMeta?.bands.length ?? undefined}
+      data-regional-sea-ice-status={seaIceStatus}
+      data-regional-sea-ice-valid-time={seaIceSelection.validTimeUtc ?? undefined}
+      data-regional-sea-ice-target-time={seaIceSelection.targetTimeUtc ?? undefined}
+      data-regional-voyage-phase={effectiveVoyagePhase}
+      data-regional-vessel-present={scene.vessel ? 'true' : 'false'}
+      data-regional-route-endpoints-ready={scene.ports.length > 0 && scene.stations.length > 0 ? 'true' : 'false'}
+      data-regional-simulated-iceberg-count={scene.layers.icebergs ? scene.icebergs.length : 0}
+      data-regional-observed-iceberg-count={scene.layers.observedBergs && scene.observed?.available ? scene.observed.icebergs.length : 0}
       tabIndex={0}
       role="application"
       aria-label="Regional context map"
@@ -959,6 +1653,123 @@ export function RegionalMap({
         ]}
       />
 
+      {voyage && onPlay && onPause && onStep && (
+        <section
+          aria-label="Regional voyage controls"
+          data-testid="regional-voyage-controls"
+          className="absolute right-[5%] top-12 z-20 w-[min(250px,calc(100%-3.5rem))] rounded-lg border border-hair bg-panel/95 p-2.5 shadow-lg backdrop-blur"
+        >
+          <div className="flex items-center justify-between gap-2">
+            <strong className="truncate text-xs text-ink">{voyage.vessel_name}</strong>
+            <span className={`shrink-0 text-[9px] font-bold uppercase tracking-wide ${effectiveVoyagePhase === 'running' ? 'text-accent' : 'text-ink-3'}`}>
+              {effectiveVoyagePhase === 'running' ? 'Under way' : effectiveVoyagePhase === 'paused' ? 'Paused' : effectiveVoyagePhase === 'done' ? 'Arrived' : effectiveVoyagePhase}
+            </span>
+          </div>
+          {latestVoyageTick && (
+            <div className="mt-1 flex justify-between text-[10px] text-ink-2">
+              <span>{latestVoyageTick.progress_percent.toFixed(1)}% complete</span>
+              <span>{latestVoyageTick.heading_deg.toFixed(0)}° heading</span>
+            </div>
+          )}
+          <div className="mt-2 flex gap-1.5">
+            <button
+              type="button"
+              className="btn min-h-7 flex-1 px-2 py-1 text-[10px]"
+              onClick={effectiveVoyagePhase === 'running' ? onPause : onPlay}
+              aria-label={effectiveVoyagePhase === 'running' ? 'Pause regional voyage' : 'Play regional voyage'}
+            >
+              {effectiveVoyagePhase === 'running' ? 'Pause' : 'Play'}
+            </button>
+            <button
+              type="button"
+              className="btn min-h-7 px-2 py-1 text-[10px]"
+              onClick={onStep}
+              disabled={effectiveVoyagePhase === 'running' || effectiveVoyagePhase === 'done'}
+              aria-label="Advance regional voyage one step"
+            >
+              Step
+            </button>
+          </div>
+          <div className="mt-1 text-[9px] text-ink-3">Shared voyage clock · selected route</div>
+        </section>
+      )}
+
+      {selectedIceberg && (
+        <section
+          aria-label={`${selectedIceberg.kind === 'observed' ? 'Observed' : 'Simulated'} iceberg details`}
+          className="absolute z-30 w-52 rounded-md border border-hair bg-panel p-2.5 shadow-xl"
+          style={{
+            left: Math.min(selectedIceberg.x + 14, Math.max(8, (hostRef.current?.clientWidth ?? 700) - 224)),
+            top: Math.max(44, selectedIceberg.y - 14),
+          }}
+        >
+          <button
+            type="button"
+            className="absolute right-1 top-0.5 px-1 text-ink-3"
+            aria-label="Close iceberg details"
+            onClick={() => setSelectedIceberg(null)}
+          >×</button>
+          <strong className="block pr-4 text-xs text-ink">{selectedIceberg.kind === 'observed' ? 'Observed iceberg' : 'Model catalogue iceberg'}</strong>
+          <div className="mt-1 text-2xs text-ink-2">{selectedIceberg.id} · {selectedIceberg.size}</div>
+          {selectedIceberg.date && <div className="mt-1 text-2xs text-ink-3">Position date {selectedIceberg.date}</div>}
+          <div className="mt-1 text-[9px] text-ink-3">{selectedIceberg.kind === 'observed' ? 'Observed record; not used for routing.' : 'Simulated catalogue record.'}</div>
+        </section>
+      )}
+
+      <section
+        aria-label="Observed sea-ice edge"
+        className="pointer-events-none absolute left-[5%] top-12 z-20 w-[min(300px,calc(100%-3.5rem))] rounded-lg border border-hair bg-panel/95 p-2.5 shadow-lg backdrop-blur"
+      >
+        <strong className="text-xs text-ink">Observed sea-ice edge</strong>
+        <div
+          role={seaIceStatus === 'error' ? 'alert' : 'status'}
+          aria-live="polite"
+          data-testid="regional-sea-ice-status"
+          data-status={seaIceStatus}
+          className={`mt-2 text-2xs ${seaIceStatus === 'stale' || seaIceStatus === 'error' ? 'text-warn' : 'text-ink-2'}`}
+        >
+          <strong>{seaIceStatusText}</strong>
+          {seaIceSelection.sourceName && seaIceSelection.validTimeUtc && (
+            <span className="mt-0.5 block break-words">
+              {seaIceSelection.sourceName} · observed {formatSeaIceValidTime(seaIceSelection.validTimeUtc)}
+              {seaIceSelection.sourceStatus === 'stale' && ' · STALE SOURCE OBSERVATION'}
+              {seaIceSelection.attribution && ` · ${seaIceSelection.attribution}`}
+            </span>
+          )}
+          {seaIceSelection.product && (
+            <span className="mt-0.5 block break-all">Product {seaIceSelection.product}</span>
+          )}
+          {seaIceSelection.targetTimeUtc && (
+            <span className="mt-0.5 block">
+              Workspace target {formatSeaIceValidTime(seaIceSelection.targetTimeUtc)}
+              {seaIceSelection.offsetHours !== null && ` · observation ${Math.abs(seaIceSelection.offsetHours)}h ${seaIceSelection.offsetHours < 0 ? 'before' : 'after'}`}
+            </span>
+          )}
+          {seaIceSelection.retrievedAtUtc && (
+            <span className="mt-0.5 block">Catalogue checked {formatSeaIceValidTime(seaIceSelection.retrievedAtUtc)}</span>
+          )}
+          {seaIceSelection.reason && seaIceStatus !== 'loading' && (
+            <span className="mt-0.5 block">{seaIceSelection.reason}</span>
+          )}
+          {seaIceSelection.tileTemplate && (
+            <div
+              role="group"
+              aria-label="Observed sea-ice class legend"
+              data-testid="regional-sea-ice-edge-legend"
+              className="mt-2"
+            >
+              <div className="flex flex-wrap gap-x-3 gap-y-1 text-[9px] text-ink-2">
+                <span className="inline-flex items-center gap-1"><i className="h-2.5 w-2.5 rounded-sm bg-teal-300" />Open ice</span>
+                <span className="inline-flex items-center gap-1"><i className="h-2.5 w-2.5 rounded-sm bg-yellow-300" />Close, very close, or fast ice</span>
+              </div>
+              <span className="mt-1 block text-[9px] text-ink-2">
+                Daily categorical ice edge · valid, unflagged pixels · open water is transparent
+              </span>
+            </div>
+          )}
+        </div>
+      </section>
+
       <div
         ref={readoutRef}
         data-testid="regional-readout"
@@ -980,8 +1791,14 @@ export function RegionalMap({
           detail={context.data?.reason ?? context.error?.message ?? 'The map still shows routes, ports and stations.'}
         />
       )}
-      {mapError && <MapNote title="Regional map unavailable" detail={mapError} alert />}
       {windError && <MapNote title="Atmospheric wind particles unavailable" detail={windError} alert />}
+      {windBandError && !windError && windParticlesEnabled && (
+        <MapNote
+          title={windBandMatch?.band ? 'Wind field offset from workspace time' : 'Wind field time unavailable'}
+          detail={windBandError}
+          alert={!windBandMatch?.band}
+        />
+      )}
     </div>
   );
 }
