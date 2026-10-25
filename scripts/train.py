@@ -440,6 +440,13 @@ def main(argv: List[str] | None = None) -> int:
             "operational forecast skill."
         ),
         "retrain_on_real_data": "See the 'How to retrain on real data' section of docs/ML_MODELS.md.",
+        "evaluation_status": {
+            "trained_on": "synthetic",
+            "operational_skill_validated": False,
+            "used_in_routing": False,
+            "status": "demo_synthetic",
+            "label": "synthetic-only; not validated",
+        },
         "models": models,
     }
 

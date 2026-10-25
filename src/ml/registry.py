@@ -110,13 +110,51 @@ def reset_cache() -> None:
         _LOAD_ERRORS.clear()
 
 
+def _read_metrics_mode(metrics: Dict[str, Any]) -> str:
+    mode = metrics.get("mode")
+    if isinstance(mode, str) and mode:
+        return mode
+    return "unknown"
+
+
+def _compute_beats_best_baseline(key: str, record: Dict[str, Any]) -> bool:
+    if not isinstance(record, dict):
+        return False
+    if key == "sic_forecaster":
+        skill = ((record.get("val") or {}).get("overall") or {}).get("skill_score_vs") or {}
+        try:
+            vs_persist = float(skill.get("persistence"))
+            vs_clim = float(skill.get("climatology"))
+            vs_phys = float(skill.get("physics"))
+        except Exception:
+            return False
+        return vs_persist > 0 and vs_clim > 0 and vs_phys > 0
+    if key == "drift_residual":
+        test = record.get("test") or {}
+        overall = test.get("overall") or {}
+        try:
+            improvement = float(overall.get("improvement_vs_persistence_mean_displacement_km"))
+        except Exception:
+            return False
+        return improvement > 0
+    if key == "growler_classifier":
+        test = record.get("test") or {}
+        overall = test.get("overall") or {}
+        try:
+            f1 = float(overall.get("model", {}).get("f1"))
+            maj_f1 = float(overall.get("baselines", {}).get("majority", {}).get("f1"))
+            snr_f1 = float(overall.get("baselines", {}).get("snr_threshold", {}).get("f1"))
+        except Exception:
+            return False
+        return f1 > maj_f1 and f1 > snr_f1
+    return False
+
+
 def ml_status() -> Dict[str, Any]:
     """
     What is trained, on how much, when, and how well.
 
-    Deliberately shaped so it can be returned straight from the health endpoint. Every entry
-    reports status "trained" or "not trained"; nothing here ever claims a model exists when the
-    artefact is absent.
+    Deliberately shaped so it can be returned straight from the health endpoint.
     """
     metrics = load_metrics()
     per_model = metrics.get("models", {}) if isinstance(metrics, dict) else {}
@@ -130,12 +168,26 @@ def ml_status() -> Dict[str, Any]:
         path = artefact_path(name)
         model = getter()
         record = per_model.get(key, {}) if isinstance(per_model, dict) else {}
+        beats = _compute_beats_best_baseline(key, record)
         entry: Dict[str, Any] = {
             "task": label,
-            "status": "trained" if model is not None else "not trained",
+            "status": "demo_synthetic" if model is not None else "not trained",
+            "status_detail": "experimental" if model is not None else "not trained",
+            "trained_on": "synthetic",
+            "operational_skill_validated": False,
+            "beats_best_baseline": beats,
+            "used_in_routing": False,
+            "metrics_mode": _read_metrics_mode(metrics),
+            "trained_at": metrics.get("trained_at"),
             "artefact": path.name,
             "artefact_present": path.exists(),
         }
+        caveats = {
+            "sic_forecaster": "Synthetic-only; negative or mixed skill vs baselines in current metrics (does not beat physics/persistence in reported leads). Not operationally validated.",
+            "drift_residual": "Synthetic-only; reported position error increases vs persistence in current metrics. Not operationally validated.",
+            "growler_classifier": "Synthetic-only; high F1 appears driven by generator distributions relative to weak baselines. Not operationally validated.",
+        }
+        entry["caveat"] = caveats.get(key, "Synthetic-only; not operationally validated.")
         if model is None:
             entry["reason"] = _LOAD_ERRORS.get(
                 {"sic_forecaster": "sic", "drift_residual": "drift", "growler_classifier": "growler"}[key],
@@ -155,7 +207,7 @@ def ml_status() -> Dict[str, Any]:
                 entry["test_metrics"] = record.get("test")
         entries[key] = entry
 
-    any_trained = any(e["status"] == "trained" for e in entries.values())
+    any_trained = any(e.get("artefact_present") or e["status"] != "not trained" for e in entries.values())
     return {
         "any_trained": any_trained,
         "models_dir": str(MODELS_DIR),
@@ -174,6 +226,6 @@ def ml_status() -> Dict[str, Any]:
         "hint": (
             "Run python -m scripts.train to populate models/."
             if not any_trained
-            else "Artefacts loaded from models/."
+            else "Artefacts loaded from models/ (synthetic-only; not validated)."
         ),
     }

@@ -828,5 +828,12 @@
         "snr_baseline_f1": 0.70161
       }
     }
+  },
+  "evaluation_status": {
+    "trained_on": "synthetic",
+    "operational_skill_validated": false,
+    "used_in_routing": false,
+    "status": "demo_synthetic",
+    "label": "synthetic-only; not validated"
   }
 }

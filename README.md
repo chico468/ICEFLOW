@@ -95,13 +95,40 @@ This is the part most prototypes are vague about, so it goes at the top.
 | Iceberg identities and origins | **Real** | US National Ice Center naming (D-28, A-23A, A-74, …) |
 | Geodesy and EPSG:3031 projection | **Real** | Exact WGS84 ellipsoidal projection, inverse-verified |
 | Iceberg drift equations | **Real** | RK4 on the Bigg et al. (1997) momentum balance |
-| **Sea-ice concentration and thickness fields** | **Simulated** | Stands in for OSI-SAF OSI-401-b, AMSR2, Sentinel-1 SAR |
-| **Wind, current, temperature, wave fields** | **Simulated** | Stands in for ECMWF ERA5/HRES and Copernicus Marine CMEMS |
+| **Model sea-ice concentration and thickness fields** | **Simulated** | Model/dashboard fields stand in for OSI-SAF OSI-401-b, AMSR2, Sentinel-1 SAR |
+| **Regional-map sea-ice edge** | **Observed** | Copernicus Marine OSI SAF Antarctic categorical ice-edge classes with a same-time quality mask; stale observations are labeled |
+| **Dashboard flow particles** | **Optional real data** | NOAA GFS 10 m wind forecast/analysis and Copernicus Marine surface-current analysis can be acquired explicitly; simulation remains a separately selected demo |
+| **Temperature and wave fields** | **Simulated** | Stands in for ECMWF ERA5/HRES and Copernicus Marine CMEMS |
 | **Radar returns** | **Simulated** | Radar-equation model standing in for a real X-band PPI |
 
 **The models are real; the weather is simulated.** Every API response carrying a simulated field
 sets `is_synthetic: true` and names the product it stands in for. Switching to live data is a
 data-loader change, not a model change — the interfaces already match the real products.
+
+### Real flow data (optional)
+
+Real wind and current files are downloaded only by explicit commands and stored outside the
+repository in the local ICEFLOW cache (`~/Library/Caches/ICEFLOW/flow` on macOS, or
+`~/.cache/iceflow/flow` on Linux). Set `ICEFLOW_FLOW_CACHE_DIR` to use another directory.
+The Polar map's layer panel lets you select NOAA GFS wind or Copernicus currents, choose one
+shared UTC valid date for both, and switch between animated particles and static arrows. An
+unavailable real source stays unavailable; it never silently uses the simulation.
+
+```sh
+# NOAA GFS 0.25° 10 m east/north wind; choose the model date, cycle, and forecast lead.
+./.venv-test312/bin/python -m src.data.fetch_gfs_wind --date 2026-10-23 --cycle 00 --lead-hours 0
+
+# Install the official Copernicus Marine Toolbox and configure credentials once.
+./.venv-test312/bin/python -m pip install copernicusmarine
+./.venv-test312/bin/copernicusmarine login
+# Copernicus Marine daily surface-current uo/vo subset for the same UTC date.
+./.venv-test312/bin/python -m src.data.fetch_copernicus_current --date 2026-10-23
+```
+
+GFS lead hour zero is labeled model analysis; positive leads are labeled forecast. Copernicus
+subsetting requires a Copernicus Marine account and configured credentials. Both products use
+eastward/northward velocity components in m/s on geographic latitude/longitude grids; returned
+valid time, retrieval time, product, resolution, and stale status are shown in the flow legend.
 
 ---
 
@@ -518,7 +545,7 @@ the codebase, which is exactly why the number is allowed to come out negative.
 | :--- | :--- |
 | **React 18 + Vite + TypeScript (strict)** | Fast iteration, and strict typing against generated API types means a backend field rename breaks the build instead of the demo. |
 | **Tailwind CSS** | A dense instrument panel needs consistent spacing and colour tokens more than it needs bespoke CSS. |
-| **Custom `<canvas>` map engine** | **The most important decision in the frontend.** Mapbox, MapLibre and Leaflet all assume Web Mercator and a tile server. Web Mercator is unusable at 70°S, and a tile server is unreachable at sea. So the map is written from scratch: WGS84 projected to **EPSG:3031 Antarctic Polar Stereographic** in TypeScript, mirroring the backend projection exactly, drawing coastline vectors and the ice raster served by our own API. The result works offline, is correct at the pole, and renders our own model output rather than someone else's basemap. |
+| **Custom `<canvas>` map engine** | **The most important decision in the frontend.** Mapbox, MapLibre and Leaflet all assume Web Mercator and a tile server. Web Mercator is unusable at 70°S, and a tile server is unreachable at sea. So the map is written from scratch: WGS84 projected to **EPSG:3031 Antarctic Polar Stereographic** in TypeScript, mirroring the backend projection exactly, drawing coastline vectors and the ice raster served by our own API. The result is correct at the pole and renders our own model output rather than someone else's basemap. The **Regional** map uses Mapbox and requires a Mapbox access token and network connectivity. |
 | **Zustand + TanStack Query** | Server state (slow, cacheable route plans) and client state (layer toggles, playback) are genuinely different problems and get different tools. |
 | **Recharts** | Charts as React components, so the analytics screen stays declarative. |
 
@@ -532,104 +559,25 @@ the codebase, which is exactly why the number is allowed to come out negative.
 
 ## Where we trained, what, and how
 
-**Short answer:** three models are trained, by one command, on data generated from this
-repository's own physics environment. One is a clear win and is used in production. The other
-two do not beat the physics they were meant to improve, so the physics is what ships. Those
-results are reported here rather than hidden.
+**Status:** synthetic-only; not validated. The models are **not used in routing**; they appear only in `/api/v1/health`.
 
-```bash
-python -m scripts.train          # trains all three, writes models/ and models/metrics.json
-python -m scripts.train --quick  # fast smoke run
-```
+| Model | Task | Status | Trained on | Operational skill validated | Beats best baseline (current metrics.json) | Used in routing |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **Sea-ice concentration forecaster** (`sic_forecaster`) | Forecast concentration at t0 + lead from analysis state at t0 | demo_synthetic | synthetic | false | false | false |
+| **Iceberg drift residual corrector** (`drift_residual`) | Correct iceberg drift position/error residuals | demo_synthetic | synthetic | false | false | false |
+| **Growler vs sea clutter classifier** (`growler_classifier`) | Classify growlers vs sea clutter | demo_synthetic | synthetic | false | false | false |
 
-Full details, feature lists and per-lead-time tables are in **[docs/ML_MODELS.md](docs/ML_MODELS.md)**;
-every number is also machine-readable in **`models/metrics.json`**.
+**Real results (from `models/metrics.json`, mode: quick, 100% synthetic):**
+- **SIC forecaster:** Loses to physics at all leads (overall skill vs physics −0.232, vs persistence −0.029). Does not beat best baselines.
+- **Drift residual corrector:** Position error worse vs persistence (7.49 km → 8.02 km). Improvement negative.
+- **Growler classifier:** Reports ~0.98 F1 but comes from the generator's own distributions relative to weak baselines; not validated.
 
-### The training data
+**Training:** `python -m scripts.train` / `python -m scripts.train --quick` write `models/` and `models/metrics.json`. Full (non-quick) training takes ~4 min; command to regenerate full metrics (do **not** run unless asked): `python -m scripts.train` (without `--quick`). After running, ensure `evaluation_status` remains present as additive metadata.
 
-There is no public labelled dataset for "correct Antarctic route", so the training data is
-**generated by the physics environment in this repository** — `src/core/environment.py`,
-`src/core/sea_ice.py` and `src/core/iceberg_tracker.py`. These stand in for ERA5/CMEMS forcing,
-OSI-SAF/AMSR2 concentration, and USNIC/BYU iceberg tracks.
+**Python version:** 3.11 (Dockerfile and CI). `setup.py` allows `>=3.10` but that range is untested.
 
-**This must not be read as operational forecast skill.** It is skill inside a simulated world.
-What it demonstrates is that the pipeline — feature extraction, time-based splitting, training,
-honest baseline comparison — is real and runs, so that pointing it at Copernicus data is a
-data-loader change.
+**Data provenance:** Training data is generated by `src/core/environment.py`, `src/core/sea_ice.py`, `src/core/iceberg_tracker.py` (synthetic stand-ins for ERA5/CMEMS, OSI-SAF/AMSR2, USNIC/BYU). All metrics are simulated-environment metrics, not operational skill. Dead links in prior text: `docs/ML_MODELS.md`, `docs/report/iceflow-Prototype-Report.pdf`, `docs/DEMO_SCRIPT.md`, `docs/DEPLOYMENT.md` are not present in this repo; removed/fixed in this section.
 
-Splits are **time-based and embargoed**, never random: nearby samples share the same noise
-field, so a random split would leak the answer and report a fictitious score.
-
-### The three models
-
-All figures below are from the **full** training run (`python -m scripts.train`, 252 s wall
-time on a laptop CPU), measured on the held-out **test** split.
-
-**1. Sea-ice concentration forecaster** — `HistGradientBoostingRegressor`, 21 features
-(concentration and its two spatial gradients, position, season, wind, current, drift,
-divergence, compression, coast distance, ice-edge latitude, lead time), predicting concentration
-at +24 to +168 h. Trained on 44,800 rows; 11,900 validation, 20,300 test.
-
-| Model | Test RMSE | Skill vs this |
-| :--- | ---: | ---: |
-| Learned model | 0.105 | — |
-| Persistence | 0.104 | −0.006 |
-| Climatology | 0.147 | **+0.285** |
-| Physics forecast (semi-Lagrangian) | 0.098 | −0.072 |
-
-> **Verdict: it ties persistence, comfortably beats climatology, and stays about 7% behind the
-> physics forecast at every lead time. So the API serves the physics forecast.**
-> More data helped a great deal — at 2,800 rows it was 22% behind persistence, at 44,800 rows it
-> is level with it — but it never overtakes the advection scheme. That is the expected result and
-> not a disappointing one: in a world whose ice patterns are *generated* by advection, a
-> semi-Lagrangian back-trajectory is close to the correct answer, and a gradient-boosted tree on
-> tabular features cannot do better than the generating process. On real satellite rasters, where
-> the true dynamics are far richer than any advection scheme captures, this is exactly where a
-> learned model earns its place — which is why the pipeline is built and kept.
-
-**2. Iceberg drift residual corrector** — an MLP learning the velocity error of the RK4 momentum
-balance against perturbed "observed" tracks. 300 training bergs, 140 test bergs, disjoint in both
-identity and time window.
-
-| 72-hour position error | Mean | Median |
-| :--- | ---: | ---: |
-| Physics alone | 6.95 km | — |
-| Physics + learned residual | 6.86 km | — |
-| Improvement | **+1.3%** | **−12.9%** |
-
-> **Verdict: marginal and inconsistent — it helps the mean slightly and hurts the typical berg,
-> so it is not used in the serving path.** The honest explanation is that the "observations" are
-> generated by perturbing the *same* momentum balance, so the residual is close to unstructured
-> noise with little for the model to learn. On real USNIC and BYU tracks, where the physics has
-> genuine systematic bias from unknown keel geometry and unresolved sub-surface currents, a
-> residual learner is a sound idea with real signal to find.
-> This is also why the module is described as a **residual corrector on a physics core, not a
-> physics-informed neural network**: the governing equation is not part of the loss function, and
-> calling it a PINN would be a false claim.
-
-**3. Growler and sea-clutter classifier** — `RandomForestClassifier` on radar-return features
-(radar cross-section, range, significant wave height, blob area, aspect ratio, Doppler signature,
-ice concentration, SNR). 1,600 simulated sweeps, 18,268 returns, split by scene.
-
-| Model | F1 | ROC-AUC |
-| :--- | ---: | ---: |
-| Random forest | **0.989** | **0.999** |
-| SNR threshold baseline | 0.701 | 0.607 |
-
-> **Verdict: a clear win, and it is used.** It supplies the detection-confidence value on radar
-> contacts. Separating a small ice target from a sea-clutter spike depends on the *combination*
-> of blob shape, Doppler and sea state — aspect ratio alone carries 46% of the feature
-> importance — which is precisely the kind of decision a hand-tuned SNR threshold cannot make.
-
-### Why report the failures at all
-
-Because a judge will ask, and because a system claiming three working AI engines when one works
-is a system nobody should trust with a ship. The physics is strong enough to carry the product.
-The machine learning is kept where it measurably helps, and the pipeline is kept everywhere else
-so that retraining on real Copernicus and USNIC data is a data-loader change rather than a
-research project.
-
----
 
 ## How it works
 
