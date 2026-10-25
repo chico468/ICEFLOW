@@ -377,9 +377,7 @@ export function VoyagePlanner(): JSX.Element {
             <Notice tone="danger">No feasible candidate is selected. Do not start a voyage until a feasible route is available.</Notice>
           )}
           {routeAlternatives.some((candidate) => candidate.is_synthetic_environment) && (
-            <Notice tone="caution">
-              Candidate evaluations use synthetic/simulated environmental fields. These model results are decision support, not a navigational clearance.
-            </Notice>
+            <SimulatedNotice />
           )}
           <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-hair pt-3">
             <p className="text-xs text-ink-2">

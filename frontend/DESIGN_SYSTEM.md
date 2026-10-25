@@ -86,3 +86,4 @@ Accessible: `aria-expanded`, Escape and outside-click close.
 - The growler-radar scope stays dark deliberately, as an instrument window inside a light card.
 - A dark "night" theme is a token swap away but needs a theme-aware map palette; not built.
 - Some chart colours were retuned by search and replace; check the Insights charts by eye.
+- `SimulatedNotice.tsx` (component): persistent inline notice for simulated-environment route results. Uses `caution` token with icon + text (`role="note"`), never colour alone. Text: "Planned on simulated ice and weather. Not for navigation." This is a deliberate content addition.
