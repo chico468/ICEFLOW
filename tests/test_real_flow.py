@@ -57,10 +57,13 @@ def test_gfs_reader_accepts_ec_codes_canonical_wind_units(tmp_path, monkeypatch)
 
 
 def test_copernicus_fetch_reports_missing_toolbox_clearly(monkeypatch):
-    monkeypatch.setattr(fetch_copernicus_current.shutil, "which", lambda _name: None)
+    monkeypatch.setattr(fetch_copernicus_current, "_find_copernicus_executable", lambda: None)
+    spawned = []
+    monkeypatch.setattr(fetch_copernicus_current.subprocess, "run", lambda *args, **kwargs: spawned.append((args, kwargs)) or SimpleNamespace(returncode=0))
     try:
         fetch_copernicus_current.fetch("2026-10-23")
     except RuntimeError as exc:
         assert "Install the `copernicusmarine` package" in str(exc)
     else:
         raise AssertionError("missing Copernicus Toolbox must be reported before attempting a fetch")
+    assert spawned == []

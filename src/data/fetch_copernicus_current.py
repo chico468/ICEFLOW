@@ -13,19 +13,25 @@ from pathlib import Path
 from src.data.real_flow import CMEMS_DATASET, import_copernicus_current_file
 
 
+def _find_copernicus_executable() -> str | None:
+    executable = shutil.which("copernicusmarine")
+    if executable is not None:
+        return executable
+    suffix = ".exe" if os.name == "nt" else ""
+    candidate = Path(sys.executable).with_name(f"copernicusmarine{suffix}")
+    if candidate.is_file():
+        return str(candidate)
+    return None
+
+
 def fetch(day: str, cache_dir: str | None = None) -> Path:
     date.fromisoformat(day)
-    executable = shutil.which("copernicusmarine")
+    executable = _find_copernicus_executable()
     if executable is None:
-        suffix = ".exe" if os.name == "nt" else ""
-        candidate = Path(sys.executable).with_name(f"copernicusmarine{suffix}")
-        if candidate.is_file():
-            executable = str(candidate)
-        else:
-            raise RuntimeError(
-                "Copernicus Marine Toolbox CLI is unavailable. Install the `copernicusmarine` "
-                "package in this Python environment and run `copernicusmarine login`."
-            )
+        raise RuntimeError(
+            "Copernicus Marine Toolbox CLI is unavailable. Install the `copernicusmarine` "
+            "package in this Python environment and run `copernicusmarine login`."
+        )
     with tempfile.TemporaryDirectory(prefix="iceflow-cmems-") as temp:
         command = [
             executable, "subset",
@@ -39,7 +45,8 @@ def fetch(day: str, cache_dir: str | None = None) -> Path:
             "--output-filename", f"cmems_current_{day}.nc",
         ]
         # Credentials are read by the official CLI from its user-level login config, never passed here.
-        subprocess.run(command, check=True)
+        # Never block on interactive prompts in non-interactive environments.
+        subprocess.run(command, check=True, stdin=subprocess.DEVNULL)
         source = Path(temp) / f"cmems_current_{day}.nc"
         if not source.is_file():
             candidates = list(Path(temp).glob("*.nc"))
