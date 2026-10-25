@@ -22,6 +22,7 @@ import { routeDeltas } from '../lib/routeComparison';
 import { MAP_COLORS, rioColor } from '../map/palette';
 import { useAppStore } from '../store/useAppStore';
 import type { IceClassKey, RouteAlternative, RouteEvaluation, RouteProfileId } from '../api/types';
+import { SimulatedNotice } from '../components/SimulatedNotice';
 
 const ICE_CLASSES: IceClassKey[] = [
   'PC1', 'PC2', 'PC3', 'PC4', 'PC5', 'PC6', 'PC7',
