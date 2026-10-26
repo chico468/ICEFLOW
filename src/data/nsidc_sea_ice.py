@@ -120,6 +120,8 @@ def default_cache_dir() -> Path:
         os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")
     ).expanduser()
     return cache_home / "iceflow" / "nsidc"
+
+
 def _date_from_filename(path: Path) -> date:
     match = _FILENAME_RE_V6.fullmatch(path.name) or _FILENAME_RE_V4.fullmatch(path.name)
     if not match:
@@ -315,7 +317,6 @@ class NSIDCSeaIceReader:
     def _filename(day: date, prefer_v4: bool = False, v6: bool = True) -> str:
         if prefer_v4 or not v6:
             return f"sic_pss25_{day:%Y%m%d}_am2_icdr_v04r00.nc"
-        # Prefer G02202 V6 naming
         if day.year >= 2025:
             return f"sic_pss25_{day:%Y%m%d}_am2_v06r00.nc"
         if day.year >= 1988:
@@ -330,8 +331,7 @@ class NSIDCSeaIceReader:
 
     def _url(self, day: date, v6: bool = None) -> str:
         if v6 is None:
-            # Default to V6 for new usage
-            v6 = True
+            v6 = False
         if v6:
             return f"{BASE_URL_V6}/{day:%Y}/{self._filename(day, v6=True)}"
         return f"{BASE_URL_V4}/{day:%Y}/{self._filename(day, v6=False)}"
@@ -353,7 +353,6 @@ class NSIDCSeaIceReader:
                 retrieved_from_cache=True,
             )
         except NSIDCDataError:
-            # Ignore an incomplete or corrupt cached download.
             try:
                 cached_path.unlink(missing_ok=True)
             except OSError:
@@ -412,7 +411,7 @@ class NSIDCSeaIceReader:
                     if cached is not None:
                         return cached
                     errors.append(f"{day}: HTTP {exc.code}")
-                    continue  # move to next day
+                    continue
 
                 errors.append(f"{day}: HTTP {exc.code}")
                 break
@@ -442,8 +441,6 @@ class NSIDCSeaIceReader:
                 except OSError:
                     pass
 
-        # A valid observed file is preferable to no data, but its cached status
-        # and actual observation date remain visible to the caller.
         cached = self._newest_usable_cache(today)
         if cached is not None:
             return cached
