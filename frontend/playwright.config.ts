@@ -11,11 +11,11 @@
  * Run:   npm run test:e2e          (starts the backend and the dev server if they are not already running)
  *        npm run test:e2e:ui       (interactive runner)
  *
- * The backend command can be overridden:  ICEFLOW_PYTHON=../.venv-test312/bin/python npm run test:e2e
+ * The backend command can be overridden:  PYTHON=/path/to/python npm run test:e2e
  */
 import { defineConfig, devices } from '@playwright/test';
 
-const PYTHON = process.env.ICEFLOW_PYTHON ?? '../.venv-test312/bin/python';
+const PYTHON = process.env.PYTHON ?? 'python';
 
 export default defineConfig({
   testDir: './e2e',
