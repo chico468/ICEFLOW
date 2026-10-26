@@ -212,8 +212,8 @@ def ml_status() -> Dict[str, Any]:
     real_data_report = None
     if real_report_path.exists():
         try:
-            # Must not report fixture files from tests/tmp
-            if "/tests/" in str(real_report_path) or str(real_report_path).startswith("/tmp/") or "/tmp/" in str(real_report_path):
+            # Must not report fixture files from tests/
+            if "/tests/" in str(real_report_path):
                 pass
             else:
                 with open(real_report_path, "r", encoding="utf-8") as fh:
