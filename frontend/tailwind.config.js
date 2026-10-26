@@ -1,9 +1,10 @@
 /**
- * ICEFLOW design tokens: the "daylight chart" theme.
+ * ICEFLOW design tokens: the navy / white / ice-blue theme.
  *
  * Every colour is an RGB triplet held in a CSS variable (see src/index.css) and exposed to
  * Tailwind with an alpha placeholder, so `bg-accent/20` and `text-ink-2` keep working and a
- * future theme (high-contrast, projector) is a variable change, not a code change.
+ * future theme (high-contrast, projector) is a variable change, not a code change. Brand tokens
+ * (navy, white, ice blue, slate) are themed here; data/semantic ramps stay warm.
  *
  * The map canvas cannot read CSS variables, so src/map/palette.ts mirrors the same hues.
  * If you change a colour here, change its twin there.
@@ -64,8 +65,8 @@ export default {
       },
       boxShadow: {
         // Paper-on-paper depth: a hairline contact shadow plus a long, soft ambient one.
-        card: '0 1px 2px rgba(14, 36, 51, 0.06), 0 8px 24px -14px rgba(14, 36, 51, 0.25)',
-        float: '0 2px 4px rgba(14, 36, 51, 0.08), 0 18px 40px -16px rgba(14, 36, 51, 0.38)',
+        card: '0 1px 2px rgb(var(--c-ink) / 0.06), 0 8px 24px -14px rgb(var(--c-ink) / 0.25)',
+        float: '0 2px 4px rgb(var(--c-ink) / 0.08), 0 18px 40px -16px rgb(var(--c-ink) / 0.38)',
       },
       transitionDuration: {
         DEFAULT: '160ms',
