@@ -17,7 +17,9 @@ import type {
 } from '../api/types';
 import { hasFinite, isMissing, isUsableIceField } from './iceModes';
 import {
+  BRAND,
   MAP_COLORS,
+  brandRgba,
   changeCss,
   classedCss,
   compressionCss,
@@ -554,11 +556,11 @@ export function drawIcebergDrift(
     if (i === 0) ctx.moveTo(p.x, p.y);
     else ctx.lineTo(p.x, p.y);
   }
-  ctx.strokeStyle = '#5B3FD1';
+  ctx.strokeStyle = MAP_COLORS.iceberg;
   ctx.lineWidth = 1.6;
   ctx.stroke();
 
-  ctx.fillStyle = '#3A2790';
+  ctx.fillStyle = MAP_COLORS.icebergCore;
   for (const t of traj) {
     if (t.hour % 24 !== 0) continue;
     const p = vp.lonLatToScreen(t.latitude, t.longitude);
@@ -657,13 +659,13 @@ export function drawRouteEnds(ctx: CanvasRenderingContext2D, vp: Viewport, waypo
 
   ctx.beginPath();
   ctx.arc(a.x, a.y, 6.5, 0, TAU);
-  ctx.fillStyle = '#FFFFFF';
+  ctx.fillStyle = BRAND['on-accent'];
   ctx.fill();
   ctx.stroke();
 
   ctx.beginPath();
   ctx.arc(b.x, b.y, 9, 0, TAU);
-  ctx.fillStyle = '#FFFFFF';
+  ctx.fillStyle = BRAND['on-accent'];
   ctx.fill();
   ctx.stroke();
   ctx.beginPath();
@@ -718,9 +720,9 @@ export function drawVessel(
 
   ctx.beginPath();
   ctx.arc(0, 0, 13, 0, TAU);
-  ctx.fillStyle = 'rgba(11, 92, 142, 0.12)';
+  ctx.fillStyle = brandRgba(BRAND.accent, 0.12);
   ctx.fill();
-  ctx.strokeStyle = 'rgba(11, 92, 142, 0.6)';
+  ctx.strokeStyle = brandRgba(BRAND.accent, 0.6);
   ctx.lineWidth = 1;
   ctx.stroke();
 
@@ -733,7 +735,7 @@ export function drawVessel(
   ctx.closePath();
   ctx.fillStyle = MAP_COLORS.vessel;
   ctx.fill();
-  ctx.strokeStyle = '#0E2433';
+  ctx.strokeStyle = BRAND.ink;
   ctx.lineWidth = 1;
   ctx.stroke();
 
@@ -741,7 +743,7 @@ export function drawVessel(
   ctx.beginPath();
   ctx.moveTo(13, 0);
   ctx.lineTo(34, 0);
-  ctx.strokeStyle = 'rgba(14, 36, 51, 0.6)';
+  ctx.strokeStyle = brandRgba(BRAND.ink, 0.6);
   ctx.setLineDash([3, 3]);
   ctx.stroke();
   ctx.restore();
@@ -848,10 +850,10 @@ export function drawStations(
     }
     claimed.push(box);
 
-    ctx.strokeStyle = 'rgba(244, 248, 250, 0.92)';
+    ctx.strokeStyle = brandRgba(BRAND['on-accent'], 0.92);
     ctx.lineWidth = 3;
     ctx.strokeText(label, p.x + 7, p.y);
-    ctx.fillStyle = dim ? 'rgba(61, 86, 102, 0.8)' : '#0E2433';
+    ctx.fillStyle = dim ? brandRgba(BRAND['ink-2'], 0.8) : BRAND.ink;
     ctx.fillText(label, p.x + 7, p.y);
     ctx.globalAlpha = 1;
   };
@@ -862,7 +864,7 @@ export function drawStations(
       s.latitude,
       s.longitude,
       s.name,
-      s.is_indian ? MAP_COLORS.station : '#6B7F8C',
+      s.is_indian ? MAP_COLORS.station : BRAND['ink-3'],
       true,
       !s.is_indian,
       Boolean(s.is_indian),
@@ -906,8 +908,8 @@ export function drawScaleBar(ctx: CanvasRenderingContext2D, vp: Viewport): void 
   const y = vp.heightPx - 18 - vp.insetBottom;
 
   ctx.save();
-  ctx.strokeStyle = 'rgba(14, 36, 51, 0.8)';
-  ctx.fillStyle = 'rgba(14, 36, 51, 0.9)';
+  ctx.strokeStyle = brandRgba(BRAND.ink, 0.8);
+  ctx.fillStyle = brandRgba(BRAND.ink, 0.9);
   ctx.lineWidth = 1;
   ctx.beginPath();
   ctx.moveTo(x, y - 4);
@@ -929,7 +931,7 @@ export function drawInspectMarker(
 ): void {
   const p = vp.lonLatToScreen(lat, lon);
   ctx.save();
-  ctx.strokeStyle = '#B45309';
+  ctx.strokeStyle = MAP_COLORS.compression;
   ctx.lineWidth = 1.6;
   ctx.beginPath();
   ctx.arc(p.x, p.y, 8, 0, TAU);

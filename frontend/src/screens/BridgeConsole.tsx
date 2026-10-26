@@ -213,8 +213,8 @@ export function BridgeConsole(): JSX.Element {
                 <Meter
                   label="Ice concentration"
                   value01={tick.ice_concentration}
-                  display={`${tenths(tick.ice_concentration)} · ${num(tick.ice_thickness_m, 2)} m`}
-                  color="#3D5666"
+                   display={`${tenths(tick.ice_concentration)} · ${num(tick.ice_thickness_m, 2)} m`}
+                   color="rgb(var(--c-ink-2))"
                 />
                 <Meter
                   label="Ice pressure"

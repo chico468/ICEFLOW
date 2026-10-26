@@ -32,7 +32,7 @@ import { MAX_COUNTRY_LABELS, MAX_MARK_LABELS, countryRankThreshold, showMarkLabe
 import { formatLat, formatLon } from './MapCanvas';
 import type { MapEngine, MapScene } from './MapEngine';
 import { splitAtAntimeridian, viewOutline, type LonLat, type RegionBounds } from './mercator';
-import { MAP_COLORS } from './palette';
+import { BRAND, MAP_COLORS, SHIP_ICON, WIND_PARTITION_COLORS, brandRgba } from './palette';
 import { interpolateAlongRoute, interpolateVesselPose, type VesselPose } from './regionalVoyageAnimation';
 import { resolveWindBand, type WindBandMatch } from './windBandMatch';
 
@@ -183,21 +183,21 @@ function addRegionalIcons(map: MapboxMap): void {
       ctx.lineTo(-10, 17);
       ctx.lineTo(-11, -8);
       ctx.closePath();
-      ctx.fillStyle = '#F8FBFC';
+      ctx.fillStyle = SHIP_ICON.hullFill;
       ctx.fill();
-      ctx.strokeStyle = '#082637';
+      ctx.strokeStyle = SHIP_ICON.hullStroke;
       ctx.lineWidth = 3.5;
       ctx.stroke();
       ctx.beginPath();
       ctx.moveTo(0, -20);
       ctx.lineTo(0, 13);
-      ctx.strokeStyle = '#0B6E8E';
+      ctx.strokeStyle = SHIP_ICON.centerline;
       ctx.lineWidth = 3;
       ctx.stroke();
       ctx.beginPath();
       ctx.moveTo(-6, 15);
       ctx.lineTo(6, 15);
-      ctx.strokeStyle = '#D97706';
+      ctx.strokeStyle = SHIP_ICON.hatch;
       ctx.lineWidth = 3;
       ctx.stroke();
     } else {
@@ -217,7 +217,7 @@ function addRegionalIcons(map: MapboxMap): void {
       ctx.closePath();
       ctx.fillStyle = observed ? 'rgba(235, 250, 255, 0.96)' : 'rgba(165, 226, 242, 0.96)';
       ctx.fill();
-      ctx.strokeStyle = observed ? '#1B6A9C' : '#084C61';
+      ctx.strokeStyle = observed ? MAP_COLORS.iceEdge : MAP_COLORS.regionalBergSim;
       ctx.lineWidth = observed ? 3 : 2.5;
       if (observed) ctx.setLineDash([4, 3]);
       ctx.stroke();
@@ -443,25 +443,25 @@ function addWindParticles(map: MapboxMap, enabled: boolean, onError: (reason: st
           'raster-particle-reset-rate-factor': 0.4,
           'raster-particle-count': 1600,
           'raster-particle-max-speed': 40,
-          'raster-particle-color': [
-            'interpolate',
-            ['linear'],
-            ['raster-particle-speed'],
-            0,
-            '#72B7D2',
-            3,
-            '#45B8C5',
-            7,
-            '#74C879',
-            12,
-            '#E7CF55',
-            20,
-            '#EA9147',
-            32,
-            '#D95454',
-            50,
-            '#B14A91',
-          ],
+            'raster-particle-color': [
+              'interpolate',
+              ['linear'],
+              ['raster-particle-speed'],
+              0,
+              WIND_PARTITION_COLORS[0],
+              3,
+              WIND_PARTITION_COLORS[1],
+              7,
+              WIND_PARTITION_COLORS[2],
+              12,
+              WIND_PARTITION_COLORS[3],
+              20,
+              WIND_PARTITION_COLORS[4],
+              32,
+              WIND_PARTITION_COLORS[5],
+              50,
+              WIND_PARTITION_COLORS[6],
+            ],
         },
       };
       map.addLayer(layer);
@@ -585,7 +585,7 @@ function addLayers(map: MapboxMap, windEnabled: boolean, onWindError: (reason: s
     id: 'regional-polar-fill',
     type: 'line',
     source: 'regional-polar-outline',
-    paint: { 'line-color': '#0B5C8E', 'line-width': 1.6, 'line-dasharray': [3, 2], 'line-opacity': 0.95 },
+    paint: { 'line-color': BRAND.accent, 'line-width': 1.6, 'line-dasharray': [3, 2], 'line-opacity': 0.95 },
   });
   addLayerIfMissing(map, {
     id: 'regional-baseline-route',
@@ -639,7 +639,7 @@ function addLayers(map: MapboxMap, windEnabled: boolean, onWindError: (reason: s
         'balanced', MAP_COLORS.routeBalanced,
         'fuel-efficient', MAP_COLORS.routeFuelEfficient,
         'fastest', MAP_COLORS.routeFastest,
-        '#334155',
+         BRAND['ink-2'],
       ],
       'line-width': ['case', ['boolean', ['get', 'selected'], false], 5.5, 3.3],
       'line-opacity': ['case', ['boolean', ['get', 'selected'], false], 1, 0.94],
@@ -662,7 +662,7 @@ function addLayers(map: MapboxMap, windEnabled: boolean, onWindError: (reason: s
     paint: {
       'circle-radius': 4,
       'circle-color': MAP_COLORS.port,
-      'circle-stroke-color': ['case', ['get', 'endpoint'], '#0E2433', 'rgba(255,255,255,0.9)'],
+      'circle-stroke-color': ['case', ['get', 'endpoint'], BRAND.ink, brandRgba(BRAND['on-accent'], 0.9)],
       'circle-stroke-width': ['case', ['get', 'endpoint'], 2.2, 1],
     },
   });
@@ -674,7 +674,7 @@ function addLayers(map: MapboxMap, windEnabled: boolean, onWindError: (reason: s
     paint: {
       'circle-radius': 4,
       'circle-color': MAP_COLORS.station,
-      'circle-stroke-color': ['case', ['get', 'endpoint'], '#0E2433', 'rgba(255,255,255,0.9)'],
+      'circle-stroke-color': ['case', ['get', 'endpoint'], BRAND.ink, brandRgba(BRAND['on-accent'], 0.9)],
       'circle-stroke-width': ['case', ['get', 'endpoint'], 2.2, 1],
     },
   });
@@ -692,8 +692,8 @@ function addLayers(map: MapboxMap, windEnabled: boolean, onWindError: (reason: s
       'symbol-sort-key': ['case', ['get', 'endpoint'], 0, 1],
     },
     paint: {
-      'text-color': '#0E2433',
-      'text-halo-color': 'rgba(255,255,255,0.9)',
+      'text-color': BRAND.ink,
+      'text-halo-color': brandRgba(BRAND['on-accent'], 0.9),
       'text-halo-width': 1.5,
     },
   });
@@ -707,7 +707,7 @@ function addLayers(map: MapboxMap, windEnabled: boolean, onWindError: (reason: s
       'text-size': 10,
       'text-allow-overlap': false,
     },
-    paint: { 'text-color': 'rgba(14,36,51,0.58)' },
+    paint: { 'text-color': brandRgba(BRAND.ink, 0.58) },
   });
   addLayerIfMissing(map, {
     id: 'regional-simulated-icebergs',
@@ -759,8 +759,8 @@ function addLayers(map: MapboxMap, windEnabled: boolean, onWindError: (reason: s
       'text-anchor': 'left',
     },
     paint: {
-      'text-color': '#0B5C8E',
-      'text-halo-color': 'rgba(255,255,255,0.9)',
+      'text-color': BRAND.accent,
+      'text-halo-color': brandRgba(BRAND['on-accent'], 0.9),
       'text-halo-width': 1.5,
     },
   });
