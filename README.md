@@ -140,12 +140,14 @@ valid time, retrieval time, product, resolution, and stale status are shown in t
 | | Version | Check with | If missing |
 | :--- | :--- | :--- | :--- |
 | Python | 3.11 or newer | `python --version` | [python.org/downloads](https://www.python.org/downloads/) |
-| Node.js | 18 or newer | `node --version` | [nodejs.org](https://nodejs.org/) |
+| Node.js | 24 or newer | `node --version` | [nodejs.org](https://nodejs.org/) |
 | Git | any | `git --version` | [git-scm.com](https://git-scm.com/) |
 
-Nothing else. **No API keys, no accounts, no map tile provider, no cloud services, no database
-server, no Docker, no GPU.** It runs on a laptop in aeroplane mode, which is the point: the target
-user is on a ship below 60°S where there is no connectivity to depend on.
+Nothing else. **No accounts, no cloud services, no database server, no Docker, no GPU.**
+The core Antarctic chart is offline-capable; it runs on a laptop in aeroplane mode, which is the
+point: the target user is on a ship below 60°S where there is no connectivity to depend on. The
+optional *Regional* context map uses Mapbox and needs a token + network (see the map-layers
+section); every other screen runs without either.
 
 > On some systems Python is `python3` and pip is `pip3`. If `python --version` prints nothing or
 > reports Python 2, use `python3` and `pip3` throughout.
@@ -230,7 +232,7 @@ wait.
 
 ### Using it — three steps
 
-The console opens on **How it works**, which explains the system before you press anything.
+The console opens on the **Voyage Planner**, where you choose an origin, destination and vessel.
 
 1. **1. Plan a route** — pick an origin and an Indian Antarctic station, pick a ship, press
    **Plan voyage**. Cape Town → Bharati is the default and the one worth seeing first.
