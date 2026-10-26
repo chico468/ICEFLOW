@@ -267,7 +267,11 @@ function IceSection({ scene, leadHours }: { scene: MapScene; leadHours: number }
       )}
 
       <div className="mt-1.5 flex items-center gap-1.5">
-        <span className="inline-block h-0.5 w-4 bg-[#1B6A9C] outline outline-2 outline-white/80" aria-hidden />
+        <span
+          className="inline-block h-0.5 w-4 outline outline-2 outline-white/80"
+          style={{ background: MAP_COLORS.iceEdge }}
+          aria-hidden
+        />
         <span>Ice edge (15 % contour, per longitude)</span>
       </div>
 
@@ -460,8 +464,8 @@ function RouteSection({ scene }: { scene: MapScene }): JSX.Element {
           <li className="flex items-center gap-2">
             {swatch(
               <>
-                <circle cx="7" cy="7" r="5" fill="#fff" stroke={MAP_COLORS.routeOptimised} strokeWidth="2" />
-                <circle cx="23" cy="7" r="6" fill="#fff" stroke={MAP_COLORS.routeOptimised} strokeWidth="2" />
+                <circle cx="7" cy="7" r="5" className="fill-on-accent" stroke={MAP_COLORS.routeOptimised} strokeWidth="2" />
+                <circle cx="23" cy="7" r="6" className="fill-on-accent" stroke={MAP_COLORS.routeOptimised} strokeWidth="2" />
                 <circle cx="23" cy="7" r="2.6" fill={MAP_COLORS.routeOptimised} />
               </>,
             )}

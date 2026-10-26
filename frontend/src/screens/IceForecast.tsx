@@ -203,16 +203,16 @@ export function IceForecast(): JSX.Element {
               <div className="h-40">
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={skillRows} margin={{ top: 4, right: 6, bottom: 0, left: -18 }}>
-                    <CartesianGrid stroke="#D3DDE2" strokeDasharray="2 3" />
-                    <XAxis dataKey="lead" stroke="#587383" tick={{ fontSize: 10 }} unit="h" />
-                    <YAxis stroke="#587383" tick={{ fontSize: 10 }} />
+                    <CartesianGrid stroke="rgb(var(--c-hair))" strokeDasharray="2 3" />
+                    <XAxis dataKey="lead" stroke="rgb(var(--c-ink-3))" tick={{ fontSize: 10 }} unit="h" />
+                    <YAxis stroke="rgb(var(--c-ink-3))" tick={{ fontSize: 10 }} />
                     <Tooltip
-                      contentStyle={{ background: '#FFFFFF', border: '1px solid #AEBEC6', fontSize: 11 }}
-                      labelStyle={{ color: '#3D5666' }}
+                      contentStyle={{ background: 'rgb(var(--c-panel))', border: '1px solid rgb(var(--c-hair-2))', fontSize: 11 }}
+                      labelStyle={{ color: 'rgb(var(--c-ink-2))' }}
                     />
                     <Legend wrapperStyle={{ fontSize: 10 }} />
-                    <Line type="monotone" dataKey="forecast" name="Forecast RMSE" stroke="#0B5C8E" dot={false} strokeWidth={2} />
-                    <Line type="monotone" dataKey="persistence" name="Persistence RMSE" stroke="#B45309" dot={false} strokeDasharray="4 3" />
+                    <Line type="monotone" dataKey="forecast" name="Forecast RMSE" stroke="rgb(var(--c-accent))" dot={false} strokeWidth={2} />
+                    <Line type="monotone" dataKey="persistence" name="Persistence RMSE" stroke="rgb(var(--c-warn))" dot={false} strokeDasharray="4 3" />
                   </LineChart>
                 </ResponsiveContainer>
               </div>

@@ -12,7 +12,7 @@
  */
 import type { RadarSweep } from '../api/types';
 import { num } from '../lib/format';
-import { threatColor } from '../map/palette';
+import { RADAR, threatColor } from '../map/palette';
 import { EmptyState } from './ui';
 
 const SIZE = 240;
@@ -33,19 +33,19 @@ export function RadarScope({ sweep }: { sweep: RadarSweep | null }): JSX.Element
       <svg viewBox={`0 0 ${SIZE} ${SIZE}`} className="mx-auto block w-full max-w-[260px]">
         <defs>
           <radialGradient id="clutter" cx="50%" cy="50%" r="50%">
-            <stop offset="0%" stopColor="#22D3EE" stopOpacity={0.10 + sweep.sea_clutter_level * 0.42} />
-            <stop offset="35%" stopColor="#22D3EE" stopOpacity={0.05 + sweep.sea_clutter_level * 0.20} />
-            <stop offset="100%" stopColor="#22D3EE" stopOpacity={0} />
+            <stop offset="0%" stopColor={RADAR.signal} stopOpacity={0.10 + sweep.sea_clutter_level * 0.42} />
+            <stop offset="35%" stopColor={RADAR.signal} stopOpacity={0.05 + sweep.sea_clutter_level * 0.20} />
+            <stop offset="100%" stopColor={RADAR.signal} stopOpacity={0} />
           </radialGradient>
         </defs>
 
-        <circle cx={CENTRE} cy={CENTRE} r={RADIUS} fill="#0A1220" stroke="#1E2E44" />
+        <circle cx={CENTRE} cy={CENTRE} r={RADIUS} fill={RADAR.bg} stroke={RADAR.ring} />
         {/* Sea clutter, which is why small ice goes undetected close in. */}
         <circle cx={CENTRE} cy={CENTRE} r={RADIUS} fill="url(#clutter)" />
 
         {rings.map((r, i) => (
           <g key={r}>
-            <circle cx={CENTRE} cy={CENTRE} r={r} fill="none" stroke="#2A3F5F" strokeDasharray="2 3" />
+            <circle cx={CENTRE} cy={CENTRE} r={r} fill="none" stroke={RADAR.ringDim} strokeDasharray="2 3" />
             <text x={CENTRE + 3} y={CENTRE - r + 9} className="fill-ink-3" style={{ fontSize: 7 }}>
               {num(((i + 1) / 4) * maxRange, 1)} nm
             </text>
@@ -54,7 +54,7 @@ export function RadarScope({ sweep }: { sweep: RadarSweep | null }): JSX.Element
 
         {/* The three-mile tactical perimeter. */}
         {alertRing < RADIUS && (
-          <circle cx={CENTRE} cy={CENTRE} r={alertRing} fill="none" stroke="#FBBF24" strokeOpacity={0.45} strokeDasharray="4 3" />
+          <circle cx={CENTRE} cy={CENTRE} r={alertRing} fill="none" stroke={RADAR.alert} strokeOpacity={0.45} strokeDasharray="4 3" />
         )}
 
         {[0, 45, 90, 135, 180, 225, 270, 315].map((deg) => {
@@ -68,7 +68,7 @@ export function RadarScope({ sweep }: { sweep: RadarSweep | null }): JSX.Element
                 y1={CENTRE}
                 x2={CENTRE + RADIUS * Math.sin(rad)}
                 y2={CENTRE - RADIUS * Math.cos(rad)}
-                stroke="#1E2E44"
+                 stroke={RADAR.ring}
                 strokeWidth={0.5}
               />
               <text x={lx} y={ly + 3} textAnchor="middle" className="fill-ink-3" style={{ fontSize: 7 }}>
@@ -81,7 +81,7 @@ export function RadarScope({ sweep }: { sweep: RadarSweep | null }): JSX.Element
         {/* Own ship, head up. */}
         <polygon
           points={`${CENTRE},${CENTRE - 7} ${CENTRE - 4},${CENTRE + 5} ${CENTRE + 4},${CENTRE + 5}`}
-          fill="#22D3EE"
+           fill={RADAR.signal}
         />
 
         {sweep.contacts.map((c) => {

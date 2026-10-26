@@ -182,7 +182,7 @@ export function Meter({
   label,
   value01,
   display,
-  color = '#0B5C8E',
+  color = 'rgb(var(--c-accent))',
   warnAbove,
 }: {
   label: string;
@@ -197,15 +197,15 @@ export function Meter({
     <div>
       <div className="flex items-baseline justify-between">
         <span className="text-2xs text-ink-3">{label}</span>
-        <span className="num text-xs" style={{ color: hot ? '#B45309' : color }}>
+        <span className="num text-xs" style={{ color: hot ? 'rgb(var(--c-warn))' : color }}>
           {display}
         </span>
       </div>
       <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-panel-2">
-        <div
-          className="h-full rounded-full transition-[width] duration-300"
-          style={{ width: `${v * 100}%`, background: hot ? '#B45309' : color }}
-        />
+          <div
+            className="h-full rounded-full transition-[width] duration-300"
+            style={{ width: `${v * 100}%`, background: hot ? 'rgb(var(--c-warn))' : color }}
+          />
       </div>
     </div>
   );
