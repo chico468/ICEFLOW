@@ -327,7 +327,7 @@ class NSIDCSeaIceReader:
         # Prefer G02202 V6 naming
         if day.year >= 2025:
             return f"sic_pss25_{day:%Y%m%d}_am2_v06r00.nc"
-        if day.year >= 1988:
+        if day.year >= 2008:
             return f"sic_pss25_{day:%Y%m%d}_F17_v06r00.nc"
         if day.year >= 1995:
             return f"sic_pss25_{day:%Y%m%d}_F13_v06r00.nc"
