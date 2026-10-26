@@ -1,15 +1,47 @@
 /**
- * Colour ramps for the chart layers.
+ * Colour ramps and the canvas-side mirror of the CSS tokens.
  *
  * The bridge runs at night, so the ramps stay inside a cold, low-luminance envelope, and
  * hazard hues (amber, red) are reserved so that anything warm on the display means
  * something. Every ramp is defined once here and used by both the canvas and the panels,
  * so a legend can never drift from what is painted.
+ *
+ * BRAND mirrors the *brand* CSS variables in src/index.css (navy, white, ice-blue, slate).
+ * The map canvas and Mapbox paint cannot read CSS variables, so they read BRAND instead;
+ * tests/palette-tokens.test.ts fails the build if the two ever drift. The DATA/SEMANTIC
+ * colours below (ice ramps, POLARIS risk, route, iceberg, station) are intentionally NOT
+ * themed and stay warm — see DESIGN_SYSTEM.md (brand vs semantic rule).
  */
 
+/**
+ * Brand tokens mirrored from src/index.css :root --c-* (the canvas cannot read CSS vars).
+ * Keep this in lock-step with index.css: tests/palette-tokens.test.ts enforces it.
+ */
+export const BRAND = {
+  ground: '#F2F7FB',
+  panel: '#FFFFFF',
+  'panel-2': '#E9F4FD',
+  'panel-3': '#D8E9F5',
+  hair: '#CFE8F7',
+  'hair-2': '#8CC8EE',
+  ink: '#0B1F3A',
+  'ink-2': '#4A6175',
+  'ink-3': '#5A7484',
+  accent: '#0B1F3A',
+  'accent-2': '#08375E',
+  'on-accent': '#FFFFFF',
+} as const;
+
+/** Compose an rgba string from a BRAND hex so canvas opacity tracks the theme. */
+export function brandRgba(hex: string, alpha: number): string {
+  const m = /^#([0-9A-Fa-f]{2})([0-9A-Fa-f]{2})([0-9A-Fa-f]{2})$/.exec(hex);
+  if (!m) return hex;
+  return `rgba(${parseInt(m[1], 16)}, ${parseInt(m[2], 16)}, ${parseInt(m[3], 16)}, ${alpha})`;
+}
+
 export const MAP_COLORS = {
-  // A daylight chart: pale glacial water, sand-grey land, deep-ink lines. Mirrors the CSS tokens
-  // in src/index.css (the canvas cannot read CSS variables), so change the two together.
+  // Data/semantic colours for the chart layers. The canvas cannot read CSS variables, so these
+  // are the concrete values the data ramps and symbol colours resolve to. They are NOT themed.
   ocean: '#D4E6EF',
   oceanDeep: '#C6DCE8',
   land: '#DDD6C8',
@@ -39,8 +71,37 @@ export const MAP_COLORS = {
   // Observed (not simulated) iceberg snapshot: hollow, dashed, muted, so it never reads as live.
   observedBerg: '#6B5B95',
   observedBergStale: 'rgba(107, 91, 149, 0.62)',
+  // Regional iceberg silhouette outline for the simulated (not observed) snapshot.
+  regionalBergSim: '#084C61',
   iceEdgeCasing: 'rgba(255, 255, 255, 0.72)',
 } as const;
+
+/**
+ * Own-ship symbol on the regional chart (canvas cannot read CSS vars). White hull, dark
+ * outline for contrast over the raster, an ice-blue keel highlight and a slate deck marking
+ * (no warm hues: amber stays reserved for hazard). Values intentionally centralised here.
+ */
+export const SHIP_ICON = {
+  hullFill: BRAND['on-accent'],
+  hullStroke: '#082637',
+  centerline: BRAND['hair-2'],
+  hatch: BRAND['ink-2'],
+} as const;
+
+/**
+ * X-band radar scope palette. Stays dark deliberately (an instrument window on a light card),
+ * so it is centralised here and is not part of the brand retheme.
+ */
+export const RADAR = {
+  bg: '#0A1220',
+  ring: '#1E2E44',
+  ringDim: '#2A3F5F',
+  signal: '#22D3EE',
+  alert: '#FBBF24',
+} as const;
+
+/** Wind-particle speed ramp (a data visualization scale, not brand): kept as-is. */
+export const WIND_PARTITION_COLORS = ['#72B7D2', '#45B8C5', '#74C879', '#E7CF55', '#EA9147', '#D95454', '#B14A91'] as const;
 
 function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * t;
@@ -192,7 +253,7 @@ export function severityColor(severity: string): string {
     case 'CAUTION':
       return '#A16207';
     default:
-      return '#0B5C8E';
+      return BRAND.accent;
   }
 }
 
@@ -207,7 +268,7 @@ export function threatColor(level: string): string {
     case 'LOW':
       return '#1F7A4D';
     default:
-      return '#0B5C8E';
+      return BRAND.accent;
   }
 }
 
