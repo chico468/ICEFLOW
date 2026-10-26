@@ -9,7 +9,7 @@
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b --force",
     "preview": "vite preview",
-    "test:unit": "node --test --experimental-strip-types",
+    "test:unit": "node --test \"tests/*.test.ts\"",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui"
   },
@@ -20,7 +20,7 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "recharts": "^2.13.0",
-    "zustand": "^5.5.5"
+    "zustand": "^4.5.5"
   },
   "devDependencies": {
     "@playwright/test": "^1.64.1",
@@ -41,6 +41,6 @@
     "esbuild@0.21.5": true
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=24"
   }
 }

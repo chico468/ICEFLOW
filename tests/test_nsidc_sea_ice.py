@@ -94,7 +94,7 @@ def test_fetch_downloads_and_parses_a_daily_file(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    filename = "sic_pss25_20261021_am2_icdr_v04r00.nc"
+    filename = "sic_pss25_20261021_am2_v06r00.nc"
     source = tmp_path / filename
     make_netcdf(source, np.full((2, 3), 0.65))
     payload = source.read_bytes()

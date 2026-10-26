@@ -16,31 +16,54 @@ def climatology_by_doy(doy_to_mean: Dict[Tuple[int, int], np.ndarray], doy: Tupl
 
 
 def fit_climatology(train_dates: list[date], sic_by_date: Dict[date, np.ndarray], use_trend: bool = True):
-    """Fit climatology on training years only."""
+    """Fit per-(month,day) climatology on training years only. NaN-aware.
+
+    Returns ``(doy_to_mean, doy_to_trend, base_year)``. ``doy_to_trend`` is the
+    per-pixel linear slope (per year) computed in closed form with per-pixel
+    NaN masks rather than a Python ``np.polyfit`` loop.
+    """
     from collections import defaultdict
-    # Group by (month, day) - use day of year
-    by_doy = defaultdict(list)
+
+    by_doy: dict[Tuple[int, int], list[Tuple[int, np.ndarray]]] = defaultdict(list)
     for d in train_dates:
         if d in sic_by_date:
-            by_doy[(d.month, d.day)].append((d.year, sic_by_date[d]))
-    doy_to_mean = {}
-    doy_to_trend = {}
-    for k, vals in by_doy.items():
-        years = np.array([v[0] for v in vals])
-        data = np.stack([v[1] for v in vals], axis=0)
-        mean = np.nanmean(data, axis=0)
+            arr = sic_by_date[d]
+            if arr is not None and np.any(np.isfinite(arr)):
+                by_doy[(d.month, d.day)].append((d.year, arr))
+
+    doy_to_mean: Dict[Tuple[int, int], np.ndarray] = {}
+    doy_to_trend: Dict[Tuple[int, int], np.ndarray] = {}
+
+    # Reference year for the centred trend term (shared across DOYs).
+    base_year = float(np.mean(sorted({d.year for d in train_dates}))) if train_dates else 0.0
+
+    for key, vals in by_doy.items():
+        years = np.array([v[0] for v in vals], dtype=np.float64)
+        stacked = np.stack(
+            [np.where(np.isfinite(v[1]), v[1], np.nan) for v in vals], axis=0
+        )  # (n_years, ny, nx)
+        valid = np.isfinite(stacked)
+        cnt = valid.sum(axis=0)
+
+        with np.errstate(invalid="ignore", divide="ignore"):
+            mean = np.where(cnt > 0, np.nansum(stacked, axis=0) / np.maximum(cnt, 1), np.nan)
+
         if use_trend and len(years) >= 3:
-            # Linear trend per pixel
-            try:
-                coeffs = np.polyfit(years, data.reshape(len(years), -1), 1)
-                trend = coeffs[0].reshape(mean.shape)
-            except Exception:
-                trend = np.zeros_like(mean)
+            xbar = np.where(cnt > 0, np.where(valid, years[:, None, None], 0.0).sum(axis=0) / np.maximum(cnt, 1), 0.0)
+            dev_x = years[:, None, None] - xbar[None, :, :]
+            dev_y = stacked - mean[None, :, :]
+            with np.errstate(invalid="ignore"):
+                numer = np.nansum(dev_x * dev_y, axis=0)
+            denom = np.sum(valid * (dev_x ** 2), axis=0)
+            safe = (denom > 0) & (cnt >= 3)
+            trend = np.divide(numer, denom, out=np.zeros_like(numer), where=safe)
+            trend = np.where(np.isfinite(trend), trend, 0.0)
         else:
             trend = np.zeros_like(mean)
-        doy_to_mean[k] = mean
-        doy_to_trend[k] = trend
-    return doy_to_mean, doy_to_trend
+
+        doy_to_mean[key] = mean
+        doy_to_trend[key] = trend
+    return doy_to_mean, doy_to_trend, base_year
 
 
 def damped_anomaly_persistence(

@@ -248,11 +248,17 @@ def read_nsidc_file(
     if x_m.ndim != 1 or y_m.ndim != 1:
         raise NSIDCDataError("Projected x and y coordinates must be 1-D arrays.")
 
+    y_flipped = False
+    if y_m.size > 1 and not np.all(np.diff(y_m) > 0):
+        if np.all(np.diff(y_m) < 0):
+            y_m = y_m[::-1]
+            y_flipped = True
+        else:
+            raise NSIDCDataError("Projected x/y coordinates must increase in grid order.")
     if (
         not np.isfinite(x_m).all()
         or not np.isfinite(y_m).all()
         or (x_m.size > 1 and not np.all(np.diff(x_m) > 0))
-        or (y_m.size > 1 and not np.all(np.diff(y_m) > 0))
     ):
         raise NSIDCDataError("Projected x/y coordinates must increase in grid order.")
 
@@ -261,6 +267,9 @@ def read_nsidc_file(
             f"Grid shape {values.shape} does not match "
             f"y/x coordinate lengths {(y_m.size, x_m.size)}."
         )
+
+    if y_flipped:
+        values = values[::-1, :]
 
     # V6 stores values 0-100; convert to fraction
     if np.nanmax(values) > 1.5:
@@ -318,7 +327,7 @@ class NSIDCSeaIceReader:
         # Prefer G02202 V6 naming
         if day.year >= 2025:
             return f"sic_pss25_{day:%Y%m%d}_am2_v06r00.nc"
-        if day.year >= 1988:
+        if day.year >= 2008:
             return f"sic_pss25_{day:%Y%m%d}_F17_v06r00.nc"
         if day.year >= 1995:
             return f"sic_pss25_{day:%Y%m%d}_F13_v06r00.nc"
