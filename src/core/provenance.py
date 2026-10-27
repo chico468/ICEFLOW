@@ -23,6 +23,7 @@ class Provenance(BaseModel):
     product: Optional[str] = None
     valid_time: Optional[str] = None
     age_hours: Optional[float] = None
+    note: Optional[str] = None
 
 
 class WaypointEta(BaseModel):
