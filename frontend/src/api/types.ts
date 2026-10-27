@@ -315,6 +315,45 @@ export interface ForecastSkillResponse {
   metrics_note: string;
 }
 
+// ---------------------------------------------------------------------------------- evidence
+
+export interface ScorecardRow {
+  task: 'sic' | 'iceberg';
+  lead_days: number;
+  domain: string;
+  season: string;
+  sector?: string;
+  model: string;
+  rmse?: number;
+  error_km?: number;
+  ci: [number, number];
+  skill_vs_baseline: number | null;
+  n: number;
+}
+
+export interface PromotionStatus {
+  sic: Record<string, boolean>;
+  iceberg: Record<string, boolean>;
+}
+
+export interface ScorecardCoverage {
+  [lead_days: string]: { target: number; empirical: number | null };
+}
+
+export interface ScorecardResponse {
+  generated_at: string;
+  git_sha: string | null;
+  data_source: 'real' | 'none';
+  product: string | null;
+  version: string | null;
+  train_years: number[];
+  test_years: number[];
+  rows: ScorecardRow[];
+  promoted: PromotionStatus;
+  coverage: ScorecardCoverage;
+  caveats: string[];
+}
+
 // -------------------------------------------------------------------------------- POLARIS
 
 export type IceClassKey =
@@ -648,6 +687,11 @@ export interface OptimizationSummary {
   warnings: string[];
   savings_method: string;
   is_synthetic_environment: boolean;
+  environment_mode?: 'simulated' | 'real_ice' | 'replay';
+  departure_iso?: string;
+  arrival_iso?: string;
+  waypoint_etas?: { index: number; eta_iso: string }[];
+  provenance?: Provenance[];
 }
 
 export type RouteProfileId = 'safety-first' | 'balanced' | 'fuel-efficient' | 'fastest';
@@ -663,6 +707,7 @@ export interface RouteAlternative {
   warnings: string[];
   search: SearchDiagnostics;
   is_synthetic_environment: boolean;
+  environment_mode?: 'simulated' | 'real_ice' | 'replay';
 }
 
 export interface RouteAlternativesResponse {
@@ -673,7 +718,9 @@ export interface RouteAlternativesResponse {
   distinct_alternatives_found: number;
   planning_ms: number;
   is_synthetic_environment: boolean;
+  environment_mode?: 'simulated' | 'real_ice' | 'replay';
   environment_provenance: Record<string, Provenance>;
+  provenance?: Provenance[];
 }
 
 export interface RouteRequest {
@@ -691,6 +738,9 @@ export interface RouteRequest {
   lead_hours?: number;
   grid_resolution_deg?: number;
   avoid_icebergs?: boolean;
+  departure_iso?: string;
+  environment_mode?: 'simulated' | 'real_ice' | 'replay';
+  replay_date?: string;
 }
 
 // ------------------------------------------------------------------------------- voyage
@@ -780,6 +830,10 @@ export interface VoyageState {
   reroute_count: number;
   plan_summary: OptimizationSummary | null;
   is_synthetic_environment: boolean;
+  environment_mode: 'simulated' | 'real_ice' | 'replay';
+  arrival_iso: string | null;
+  waypoint_etas: { index: number; eta_iso: string }[];
+  provenance: Provenance[];
 }
 
 export interface CreateVoyageRequest {
@@ -795,6 +849,8 @@ export interface CreateVoyageRequest {
   grid_resolution_deg?: number;
   avoid_icebergs?: boolean;
   departure_iso?: string;
+  environment_mode?: 'simulated' | 'real_ice' | 'replay';
+  replay_date?: string;
 }
 
 // ---------------------------------------------------------------------- websocket frames

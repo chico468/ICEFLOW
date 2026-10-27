@@ -1,7 +1,7 @@
 """Icebergs, route planning and route comparison."""
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field, field_validator
@@ -172,12 +172,33 @@ class RouteRequest(BaseModel):
     lead_hours: float = 0.0
     grid_resolution_deg: float = Field(default=0.5, ge=0.25, le=2.0)
     avoid_icebergs: bool = True
+    departure_iso: Optional[str] = Field(default=None, description="Actual UTC departure time (ISO-8601 with offset).")
+    environment_mode: Literal["simulated", "real_ice", "replay"] = Field(
+        default="simulated",
+        description="simulated: synthetic ice field; real_ice: latest cached NSIDC observation; replay: observed V6 field for replay_date.",
+    )
+    replay_date: Optional[str] = Field(default=None, description="ISO date (YYYY-MM-DD) for replay mode.")
 
     @field_validator("planning_reference_iso")
     @classmethod
     def _validate_planning_reference(cls, value: Optional[str]) -> Optional[str]:
         if value is not None:
             parse_utc_datetime(value, "planning_reference_iso")
+        return value
+
+    @field_validator("departure_iso")
+    @classmethod
+    def _validate_departure_iso(cls, value: Optional[str]) -> Optional[str]:
+        if value is not None:
+            parse_utc_datetime(value, "departure_iso")
+        return value
+
+    @field_validator("replay_date")
+    @classmethod
+    def _validate_replay_date(cls, value: Optional[str]) -> Optional[str]:
+        if value is not None:
+            from datetime import datetime
+            datetime.strptime(value, "%Y-%m-%d")
         return value
 
 
@@ -213,12 +234,15 @@ def optimize(req: RouteRequest) -> OptimizationSummary:
         ice_class=req.ice_class,
         weights=req.weights,
         installed_power_kw=vessel.installed_power_kw,
+        environment_mode=req.environment_mode,
+        replay_date=req.replay_date,
     )
     return optimizer.optimize_route(
         start[0], start[1], dest[0], dest[1],
         grid_resolution_deg=req.grid_resolution_deg,
         departure_time_hours=req.departure_time_hours,
         avoid_icebergs=req.avoid_icebergs,
+        departure_iso=req.departure_iso,
     )
 
 
@@ -231,12 +255,15 @@ def alternatives(req: RouteRequest) -> RouteAlternativesResult:
         ice_class=req.ice_class,
         weights=req.weights,
         installed_power_kw=vessel.installed_power_kw,
+        environment_mode=req.environment_mode,
+        replay_date=req.replay_date,
     )
     return optimizer.optimize_alternatives(
         start[0], start[1], dest[0], dest[1],
         grid_resolution_deg=req.grid_resolution_deg,
         departure_time_hours=req.departure_time_hours,
         avoid_icebergs=req.avoid_icebergs,
+        departure_iso=req.departure_iso,
     )
 
 
@@ -252,12 +279,15 @@ def compare(req: RouteRequest) -> Dict[str, Any]:
     optimizer = PolarRouteOptimizer(
         vessel=vessel, ice_class=req.ice_class, weights=req.weights,
         installed_power_kw=vessel.installed_power_kw,
+        environment_mode=req.environment_mode,
+        replay_date=req.replay_date,
     )
     summary = optimizer.optimize_route(
         start[0], start[1], dest[0], dest[1],
         grid_resolution_deg=req.grid_resolution_deg,
         departure_time_hours=req.departure_time_hours,
         avoid_icebergs=req.avoid_icebergs,
+        departure_iso=req.departure_iso,
     )
 
     cache, _ = optimizer._build_cache(start, dest, req.departure_time_hours,

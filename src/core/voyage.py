@@ -41,6 +41,7 @@ from src.core.lindqvist_model import (
     calculate_ice_resistance,
 )
 from src.core.polaris_risk import IceClass, IceRegimeComponent, calculate_rio, classify_ice_type
+from src.core.provenance import Provenance, WaypointEta, build_provenance
 from src.core.route_optimizer import (
     OptimizationSummary,
     PolarRouteOptimizer,
@@ -158,6 +159,10 @@ class VoyageState(BaseModel):
 
     plan_summary: Optional[OptimizationSummary] = None
     is_synthetic_environment: bool = True
+    environment_mode: str = "simulated"
+    arrival_iso: Optional[str] = None
+    waypoint_etas: List[WaypointEta] = Field(default_factory=list)
+    provenance: List[Provenance] = Field(default_factory=list)
 
 
 class VoyageEngine:
@@ -178,6 +183,8 @@ class VoyageEngine:
         sea_ice: Optional[SeaIceModel] = None,
         environment: Optional[EnvironmentModel] = None,
         avoid_icebergs: bool = True,
+        environment_mode: str = "simulated",
+        replay_date: Optional[str] = None,
     ) -> None:
         self.vessel = vessel
         self.ice_class = ice_class
@@ -186,6 +193,8 @@ class VoyageEngine:
         self.env = environment or get_environment()
         self.avoid_icebergs = avoid_icebergs
         self._departure_time_hours = departure_time_hours
+        self.environment_mode = environment_mode
+        self.replay_date = replay_date
 
         departure = departure or datetime.now(timezone.utc)
         env_time = resolve_active_voyage_time(departure, 0.0, None, departure_time_hours)
@@ -210,6 +219,14 @@ class VoyageEngine:
             baseline_route=list(plan.baseline.waypoints) if plan.baseline else [],
             travelled_track=[(plan.origin[0], plan.origin[1])],
             plan_summary=plan,
+            is_synthetic_environment=plan.is_synthetic_environment,
+            environment_mode=plan.environment_mode,
+            arrival_iso=plan.arrival_iso,
+            waypoint_etas=plan.waypoint_etas,
+            provenance=plan.provenance or build_provenance(
+                environment_mode, departure.isoformat(timespec="seconds"),
+                plan.arrival_iso if plan.arrival_iso else departure.isoformat(timespec="seconds"),
+            ),
         )
 
         self._departure = departure
@@ -571,6 +588,8 @@ class VoyageEngine:
             installed_power_kw=self.vessel.installed_power_kw,
             sea_ice=self.sea_ice,
             environment=self.env,
+            environment_mode=self.environment_mode,
+            replay_date=self.replay_date,
         )
         plan = optimizer.optimize_route(
             self._position[0], self._position[1],
@@ -580,8 +599,12 @@ class VoyageEngine:
         )
         route = plan.optimized.waypoints if plan.optimized else plan.waypoints
         self.state.planned_route = list(route)
+        self.state.baseline_route = list(plan.baseline.waypoints) if plan.baseline else []
         self._leg_index = 0
         self.state.reroute_count += 1
+        self.state.arrival_iso = plan.arrival_iso
+        self.state.waypoint_etas = plan.waypoint_etas
+        self.state.provenance = plan.provenance or self.state.provenance
         self._raise(
             "REROUTED", "INFO",
             f"Route re-planned from the present position at +{self.state.sim_hours:.0f} h.",
@@ -606,6 +629,8 @@ def create_voyage(
     route_profile_id: str = "balanced",
     avoid_icebergs: bool = True,
     grid_resolution_deg: float = 0.5,
+    environment_mode: str = "simulated",
+    replay_date: Optional[str] = None,
 ) -> VoyageEngine:
     """Plan a passage and hand back an engine ready to sail it."""
     resolved_class = ice_class or vessel.ice_class
@@ -614,12 +639,18 @@ def create_voyage(
         ice_class=resolved_class,
         weights=weights,
         installed_power_kw=vessel.installed_power_kw,
+        environment_mode=environment_mode,
+        replay_date=replay_date,
     )
+    if departure is None:
+        departure = datetime.now(timezone.utc)
+    departure_iso = departure.isoformat(timespec="seconds")
     plan = optimizer.optimize_route(
         origin[0], origin[1], destination[0], destination[1],
         grid_resolution_deg=grid_resolution_deg,
         departure_time_hours=departure_time_hours,
         avoid_icebergs=avoid_icebergs,
+        departure_iso=departure_iso,
     )
     return VoyageEngine(
         vessel=vessel,
@@ -633,4 +664,6 @@ def create_voyage(
         route_profile_id=route_profile_id,
         weights=weights,
         avoid_icebergs=avoid_icebergs,
+        environment_mode=environment_mode,
+        replay_date=replay_date,
     )

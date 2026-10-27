@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from datetime import datetime
 from typing import Any, Dict, List, Literal, Optional
 
 logger = logging.getLogger(__name__)
@@ -44,12 +45,24 @@ class CreateVoyageRequest(BaseModel):
     departure_time_hours: float = Field(default=0.0, ge=0.0, allow_inf_nan=False)
     grid_resolution_deg: float = Field(default=0.5, ge=0.25, le=2.0)
     avoid_icebergs: bool = True
+    environment_mode: Literal["simulated", "real_ice", "replay"] = Field(
+        default="simulated",
+        description="simulated: synthetic ice; real_ice: latest cached NSIDC observation; replay: observed V6 field for replay_date.",
+    )
+    replay_date: Optional[str] = Field(default=None, description="ISO date (YYYY-MM-DD) for replay mode.")
 
     @field_validator("departure_iso")
     @classmethod
     def _validate_departure_iso(cls, value: Optional[str]) -> Optional[str]:
         if value is not None:
             parse_utc_datetime(value, "departure_iso")
+        return value
+
+    @field_validator("replay_date")
+    @classmethod
+    def _validate_replay_date(cls, value: Optional[str]) -> Optional[str]:
+        if value is not None:
+            datetime.strptime(value, "%Y-%m-%d")
         return value
 
 
@@ -97,6 +110,8 @@ def create(req: CreateVoyageRequest) -> VoyageState:
         vessel_key=req.vessel_key,
         avoid_icebergs=req.avoid_icebergs,
         grid_resolution_deg=req.grid_resolution_deg,
+        environment_mode=req.environment_mode,
+        replay_date=req.replay_date,
     )
     get_store().register(engine)
     return engine.state

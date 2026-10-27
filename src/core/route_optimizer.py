@@ -44,6 +44,7 @@ from __future__ import annotations
 import heapq
 import math
 import time
+from datetime import date, timedelta
 from typing import Dict, List, NamedTuple, Optional, Sequence, Tuple
 
 import numpy as np
@@ -73,6 +74,11 @@ from src.core.polaris_risk import (
     classify_ice_type,
     rio_for_uniform_regime,
     speed_limit_for_rio,
+)
+from src.core.provenance import (
+    Provenance,
+    WaypointEta,
+    build_provenance,
 )
 from src.core.sea_ice import SeaIceModel, get_sea_ice_model
 from src.data.landmask import get_coast_field
@@ -187,6 +193,11 @@ class OptimizationSummary(BaseModel):
         "the difference. No fixed multiplier is applied."
     )
     is_synthetic_environment: bool = True
+    environment_mode: str = "simulated"
+    departure_iso: Optional[str] = None
+    arrival_iso: Optional[str] = None
+    waypoint_etas: List[WaypointEta] = Field(default_factory=list)
+    provenance: List[Provenance] = Field(default_factory=list)
 
 
 class RouteProfile(BaseModel):
@@ -207,6 +218,7 @@ class RouteAlternative(BaseModel):
     warnings: List[str] = Field(default_factory=list)
     search: SearchDiagnostics
     is_synthetic_environment: bool = True
+    environment_mode: str = "simulated"
 
 
 class RouteAlternativesResult(BaseModel):
@@ -217,7 +229,9 @@ class RouteAlternativesResult(BaseModel):
     distinct_alternatives_found: int
     planning_ms: float
     is_synthetic_environment: bool = True
+    environment_mode: str = "simulated"
     environment_provenance: Dict[str, Dict[str, str]] = Field(default_factory=dict)
+    provenance: List[Provenance] = Field(default_factory=list)
 
 
 # --------------------------------------------------------------------------------------
@@ -362,12 +376,16 @@ class FieldCache:
         t0_hours: float,
         sea_ice: SeaIceModel,
         environment: EnvironmentModel,
+        environment_mode: str = "simulated",
+        observed_ice: Optional[object] = None,
     ) -> None:
         self.lat_min, self.lon_min = lat_min, lon_min
         self.lat_step, self.lon_step = lat_step, lon_step
         self.n_lat = int(round((lat_max - lat_min) / lat_step)) + 1
         self.n_lon = int(round((lon_max - lon_min) / lon_step)) + 1
         self.t0 = t0_hours
+        self.environment_mode = environment_mode
+        self.observed_ice = observed_ice
 
         lats = lat_min + np.arange(self.n_lat) * lat_step
         lons_unwrapped = lon_min + np.arange(self.n_lon) * lon_step
@@ -400,8 +418,11 @@ class FieldCache:
         self.wave = np.zeros(shape)
 
         for si, lead in enumerate(self.slice_hours):
-            conc, _ = sea_ice._advected_concentration(lat_g, lon_wrapped, t0_hours, float(lead))
             valid = t0_hours + float(lead)
+            if self.observed_ice is not None:
+                conc = self.observed_ice.concentration_grid(lat_g, lon_wrapped)
+            else:
+                conc, _ = sea_ice._advected_concentration(lat_g, lon_wrapped, t0_hours, float(lead))
             div = sea_ice.divergence(lat_g, lon_wrapped, valid)
             comp = sea_ice.compression_index(div)
             thick, _ = sea_ice.thickness(lat_g, lon_wrapped, valid, conc, comp)
@@ -559,6 +580,8 @@ class PolarRouteOptimizer:
         installed_power_kw: float = 13_500.0,
         sea_ice: Optional[SeaIceModel] = None,
         environment: Optional[EnvironmentModel] = None,
+        environment_mode: str = "simulated",
+        replay_date: Optional[str] = None,
     ) -> None:
         self.vessel = vessel or VesselParameters()
         self.ice_class = ice_class
@@ -566,7 +589,41 @@ class PolarRouteOptimizer:
         self.installed_power_kw = getattr(self.vessel, "installed_power_kw", None) or installed_power_kw
         self.sea_ice = sea_ice or get_sea_ice_model()
         self.env = environment or get_environment()
+        self.environment_mode = environment_mode
+        self.replay_date = replay_date
         self.perf = get_performance(self.vessel, self.installed_power_kw)
+        self._observed_ice = self._load_observed_ice() if environment_mode != "simulated" else None
+
+    # ----------------------------------------------------------- observed ice
+    def _load_observed_ice(self) -> Optional[object]:
+        """Load the NSIDC observation for the current environment mode.
+
+        Returns None when no cached observation is available, so the optimizer
+        falls back to the synthetic model rather than refusing to plan.
+        """
+        if self.environment_mode != "real_ice" and self.environment_mode != "replay":
+            return None
+        try:
+            from src.data.observed_sea_ice import get_observed_observation
+
+            target_date = None
+            if self.environment_mode == "replay" and self.replay_date:
+                target_date = date.fromisoformat(self.replay_date)
+            obs = get_observed_observation(target_date)
+            from src.data.observed_sea_ice import ObservedIceField
+            return ObservedIceField(obs)
+        except Exception:
+            return None
+
+    @property
+    def is_synthetic(self) -> bool:
+        return self._observed_ice is None
+
+    @property
+    def observed_ice_valid_time(self) -> Optional[str]:
+        if self._observed_ice is None:
+            return None
+        return self._observed_ice.valid_date.isoformat()
 
     # ---------------------------------------------------------------- helpers
     def _build_cache(
@@ -595,6 +652,7 @@ class PolarRouteOptimizer:
         cache = FieldCache(
             lat_lo, lat_hi, lon_lo, lon_hi, lat_step, lon_step,
             self.ice_class, self.perf, expected_hours, t0_hours, self.sea_ice, self.env,
+            environment_mode=self.environment_mode, observed_ice=self._observed_ice,
         )
         return cache, dest_lon_unwrapped
 
@@ -943,6 +1001,7 @@ class PolarRouteOptimizer:
         grid_resolution_deg: float = DEFAULT_LAT_STEP,
         departure_time_hours: float = 0.0,
         avoid_icebergs: bool = True,
+        departure_iso: Optional[str] = None,
     ) -> RouteAlternativesResult:
         """Search distinct weighted routes against one shared field cache and iceberg forecast."""
         started = time.perf_counter()
@@ -1046,7 +1105,8 @@ class PolarRouteOptimizer:
                 goal_reached=diagnostics.goal_reached,
                 warnings=warnings,
                 search=diagnostics,
-                is_synthetic_environment=bool(getattr(self.env, "is_synthetic", True)),
+                is_synthetic_environment=self.is_synthetic,
+                environment_mode=self.environment_mode,
             )
             candidates.append(candidate)
 
@@ -1087,7 +1147,9 @@ class PolarRouteOptimizer:
                     departure_time_hours=departure_time_hours,
                     search=diagnostics,
                     warnings=summary_warnings,
-                    is_synthetic_environment=bool(getattr(self.env, "is_synthetic", True)),
+                    is_synthetic_environment=self.is_synthetic,
+                    environment_mode=self.environment_mode,
+                    departure_iso=departure_iso,
                 )
 
         if not any(c.id == "balanced" for c in candidates) and candidates:
@@ -1098,11 +1160,15 @@ class PolarRouteOptimizer:
             omitted_profiles=omitted,
             distinct_alternatives_found=sum(1 for candidate in candidates if candidate.is_feasible),
             planning_ms=round((time.perf_counter() - started) * 1000.0, 1),
-            is_synthetic_environment=bool(getattr(self.env, "is_synthetic", True)),
+            is_synthetic_environment=self.is_synthetic,
+            environment_mode=self.environment_mode,
             environment_provenance={
                 key: DATA_PROVENANCE[key]
                 for key in ("sea_ice_field", "atmosphere_ocean", "iceberg_catalogue", "coastline")
             },
+            provenance=build_provenance(
+                self.environment_mode, departure_iso, self.observed_ice_valid_time or departure_iso
+            ),
         )
 
     def optimize_route(
@@ -1114,6 +1180,7 @@ class PolarRouteOptimizer:
         grid_resolution_deg: float = DEFAULT_LAT_STEP,
         departure_time_hours: float = 0.0,
         avoid_icebergs: bool = True,
+        departure_iso: Optional[str] = None,
     ) -> OptimizationSummary:
         """Plan the passage and measure it against the ice-blind baseline."""
         lat_step = float(np.clip(grid_resolution_deg, 0.25, 2.0))
@@ -1182,6 +1249,24 @@ class PolarRouteOptimizer:
 
         fuel_delta = baseline.total_fuel_burn_tonnes - optimized.total_fuel_burn_tonnes
 
+        eta_iso: Optional[str] = None
+        waypoint_etas: List[WaypointEta] = []
+        if departure_iso is not None:
+            from src.core.environment_time import parse_utc_datetime
+            departure_dt = parse_utc_datetime(departure_iso, "departure_iso")
+            eta_dt = departure_dt + timedelta(hours=optimized.total_transit_hours)
+            eta_iso = eta_dt.isoformat(timespec="seconds")
+            for idx, wp in enumerate(optimized.waypoints):
+                wp_eta = departure_dt + timedelta(hours=wp.cumulative_hours)
+                waypoint_etas.append(
+                    WaypointEta(index=idx, eta_iso=wp_eta.isoformat(timespec="seconds"))
+                )
+
+        valid_time_iso = self.observed_ice_valid_time or departure_iso
+        provenance = build_provenance(
+            self.environment_mode, departure_iso, valid_time_iso
+        )
+
         return OptimizationSummary(
             origin=(start_lat, start_lon),
             destination=(dest_lat, dest_lon),
@@ -1204,9 +1289,15 @@ class PolarRouteOptimizer:
             vessel_name=self.vessel.name,
             ice_class=self.ice_class.value,
             weights=self.weights,
-            departure_time_hours=departure_time_hours,
+             departure_time_hours=departure_time_hours,
             search=opt_diag,
             warnings=warnings,
+            is_synthetic_environment=self.is_synthetic,
+            environment_mode=self.environment_mode,
+            departure_iso=departure_iso,
+            arrival_iso=eta_iso,
+            waypoint_etas=waypoint_etas,
+            provenance=provenance,
         )
 
     @staticmethod
