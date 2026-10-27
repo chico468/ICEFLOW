@@ -534,3 +534,80 @@ def test_tile_api_rejects_concentration_with_mismatched_quality_time(
     )
     assert response.status_code == 424
     assert "same-time status_flag" in response.json()["detail"]
+
+
+def test_layers_api_emits_relative_same_origin_tile_template(monkeypatch: pytest.MonkeyPatch):
+    """The tile template must be a same-origin relative path so it routes through the Vite proxy
+    (and same-origin production hosting) instead of bypassing it as an absolute URL."""
+    monkeypatch.setattr(
+        copernicus_layers,
+        "resolve_environment_layers",
+        lambda _target: {
+            "sea_ice_edge": _layer("sea_ice_edge"),
+            "sea_ice_concentration": _layer("sea_ice_concentration"),
+        },
+    )
+    monkeypatch.setattr(copernicus_tiles, "probe_edge_tile_renderer", lambda _layer: None)
+    response = client.get(
+        "/api/v1/environment/layers",
+        params={
+            "target_time_utc": "2026-10-24T00:00:00Z",
+            "mode": "planning_forecast",
+            "planning_reference_iso": "2026-10-24T00:00:00Z",
+        },
+    )
+    assert response.status_code == 200, response.text
+    edge_template = response.json()["layers"]["sea_ice_edge"]["render_tile_template"]
+    assert isinstance(edge_template, str)
+    # Same-origin: a leading slash, no scheme or host, no loopback address.
+    assert edge_template.startswith("/api/v1/environment/layers/tiles/edge/{z}/{x}/{y}.png")
+    assert "://" not in edge_template
+    assert "127.0.0.1" not in edge_template
+    assert "localhost" not in edge_template
+    assert "target_time_utc=2026-10-24T00%3A00%3A00Z" in edge_template
+    assert "source_valid_time_utc=2026-10-19T00%3A00%3A00Z" in edge_template
+
+
+def test_edge_tile_route_returns_cors_header_when_iceflow_env_dev(monkeypatch: pytest.MonkeyPatch):
+    """Regression for the regional-map CORS bug: with ICEFLOW_ENV=dev the API must emit the CORS
+    header on the Copernicus sea-ice tile route so the browser can fetch it cross-origin, and the
+    relative tile template (tested above) is what makes the production same-origin case work."""
+    from fastapi import FastAPI
+    from fastapi.middleware.cors import CORSMiddleware
+    from src.api import main as main_module
+
+    dev_app = FastAPI()
+    origins = main_module.resolve_cors_origins({"ICEFLOW_ENV": "dev"})
+    assert origins == ["*"]
+    dev_app.add_middleware(
+        CORSMiddleware,
+        allow_origins=origins,
+        allow_credentials=False,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+    dev_app.include_router(copernicus_layers.router)
+
+    monkeypatch.setattr(
+        copernicus_layers,
+        "resolve_environment_layers",
+        lambda _target: {"sea_ice_edge": _layer("sea_ice_edge")},
+    )
+    monkeypatch.setattr(copernicus_tiles, "probe_edge_tile_renderer", lambda _layer: None)
+    monkeypatch.setattr(copernicus_tiles, "render_sea_ice_tile", lambda layer, mode, z, x, y: _png())
+
+    dev_client = TestClient(dev_app)
+    response = dev_client.get(
+        "/api/v1/environment/layers/tiles/edge/3/2/6.png",
+        params={
+            "target_time_utc": "2026-10-24T00:00:00Z",
+            "source_valid_time_utc": "2026-10-19T00:00:00Z",
+        },
+        headers={"Origin": "http://127.0.0.1:5173"},
+    )
+    assert response.status_code == 200, response.text
+    assert response.headers.get("content-type", "").startswith("image/png")
+    assert response.content == _png()
+    # Per the resolve_cors_origins contract, ICEFLOW_ENV=dev expands to "*", which the middleware
+    # reflects on the actual (non-preflight) response when an Origin is sent.
+    assert response.headers.get("access-control-allow-origin") == "*"

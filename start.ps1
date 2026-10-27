@@ -68,6 +68,8 @@ if ($Check) {
 
 # --- serve ---------------------------------------------------------------------------
 Say "Starting the API on http://127.0.0.1:8000  (docs at /docs)"
+Say "ICEFLOW_ENV=dev is set for local development so the API exposes a permissive CORS middleware."
+$env:ICEFLOW_ENV = 'dev'
 $backend = Start-Process -PassThru -NoNewWindow -FilePath "python" `
     -ArgumentList "-m", "uvicorn", "src.api.main:app", "--host", "127.0.0.1", "--port", "8000"
 

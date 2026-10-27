@@ -55,7 +55,8 @@ if [ "$CHECK_ONLY" -eq 1 ]; then
 fi
 
 say "Starting the API on http://127.0.0.1:8000  (docs at /docs)"
-python -m uvicorn src.api.main:app --host 127.0.0.1 --port 8000 &
+say "ICEFLOW_ENV=dev is set for local development so the API exposes a permissive CORS middleware."
+ICEFLOW_ENV=dev python -m uvicorn src.api.main:app --host 127.0.0.1 --port 8000 &
 BACKEND_PID=$!
 
 cleanup() {

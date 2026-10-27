@@ -837,8 +837,9 @@ Sciences and the National Centre for Polar and Ocean Research.
 ### CORS / deployment
 
 - **Same-origin (Render/Docker):** When FastAPI serves `frontend/dist`, no CORS is needed. By default (no `ICEFLOW_CORS_ORIGINS` and `ICEFLOW_ENV` not `dev`), no `CORSMiddleware` is added (same-origin only).
-- **Local dev:** Set `ICEFLOW_ENV=dev` to allow `*` (or use the Vite proxy which is same-origin to the browser). `allow_credentials` is never combined with `*`.
-- **Vercel-hosted frontend calling a separate API:** Set `ICEFLOW_CORS_ORIGINS` to a comma-separated list of allowed origins (e.g. `https://your-app.vercel.app`). If unset in non-dev, same-origin only (will break cross-origin). See `frontend/src/api/client.ts` (`VITE_API_BASE_URL`).
+- **Local dev:** `start.sh` and `start.ps1` set `ICEFLOW_ENV=dev` for the API automatically, which adds a permissive (`allow_origins=["*"]`, `allow_credentials=False`) CORS middleware. The Vite dev proxy also makes `/api` calls same-origin, so the bridge console on `:5173` can reach the API on `:8000` without extra config. `allow_credentials` is never combined with `*`.
+- **Tile URLs are same-origin by default:** Copernicus sea-ice tile templates are emitted by the API as relative `/api/v1/...` paths, so they route through the Vite proxy in dev and through same-origin serving in production. No CORS is required for the tiles themselves in either case.
+- **Vercel-hosted frontend calling a separate API:** Set `VITE_API_BASE_URL` in the frontend build (e.g. `https://iceflow-api.example.com`) so `client.ts` qualifies the relative tile template with that origin. That split deployment also requires the backend to run with `ICEFLOW_CORS_ORIGINS` set to a comma-separated list of allowed origins (e.g. `https://your-app.vercel.app`); without it the tile requests (and all API calls) are same-origin only. `allow_credentials` is only enabled when the origins list does not contain `*`. See `frontend/src/api/client.ts` (`resolveTileTemplate`).
 
 ## Evaluation on real data
 

@@ -27,6 +27,9 @@ frontend/test-results/
 # Local env
 .env.local
 
+# Editor/IDE workspace settings
+.vscode/
+
 # Models
 *.joblib
 

@@ -19,6 +19,7 @@ import type { RegionalContext, FlatRing } from '../api/types';
 import type { RouteProfileId } from '../api/types';
 import type { IcebergProfile, ObservedIceberg } from '../api/types';
 import { useEnvironmentLayers, useRegionalContext } from '../api/queries';
+import { resolveTileTemplate } from '../api/client';
 import { MapToolbar, ToolButton } from '../components/MapToolbar';
 import { useReducedMotion } from '../hooks/useReducedMotion';
 import {
@@ -49,6 +50,7 @@ const WIND_SOURCE_LAYER = '10winds';
 const WIND_BAND_TOLERANCE_HOURS = 6;
 const SEA_ICE_EDGE_LAYER_ID = 'regional-copernicus-sea-ice-edge-layer';
 const SEA_ICE_TILE_SIZE = 256;
+const SEA_ICETILE_ERROR_THRESHOLD = 5;
 const EMPTY: FeatureCollection = { type: 'FeatureCollection', features: [] };
 const REGIONAL_SHIP_ICON = 'regional-ship-icon';
 const REGIONAL_SIM_ICEBERG_ICON = 'regional-sim-iceberg-icon';
@@ -524,9 +526,12 @@ function syncSeaIceLayers(
   for (const item of desiredLayers) {
     const { tileTemplate, maxZoom, id, layerId } = item;
     if (!tileTemplate || maxZoom === null) continue;
+    // Resolve the same-origin tile template. When VITE_API_BASE_URL is set the relative path is
+    // qualified with that origin; otherwise it routes through the Vite dev proxy / same-origin host.
+    const resolvedTileTemplate = resolveTileTemplate(tileTemplate) ?? tileTemplate;
     const source: RasterSourceSpecification = {
       type: 'raster',
-      tiles: [tileTemplate],
+      tiles: [resolvedTileTemplate],
       tileSize: SEA_ICE_TILE_SIZE,
       maxzoom: maxZoom,
     };
@@ -953,6 +958,9 @@ export function RegionalMap({
   const [windError, setWindError] = useState<string | null>(null);
   const [seaIceRenderStatus, setSeaIceRenderStatus] = useState<SeaIceRenderStatus>('loading');
   const [seaIceTileError, setSeaIceTileError] = useState<string | null>(null);
+  const seaIceErrorCountRef = useRef(0);
+  const seaIceDisabledRef = useRef(false);
+  const seaIceDisabledTemplateRef = useRef<string | null>(null);
   const windErrorRef = useRef<string | null>(null);
   const seaIceSelectionRef = useRef(seaIceSelection);
   const activeSeaIceSourceRef = useRef<ActiveSeaIceSource[]>([]);
@@ -1003,12 +1011,57 @@ export function RegionalMap({
     if (import.meta.env.DEV) console.error(`[RegionalMap] Mapbox resource error: ${safeReason}`);
   }, []);
 
+  const handleSeaIceTileError = useCallback((reason: string): void => {
+    const token = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN?.trim() ?? '';
+    const safeReason = safeMapDiagnostic(
+      reason.trim() || 'The Copernicus WMTS overlay tile failed to load.',
+      token,
+    );
+    seaIceErrorCountRef.current += 1;
+    if (seaIceErrorCountRef.current >= SEA_ICETILE_ERROR_THRESHOLD) {
+      // Mapbox re-requests a failed raster tile on every rendered frame. The wind particle layer
+      // keeps the map rendering continuously, so without a backstop a CORS or 429 failure becomes a
+      // per-frame request storm to the tile endpoint. After N consecutive failures, remove the
+      // source so it stops being requested; it is only restored when the selected observation
+      // changes (which changes its tile template).
+      if (!seaIceDisabledRef.current) {
+        seaIceDisabledRef.current = true;
+        const map = mapRef.current;
+        if (map) {
+          for (const source of activeSeaIceSourceRef.current) {
+            if (map.getLayer(source.layerId)) map.removeLayer(source.layerId);
+            if (map.getSource(source.id)) map.removeSource(source.id);
+          }
+        }
+        activeSeaIceSourceRef.current = [];
+        setSeaIceTileError(`Sea-ice overlay unavailable (${safeReason}). Tiles are no longer being requested.`);
+        setSeaIceRenderStatus('unavailable');
+        // Log once per disable event, not once per failed tile.
+        if (import.meta.env.DEV) console.error(`[RegionalMap] Sea-ice overlay disabled after ${SEA_ICETILE_ERROR_THRESHOLD} consecutive tile errors: ${safeReason}`);
+      }
+      return;
+    }
+    setSeaIceTileError(safeReason);
+    setSeaIceRenderStatus('error');
+  }, []);
+
   const syncSeaIce = useCallback((map: MapboxMap): void => {
     const token = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN?.trim() ?? '';
+    const selection = seaIceSelectionRef.current;
+    // While a source is disabled by repeated failures, keep it suppressed for the same selection
+    // and re-attempt only when the selected observation (and therefore its tile template) changes.
+    if (seaIceDisabledRef.current && seaIceDisabledTemplateRef.current === selection.tileTemplate) {
+      return;
+    }
     try {
       setSeaIceTileError(null);
-      const status = syncSeaIceLayers(map, seaIceSelectionRef.current, activeSeaIceSourceRef);
+      seaIceErrorCountRef.current = 0;
+      if (seaIceDisabledRef.current) {
+        seaIceDisabledRef.current = false;
+      }
+      const status = syncSeaIceLayers(map, selection, activeSeaIceSourceRef);
       setSeaIceRenderStatus(status);
+      seaIceDisabledTemplateRef.current = selection.tileTemplate ?? null;
     } catch (error) {
       const reason = error instanceof Error ? error.message : 'Unknown Copernicus tile error.';
       setSeaIceTileError(safeMapDiagnostic(reason, token));
@@ -1117,13 +1170,15 @@ export function RegionalMap({
         }
         if (activeSeaIceSourceRef.current.some((source) => source.id === event.sourceId)) {
           if (event.sourceDataType === 'error') {
-            setSeaIceTileError('The Copernicus WMTS overlay tile failed to load. The basemap remains available.');
-            setSeaIceRenderStatus('error');
+            handleSeaIceTileError('The Copernicus WMTS overlay tile failed to load.');
           } else if (
             event.isSourceLoaded
             && event.sourceDataType !== 'metadata'
             && event.sourceDataType !== 'visibility'
           ) {
+            // A successfully loaded tile resets the consecutive-error counter so a one-off blip
+            // does not trip the disable backstop.
+            seaIceErrorCountRef.current = 0;
             setSeaIceRenderStatus(
               seaIceSelectionRef.current.status === 'stale' ? 'stale' : 'ready',
             );
@@ -1141,11 +1196,7 @@ export function RegionalMap({
             (source) => source.id === eventSourceId || message.includes(source.id),
           )
         ) {
-          const tokenValue = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN?.trim() ?? '';
-          const safeMessage = safeMapDiagnostic(message, tokenValue);
-          setSeaIceTileError(safeMessage);
-          setSeaIceRenderStatus('error');
-          if (import.meta.env.DEV) console.error(`[RegionalMap] Copernicus WMTS overlay error: ${safeMessage}`);
+          handleSeaIceTileError(message);
           return;
         }
         if ([WIND_SOURCE_ID, WIND_LAYER_ID, WIND_SOURCE_URL, 'raster-array', 'raster-particle'].some((key) => message.includes(key))) {

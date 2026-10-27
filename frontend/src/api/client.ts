@@ -38,21 +38,39 @@ import type {
 } from './types';
 
 /** API origin, or '' for same-origin. Baked in at build time by Vite. */
-const API_ORIGIN = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/+$/, '');
+const API_ORIGIN = (import.meta.env?.VITE_API_BASE_URL ?? '').replace(/\/+$/, '');
 
 export const API_BASE = `${API_ORIGIN}/api/v1`;
 
 /** True when the bundle is pointed at a different host than the one serving it. */
 export const IS_CROSS_ORIGIN = API_ORIGIN !== '';
 
+/**
+ * Qualify a backend-issued, same-origin tile template for a Mapbox raster source.
+ *
+ * The backend always emits Copernicus tile templates as relative `/api/v1/...` paths so they route
+ * through the Vite dev proxy (and through same-origin production hosting). When the frontend bundle
+ * is hosted on a separate origin from the API (`VITE_API_BASE_URL` is set), the relative path must
+ * be prefixed with that origin, otherwise Mapbox would request the tiles from the bundle's own host.
+ * That split deployment also requires the backend to run with `ICEFLOW_CORS_ORIGINS` covering the
+ * bundle's origin.
+ */
+export function resolveTileTemplate(
+  template: string | null | undefined,
+  apiOrigin: string = API_ORIGIN,
+): string | null {
+  if (!template) return null;
+  return apiOrigin ? `${apiOrigin}${template}` : template;
+}
+
 export class ApiError extends Error {
-  constructor(
-    message: string,
-    readonly status: number,
-    readonly path: string,
-  ) {
+  readonly status: number;
+  readonly path: string;
+  constructor(message: string, status: number, path: string) {
     super(message);
     this.name = 'ApiError';
+    this.status = status;
+    this.path = path;
   }
 }
 

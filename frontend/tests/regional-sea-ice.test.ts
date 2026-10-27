@@ -45,7 +45,7 @@ function layer(
     style,
     tile_max_zoom: 10,
     tile_template: `https://wmts.example/tiles?style=${encodeURIComponent(style)}&tilematrix={z}&tilecol={x}&tilerow={y}&time=${validTime}`,
-    render_tile_template: `http://127.0.0.1:8000/api/v1/environment/layers/tiles/${mode}/{z}/{x}/{y}.png?target_time_utc=2026-10-24T00%3A00%3A00Z&source_valid_time_utc=${validTime}`,
+    render_tile_template: `/api/v1/environment/layers/tiles/${mode}/{z}/{x}/{y}.png?target_time_utc=2026-10-24T00%3A00%3A00Z&source_valid_time_utc=${validTime}`,
     render_quality_layer: 'osisaf-example-dataset/status_flag',
     render_quality_style: 'cmap:rainbow',
     render_quality_valid_time_utc: validTime,

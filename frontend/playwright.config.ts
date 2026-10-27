@@ -33,6 +33,7 @@ export default defineConfig({
   webServer: [
     {
       command: `${PYTHON} -m uvicorn src.api.main:app --host 127.0.0.1 --port 8000`,
+      env: { ICEFLOW_ENV: 'dev' },
       cwd: '..',
       url: 'http://127.0.0.1:8000/api/v1/health',
       reuseExistingServer: true,

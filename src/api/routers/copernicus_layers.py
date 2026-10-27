@@ -161,16 +161,19 @@ def _render_tile_template(
     target: datetime,
     source_time: datetime,
 ) -> str:
-    sample_url = str(
-        request.url_for(
-            "copernicus_sea_ice_tile",
-            mode=mode,
-            z=0,
-            x=0,
-            y=0,
-        )
+    # Emit a same-origin relative path (no scheme or host) rather than the absolute request URL.
+    # The bridge console is developed on a different origin from this API, where an absolute URL
+    # would bypass the Vite dev proxy and trigger a CORS failure. A relative /api/v1/... path
+    # routes through the Vite proxy (dev) and same-origin hosting (production). When the frontend
+    # bundle is hosted on a separate origin, `client.ts` qualifies this path with VITE_API_BASE_URL.
+    sample = request.url_for(
+        "copernicus_sea_ice_tile",
+        mode=mode,
+        z=0,
+        x=0,
+        y=0,
     )
-    tile_path = sample_url.rsplit("/0/0/0.png", 1)[0] + "/{z}/{x}/{y}.png"
+    tile_path = sample.path.rsplit("/0/0/0.png", 1)[0] + "/{z}/{x}/{y}.png"
     target_parameter = quote(target.isoformat().replace("+00:00", "Z"), safe="")
     source_parameter = quote(source_time.isoformat().replace("+00:00", "Z"), safe="")
     return (
