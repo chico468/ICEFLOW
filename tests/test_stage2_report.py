@@ -19,7 +19,7 @@ import numpy as np
 import pytest
 
 
-REPORT_PATH = Path(__file__).resolve().parents[2] / "models" / "eval" / "real_sic_report.json"
+REPORT_PATH = Path(__file__).resolve().parents[1] / "models" / "eval" / "real_sic_report.json"
 SEASONS = ("all", "austral_departure")
 SECTORS = (
     "Weddell Sea", "Indian Ocean", "Western Pacific", "Ross Sea",
