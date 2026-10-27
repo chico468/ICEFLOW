@@ -598,22 +598,45 @@ class PolarRouteOptimizer:
     def _load_observed_ice(self) -> Optional[object]:
         """Load the NSIDC observation for the current environment mode.
 
-        Returns None when no cached observation is available, so the optimizer
-        falls back to the synthetic model rather than refusing to plan.
-        """
-        if self.environment_mode != "real_ice" and self.environment_mode != "replay":
-            return None
-        try:
-            from src.data.observed_sea_ice import get_observed_observation
+        The fall-back to the synthetic model is never silent:
 
-            target_date = None
-            if self.environment_mode == "replay" and self.replay_date:
-                target_date = date.fromisoformat(self.replay_date)
-            obs = get_observed_observation(target_date)
-            from src.data.observed_sea_ice import ObservedIceField
-            return ObservedIceField(obs)
-        except Exception:
+        * ``replay`` is a hard request for the observation of a single dated
+          day. A missing ``replay_date`` or a date with no cached file raises
+          :class:`NSIDCUnavailableError`, which the API layer turns into a 4xx
+          response. Replay never degrades to synthetic ice.
+        * ``real_ice`` walks the cache back up to 14 days. If no observation is
+          found at all the planner falls back to the synthetic model, but it is
+          an explicit fall-back: ``is_synthetic`` is true and the sea-ice
+          provenance is labelled ``simulated`` (see :func:`build_provenance`),
+          so the caller can never mistake synthetic ice for a real observation.
+        """
+        if self.environment_mode not in ("real_ice", "replay"):
             return None
+        from src.data.observed_sea_ice import (
+            NSIDCUnavailableError,
+            ObservedIceField,
+            get_observed_observation,
+        )
+        if self.environment_mode == "replay" and not self.replay_date:
+            raise NSIDCUnavailableError(
+                "environment_mode 'replay' requires replay_date (YYYY-MM-DD)."
+            )
+        target_date = (
+            date.fromisoformat(self.replay_date)
+            if self.environment_mode == "replay"
+            else None
+        )
+
+        try:
+            obs = get_observed_observation(target_date)
+        except NSIDCUnavailableError:
+            # Replay demanded a specific day that is not available: fail loudly.
+            if self.environment_mode == "replay":
+                raise
+            # real_ice with no recent observation: fall back to the synthetic
+            # model, surfaced explicitly through is_synthetic / provenance below.
+            return None
+        return ObservedIceField(obs)
 
     @property
     def is_synthetic(self) -> bool:
@@ -1167,7 +1190,8 @@ class PolarRouteOptimizer:
                 for key in ("sea_ice_field", "atmosphere_ocean", "iceberg_catalogue", "coastline")
             },
             provenance=build_provenance(
-                self.environment_mode, departure_iso, self.observed_ice_valid_time or departure_iso
+                self.environment_mode, departure_iso, self.observed_ice_valid_time or departure_iso,
+                has_observed_ice=self._observed_ice is not None,
             ),
         )
 
@@ -1264,7 +1288,8 @@ class PolarRouteOptimizer:
 
         valid_time_iso = self.observed_ice_valid_time or departure_iso
         provenance = build_provenance(
-            self.environment_mode, departure_iso, valid_time_iso
+            self.environment_mode, departure_iso, valid_time_iso,
+            has_observed_ice=self._observed_ice is not None,
         )
 
         return OptimizationSummary(

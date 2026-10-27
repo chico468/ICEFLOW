@@ -1,10 +1,10 @@
 """Icebergs, route planning and route comparison."""
 from __future__ import annotations
 
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional, Tuple
 
 from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from src.core.constants import DATA_PROVENANCE, ICEBERG_EXCLUSION_RADIUS_NM
 from src.core.environment_time import parse_utc_datetime, resolve_iceberg_target_time
@@ -25,10 +25,34 @@ from src.core.route_optimizer import (
     RouteWeights,
 )
 from src.data.icebergs import get_iceberg_profiles, get_profile
+from src.data.nsidc_sea_ice import NSIDCUnavailableError
 from src.data.observed_icebergs import load_snapshot as load_observed_icebergs
 from src.data.stations import resolve_endpoint
 
 router = APIRouter(prefix="/api/v1", tags=["navigation"])
+
+
+def _build_optimizer(req: RouteRequest) -> Tuple[PolarRouteOptimizer, Tuple[float, float], Tuple[float, float]]:
+    """Resolve endpoints and construct the planner, turning observational data failures into 4xx.
+
+    Returns (optimizer, start, dest).
+    """
+    start, dest, vessel = _resolve_request(req)
+    try:
+        optimizer = PolarRouteOptimizer(
+            vessel=vessel,
+            ice_class=req.ice_class,
+            weights=req.weights,
+            installed_power_kw=vessel.installed_power_kw,
+            environment_mode=req.environment_mode,
+            replay_date=req.replay_date,
+        )
+    except NSIDCUnavailableError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=f"environment_mode='{req.environment_mode}' could not be honoured: {exc}",
+        ) from exc
+    return optimizer, start, dest
 
 
 # -------------------------------------------------------------------------- icebergs
@@ -201,6 +225,12 @@ class RouteRequest(BaseModel):
             datetime.strptime(value, "%Y-%m-%d")
         return value
 
+    @model_validator(mode="after")
+    def _require_replay_date(self) -> "RouteRequest":
+        if self.environment_mode == "replay" and not self.replay_date:
+            raise ValueError("replay_date is required when environment_mode is 'replay'.")
+        return self
+
 
 def _resolve_request(req: RouteRequest):
     start = (req.start_lat, req.start_lon)
@@ -228,17 +258,9 @@ def optimize(req: RouteRequest) -> OptimizationSummary:
     Both routes are then sailed through identical physics; the saving is the difference. No fixed
     multiplier is applied anywhere in this endpoint.
     """
-    start, dest, vessel = _resolve_request(req)
-    optimizer = PolarRouteOptimizer(
-        vessel=vessel,
-        ice_class=req.ice_class,
-        weights=req.weights,
-        installed_power_kw=vessel.installed_power_kw,
-        environment_mode=req.environment_mode,
-        replay_date=req.replay_date,
-    )
+    optimizer, (start_lat, start_lon), (dest_lat, dest_lon) = _build_optimizer(req)
     return optimizer.optimize_route(
-        start[0], start[1], dest[0], dest[1],
+        start_lat, start_lon, dest_lat, dest_lon,
         grid_resolution_deg=req.grid_resolution_deg,
         departure_time_hours=req.departure_time_hours,
         avoid_icebergs=req.avoid_icebergs,
@@ -249,17 +271,9 @@ def optimize(req: RouteRequest) -> OptimizationSummary:
 @router.post("/route/alternatives", response_model=RouteAlternativesResult)
 def alternatives(req: RouteRequest) -> RouteAlternativesResult:
     """Compare distinct objective profiles using one shared environmental cache and iceberg forecast."""
-    start, dest, vessel = _resolve_request(req)
-    optimizer = PolarRouteOptimizer(
-        vessel=vessel,
-        ice_class=req.ice_class,
-        weights=req.weights,
-        installed_power_kw=vessel.installed_power_kw,
-        environment_mode=req.environment_mode,
-        replay_date=req.replay_date,
-    )
+    optimizer, (start_lat, start_lon), (dest_lat, dest_lon) = _build_optimizer(req)
     return optimizer.optimize_alternatives(
-        start[0], start[1], dest[0], dest[1],
+        start_lat, start_lon, dest_lat, dest_lon,
         grid_resolution_deg=req.grid_resolution_deg,
         departure_time_hours=req.departure_time_hours,
         avoid_icebergs=req.avoid_icebergs,
@@ -275,24 +289,19 @@ def compare(req: RouteRequest) -> Dict[str, Any]:
     The great circle is included because it is what a naive distance calculation would suggest,
     and it is usually not navigable at all - which is itself worth showing.
     """
-    start, dest, vessel = _resolve_request(req)
-    optimizer = PolarRouteOptimizer(
-        vessel=vessel, ice_class=req.ice_class, weights=req.weights,
-        installed_power_kw=vessel.installed_power_kw,
-        environment_mode=req.environment_mode,
-        replay_date=req.replay_date,
-    )
+    optimizer, (start_lat, start_lon), (dest_lat, dest_lon) = _build_optimizer(req)
     summary = optimizer.optimize_route(
-        start[0], start[1], dest[0], dest[1],
+        start_lat, start_lon, dest_lat, dest_lon,
         grid_resolution_deg=req.grid_resolution_deg,
         departure_time_hours=req.departure_time_hours,
         avoid_icebergs=req.avoid_icebergs,
         departure_iso=req.departure_iso,
     )
 
-    cache, _ = optimizer._build_cache(start, dest, req.departure_time_hours,
+    cache, _ = optimizer._build_cache((start_lat, start_lon), (dest_lat, dest_lon),
+                                      req.departure_time_hours,
                                       req.grid_resolution_deg, req.grid_resolution_deg * 2.0)
-    gc_points = great_circle_path(start[0], start[1], dest[0], dest[1], 60)
+    gc_points = great_circle_path(start_lat, start_lon, dest_lat, dest_lon, 60)
     great_circle = optimizer.evaluate(cache, gc_points, "Great circle (ignores land and ice)",
                                       req.departure_time_hours)
 

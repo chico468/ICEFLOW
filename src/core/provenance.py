@@ -65,39 +65,40 @@ def observed_provenance(valid_time_iso: str, source: str, product: Optional[str]
     )
 
 
-def build_provenance(environment_mode: str, departure_iso: Optional[str], valid_time_iso: Optional[str] = None) -> List[Provenance]:
-    """Build the provenance list for a route based on the environment mode."""
-    if environment_mode == "simulated":
-        return [
-            simulated_provenance(valid_time_iso=valid_time_iso or departure_iso),
-            Provenance(
-                layer="atmosphere_ocean",
-                kind="simulated",
-                source="synthetic Southern Ocean forcing",
-                valid_time=valid_time_iso or departure_iso,
-                age_hours=_age_hours(valid_time_iso or departure_iso),
-            ),
-            Provenance(
-                layer="iceberg_catalogue",
-                kind="real-seed",
-                source="US National Ice Center Antarctic iceberg tracking database",
-                product="real berg names and calving origins; positions are seeded then propagated by the drift model",
-            ),
-        ]
-    # real_ice or replay
-    return [
-        observed_provenance(
-            valid_time_iso=valid_time_iso or (departure_iso or ""),
+def build_provenance(
+    environment_mode: str,
+    departure_iso: Optional[str],
+    valid_time_iso: Optional[str] = None,
+    has_observed_ice: bool = True,
+) -> List[Provenance]:
+    """Build the provenance list for a route based on the environment mode.
+
+    ``has_observed_ice`` makes the distinction between a real observation that
+    was actually loaded and a ``real_ice`` request that fell back to the
+    synthetic model. A fall-back is labelled ``simulated`` here, so the response
+    never silently presents synthetic ice as observed.
+    """
+    sea_ice_is_observed = (
+        environment_mode in ("real_ice", "replay") and has_observed_ice
+    )
+    valid = valid_time_iso or departure_iso
+    if sea_ice_is_observed:
+        sea_ice = observed_provenance(
+            valid_time_iso=valid or "",
             source="NOAA/NSIDC CDR G02202 Version 6",
             product="G02202 daily Antarctic sea-ice concentration",
-        ),
+        )
+    else:
+        sea_ice = simulated_provenance(valid_time_iso=valid)
+    return [
+        sea_ice,
         Provenance(
             layer="atmosphere_ocean",
             kind="simulated",
             source="synthetic Southern Ocean forcing",
             note="Wind and waves remain simulated in real-ice modes.",
-            valid_time=valid_time_iso or departure_iso,
-            age_hours=_age_hours(valid_time_iso or departure_iso),
+            valid_time=valid,
+            age_hours=_age_hours(valid),
         ),
         Provenance(
             layer="iceberg_catalogue",

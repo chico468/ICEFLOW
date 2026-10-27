@@ -157,7 +157,11 @@ def test_optimize_route_without_departure_iso_has_no_eta():
 
 
 def test_optimize_route_real_ice_falls_back_to_synthetic(tmp_path, monkeypatch):
-    """When no cached NSIDC data exists, real_ice mode falls back to synthetic."""
+    """When no cached NSIDC data exists, real_ice mode falls back to synthetic.
+
+    The fall-back is *explicit* and never silent: is_synthetic is True and the
+    sea-ice provenance is labelled 'simulated', never 'observed'.
+    """
     monkeypatch.setenv("ICEFLOW_NSIDC_CACHE_DIR", str(tmp_path))
     optimizer = PolarRouteOptimizer(
         ice_class=IceClass.PC5,
@@ -165,6 +169,36 @@ def test_optimize_route_real_ice_falls_back_to_synthetic(tmp_path, monkeypatch):
     )
     assert optimizer._observed_ice is None
     assert optimizer.is_synthetic is True
+
+    summary = optimizer.optimize_route(
+        -58.0, 70.0, -69.0, 76.0,
+        departure_iso="2024-01-15T00:00:00+00:00",
+    )
+    assert summary.environment_mode == "real_ice"
+    assert summary.is_synthetic_environment is True
+    sea_kinds = [p.kind for p in summary.provenance if p.layer == "sea_ice_field"]
+    assert sea_kinds == ["simulated"]
+    assert not any(p.kind == "observed" for p in summary.provenance if p.layer == "sea_ice_field")
+
+
+def test_replay_missing_date_raises(tmp_path, monkeypatch):
+    """replay without a replay_date is a hard error, not a synthetic fallback."""
+    monkeypatch.setenv("ICEFLOW_NSIDC_CACHE_DIR", str(tmp_path))
+    from src.data.nsidc_sea_ice import NSIDCUnavailableError
+    with pytest.raises(NSIDCUnavailableError):
+        PolarRouteOptimizer(ice_class=IceClass.PC5, environment_mode="replay")
+
+
+def test_replay_date_not_in_cache_raises(tmp_path, monkeypatch):
+    """replay with a replay_date that has no cached observation is a hard error."""
+    monkeypatch.setenv("ICEFLOW_NSIDC_CACHE_DIR", str(tmp_path))
+    from src.data.nsidc_sea_ice import NSIDCUnavailableError
+    with pytest.raises(NSIDCUnavailableError):
+        PolarRouteOptimizer(
+            ice_class=IceClass.PC5,
+            environment_mode="replay",
+            replay_date="2024-01-15",
+        )
 
 
 def test_optimize_route_replay_uses_observed_ice(tmp_path, monkeypatch):
@@ -456,3 +490,87 @@ def test_route_optimize_rejects_invalid_replay_date():
         },
     )
     assert r.status_code == 422
+
+
+def test_route_optimize_replay_missing_date_returns_4xx(tmp_path, monkeypatch):
+    """replay without a replay_date returns a clear 4xx error, never a synthetic plan."""
+    monkeypatch.setenv("ICEFLOW_NSIDC_CACHE_DIR", str(tmp_path))
+    r = client.post(
+        "/api/v1/route/optimize",
+        json={
+            "start_lat": -58.0,
+            "start_lon": 70.0,
+            "dest_lat": -69.0,
+            "dest_lon": 76.0,
+            "ice_class": "PC5",
+            "environment_mode": "replay",
+            "departure_iso": "2024-01-15T00:00:00+00:00",
+        },
+    )
+    assert 400 <= r.status_code < 500
+    detail = r.json()["detail"]
+    if isinstance(detail, list):
+        text = " ".join(json.dumps(d, default=str) for d in detail)
+    else:
+        text = str(detail)
+    assert "replay_date" in text.lower()
+
+
+def test_route_optimize_replay_date_not_in_cache_returns_4xx(tmp_path, monkeypatch):
+    """replay with a replay_date that has no cached observation returns a 4xx error."""
+    monkeypatch.setenv("ICEFLOW_NSIDC_CACHE_DIR", str(tmp_path))
+    r = client.post(
+        "/api/v1/route/optimize",
+        json={
+            "start_lat": -58.0,
+            "start_lon": 70.0,
+            "dest_lat": -69.0,
+            "dest_lon": 76.0,
+            "ice_class": "PC5",
+            "environment_mode": "replay",
+            "replay_date": "2024-01-15",
+            "departure_iso": "2024-01-15T00:00:00+00:00",
+        },
+    )
+    assert 400 <= r.status_code < 500
+
+
+def test_route_optimize_real_ice_no_observation_is_explicit_synthetic(tmp_path, monkeypatch):
+    """real_ice with no observation returns an explicit synthetic response (never silent)."""
+    monkeypatch.setenv("ICEFLOW_NSIDC_CACHE_DIR", str(tmp_path))
+    r = client.post(
+        "/api/v1/route/optimize",
+        json={
+            "start_lat": -58.0,
+            "start_lon": 70.0,
+            "dest_lat": -69.0,
+            "dest_lon": 76.0,
+            "ice_class": "PC5",
+            "environment_mode": "real_ice",
+            "departure_iso": "2024-01-15T00:00:00+00:00",
+        },
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["environment_mode"] == "real_ice"
+    assert body["is_synthetic_environment"] is True
+    sea = [p for p in body["provenance"] if p["layer"] == "sea_ice_field"]
+    assert sea and sea[0]["kind"] == "simulated"
+    assert not any(p["kind"] == "observed" for p in body["provenance"] if p["layer"] == "sea_ice_field")
+
+
+def test_create_voyage_replay_missing_date_returns_4xx(tmp_path, monkeypatch):
+    """The voyage endpoint also surfaces a missing replay date as 4xx."""
+    monkeypatch.setenv("ICEFLOW_NSIDC_CACHE_DIR", str(tmp_path))
+    r = client.post(
+        "/api/v1/voyage",
+        json={
+            "origin_id": "cape_town",
+            "destination_id": "bharati",
+            "vessel_key": "vasiliy_golovnin",
+            "ice_class": "PC5",
+            "environment_mode": "replay",
+            "departure_iso": "2024-01-15T00:00:00+00:00",
+        },
+    )
+    assert 400 <= r.status_code < 500

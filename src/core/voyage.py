@@ -226,6 +226,8 @@ class VoyageEngine:
             provenance=plan.provenance or build_provenance(
                 environment_mode, departure.isoformat(timespec="seconds"),
                 plan.arrival_iso if plan.arrival_iso else departure.isoformat(timespec="seconds"),
+                has_observed_ice=environment_mode in ("real_ice", "replay")
+                and not plan.is_synthetic_environment,
             ),
         )
 

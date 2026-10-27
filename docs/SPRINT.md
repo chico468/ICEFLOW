@@ -3,8 +3,20 @@ Goal: honest real-data demo for SIH26059: forecast Antarctic sea-ice concentrati
 Rules: AGENTS.md applies. One branch per task, PR to main, CI green before merge, raw output as evidence. Contract below is binding; changes are additive only.
 
 ## Shared contract (update backend pydantic models and frontend/src/api/types.ts together)
-Provenance = {layer, kind: "observed"|"real_forecast"|"simulated"|"experimental_ml", source, product?, valid_time (UTC iso), age_hours|null}
+Provenance = {layer, kind: "observed"|"real_forecast"|"simulated"|"experimental_ml"|"real-seed", source, product?, valid_time (UTC iso), age_hours|null}
 Every new or changed response carries `provenance: Provenance[]`. The frontend evidence badges render from it.
+
+### Provenance kinds actually in use
+- `"observed"` — real NSIDC G02202 V6 sea-ice concentration (real_ice / replay modes with a cached observation). `src/core/provenance.py:observed_provenance`.
+- `"simulated"` — synthetic sea-ice field or Southern-Ocean atmosphere/ocean forcing. `simulated_provenance` and `build_provenance`. This is also what `real_ice` is reduced to when no cached observation exists (the fall-back is explicit: `is_synthetic_environment=true` and the sea-ice layer kind is `"simulated"`, never `"observed"` — see `_load_observed_ice` / `build_provenance` `has_observed_ice`).
+- `"real-seed"` — **additional kind kept from the contract**. The iceberg catalogue is not an observation of position: real iceberg names and calving origins (`src/core/constants.py` `DATA_PROVENANCE["iceberg_catalogue"]["status"]="real-seed"`) whose positions are seeded then propagated by the RK4 drift model. It must be rendered neither as a real observation nor as synthetic — the frontend must treat it as a distinct `real-seed` class.
+- `"real_forecast"` and `"experimental_ml"` are declared in the `ProvenanceKind` Literal (`src/core/provenance.py:14`) but are not emitted yet. `real_forecast` is reserved for the SIC forecast product (BE-2) and `experimental_ml` for the per-lead residual model (BE-2); both must appear here once those models are promoted.
+
+Where the frontend must handle `real-seed` (no edit required — already additive in `frontend/src/api/types.ts`):
+- `frontend/src/api/types.ts:12` `Provenance.status` union includes `'real-seed'`.
+- `frontend/src/components/ProvenanceBar.tsx:62` filters `real-seed` entries separately from `synthetic` and from genuine `real` observations, so a seeded iceberg is never mis-badged as an observed position.
+- `src/api/main.py` health response `data_provenance` (and `frontend/src/api/types.ts:133` `HealthResponse.data_provenance`) surfaces `iceberg_catalogue` with status `real-seed`.
+
 GET /api/v1/evidence/scorecard -> {generated_at, git_sha, data_source: "real"|"none", product, version, train_years, test_years, rows: [{task: "sic"|"iceberg", lead_days, domain, season, model, rmse|error_km, ci: [lo, hi], skill_vs_baseline, n}], promoted: {sic: {"3": bool, "7": bool, "14": bool}, iceberg: {"1": bool, "3": bool, "7": bool}}, coverage: {lead_days: {target: 0.9, empirical}}, caveats: [str]}
 GET /api/v1/forecast/sic?lead_days=1..14 -> the existing ice-field grid type plus {mean, lo, hi, model: "damped_persistence"|"gbm_residual", model_version, issued_from_date, valid_date, provenance}
 GET /api/v1/icebergs/forecast?name=&lead_days= -> {name, last_obs: {lat, lon, date, source}, predicted: {lat, lon}, radius_km: {p50, p90}, model, provenance}
