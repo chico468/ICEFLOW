@@ -8,31 +8,76 @@
  * Every candidate is searched and evaluated using the same environment and voyage physics.
  * Balanced remains the fixed delta reference, regardless of which route is selected.
  */
-import { useEffect, useState, type ReactNode } from 'react';
-import { AlertTriangle, ArrowRight, ChevronDown, ChevronUp, Play } from 'lucide-react';
+import { useState, type ReactNode } from 'react';
+import {
+  AlertTriangle,
+  ArrowRight,
+  ChevronDown,
+  ChevronUp,
+  Play,
+} from 'lucide-react';
+import {
+  CartesianGrid,
+  Legend,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
 import { getRouteAlternatives } from '../api/client';
-import { useEndpoints, useVessels } from '../api/queries';
+import { useEndpoints, useForecastSkill, useVessels } from '../api/queries';
 import { ChartViews } from '../components/ChartViews';
 import { MapStage } from '../components/MapStage';
-import { Badge, ComputeOverlay, ErrorNote, Select, Slider, Toggle } from '../components/ui';
+import { Badge, ComputeOverlay, EmptyState, ErrorNote, KeyValue, Panel, Select, Slider, Toggle } from '../components/ui';
 import { Explain } from '../components/Explain';
 import { useScene } from '../hooks/useScene';
-import { hoursToDhm, num } from '../lib/format';
+import { hoursToDhm, num, tenths } from '../lib/format';
 import { routeDeltas } from '../lib/routeComparison';
 import { MAP_COLORS, rioColor } from '../map/palette';
 import { useAppStore } from '../store/useAppStore';
 import type { IceClassKey, RouteAlternative, RouteEvaluation, RouteProfileId } from '../api/types';
+import type { LayerToggles } from '../map/MapEngine';
 import { SimulatedNotice } from '../components/SimulatedNotice';
+import { useIcePoint } from '../api/queries';
+import { modeAvailability } from '../map/iceModes';
 
 const ICE_CLASSES: IceClassKey[] = [
   'PC1', 'PC2', 'PC3', 'PC4', 'PC5', 'PC6', 'PC7',
   'IA_Super', 'IA', 'IB', 'IC', 'Not_Ice_Strengthened',
 ];
 
+const LAYER_LABELS: { key: keyof LayerToggles; label: string }[] = [
+  { key: 'iceRaster', label: 'Ice raster' },
+  { key: 'iceEdge', label: 'Ice edge' },
+  { key: 'compression', label: 'Compression' },
+  { key: 'drift', label: 'Drift vectors' },
+  { key: 'icebergs', label: 'Icebergs' },
+  { key: 'windFlow', label: 'Wind (simulated)' },
+  { key: 'currentFlow', label: 'Current (simulated)' },
+  { key: 'observedBergs', label: 'Observed bergs (stale)' },
+  { key: 'land', label: 'Land' },
+  { key: 'graticule', label: 'Graticule' },
+  { key: 'optimisedRoute', label: 'Optimised route' },
+  { key: 'baselineRoute', label: 'Baseline route' },
+  { key: 'track', label: 'Track made good' },
+  { key: 'labels', label: 'Labels' },
+];
+
 export function VoyagePlanner(): JSX.Element {
   const { scene, fitTargets } = useScene();
   const { endpoints, loading: endpointsLoading } = useEndpoints();
   const vessels = useVessels();
+  const leadHours = useAppStore((s) => s.leadHours);
+  const modeAvail = modeAvailability(scene.iceField, leadHours, {
+    field: scene.iceFieldBase,
+    loading: scene.status.baseLoading,
+    error: scene.status.baseError,
+  });
+  const skill = useForecastSkill();
+  const inspect = useAppStore((s) => s.inspect);
+  const point = useIcePoint(inspect?.lat ?? null, inspect?.lon ?? null, leadHours);
 
   const planner = useAppStore((s) => s.planner);
   const setPlanner = useAppStore((s) => s.setPlanner);
@@ -50,16 +95,17 @@ export function VoyagePlanner(): JSX.Element {
   const setInspect = useAppStore((s) => s.setInspect);
   const simpleMode = useAppStore((s) => s.simpleMode);
   const setScreen = useAppStore((s) => s.setScreen);
+  const rasterMode = useAppStore((s) => s.rasterMode);
+  const setRasterMode = useAppStore((s) => s.setRasterMode);
+  const rasterOpacity = useAppStore((s) => s.rasterOpacity);
+  const setRasterOpacity = useAppStore((s) => s.setRasterOpacity);
+  const setLeadHours = useAppStore((s) => s.setLeadHours);
+  const layers = useAppStore((s) => s.layers);
+  const toggleLayer = useAppStore((s) => s.toggleLayer);
 
   const [elapsed, setElapsed] = useState(0);
   const [trayOpen, setTrayOpen] = useState(true);
   const [expandedCandidateId, setExpandedCandidateId] = useState<RouteProfileId | null>(null);
-  // Once a route is planned the command bar shrinks to a one-line summary, giving the chart
-  // back its height. "Edit" reopens it.
-  const [barOpen, setBarOpen] = useState(true);
-  useEffect(() => {
-    if (phase === 'ready') setBarOpen(false);
-  }, [phase]);
 
   const options = endpoints.map((e) => ({
     value: e.id,
@@ -102,12 +148,10 @@ export function VoyagePlanner(): JSX.Element {
   }
 
   const destination = endpoints.find((e) => e.id === planner.destinationId);
-  const originName = endpoints.find((e) => e.id === planner.originId)?.name ?? planner.originId;
-  const shipName = vessels.data?.vessels.find((v) => v.key === planner.vesselKey)?.display_name ?? planner.vesselKey;
 
-  // ------------------------------------------------------------------ the command bar
+  // ------------------------------------------------------------------ the command bar (left dock: Plan tab)
   const bar = (
-    <div className="float px-5 py-3.5">
+    <div className="px-5 py-3.5">
       <div className="flex flex-wrap items-end gap-x-6 gap-y-3">
         <Group title="Passage" subtitle="Origin and destination">
           {endpointsLoading ? (
@@ -171,16 +215,6 @@ export function VoyagePlanner(): JSX.Element {
         <div className="ml-auto flex shrink-0 flex-col items-end gap-1">
           {simpleMode && <span className="display text-[13px] text-ink">Plan the passage</span>}
           <div className="flex items-center gap-2">
-            {plan && (
-              <button
-                type="button"
-                className="btn-icon !h-10 !w-10"
-                aria-label="Collapse the passage controls"
-                onClick={() => setBarOpen(false)}
-              >
-                <ChevronUp size={16} />
-              </button>
-            )}
             <button
               type="button"
               className="btn btn-accent h-10 whitespace-nowrap px-5 text-sm"
@@ -267,40 +301,14 @@ export function VoyagePlanner(): JSX.Element {
     </div>
   );
 
-  const summary = (
-    <div className="float flex items-center gap-4 px-5 py-2.5">
-      <div className="flex min-w-0 flex-1 items-center gap-2 text-sm text-ink">
-        <span className="truncate font-semibold">{originName}</span>
-        <ArrowRight size={14} className="shrink-0 text-ink-3" aria-hidden />
-        <span className="truncate font-semibold">{destination?.name ?? planner.destinationId}</span>
-        <span className="hidden truncate text-xs text-ink-3 md:inline">
-          {shipName} · {planner.iceClass.replace(/_/g, ' ')}
-        </span>
-      </div>
-      <button type="button" className="btn" onClick={() => setBarOpen(true)}>
-        Edit
-      </button>
-      <button
-        type="button"
-        className="btn btn-accent whitespace-nowrap"
-        disabled={phase === 'planning'}
-        onClick={() => void runPlan()}
-      >
-        <Play size={13} />
-        {phase === 'planning' ? 'Planning…' : 'Plan voyage'}
-      </button>
-    </div>
-  );
-  const top = barOpen ? bar : summary;
-
-  // ------------------------------------------------------------------ the result tray
+  // ------------------------------------------------------------------ the result tray (right dock: Routes tab)
   const balancedReference = routeAlternatives.find((candidate) => candidate.id === 'balanced')?.evaluation
     ?? plan?.optimized
     ?? null;
   const selectedCandidate = routeAlternatives.find((candidate) => candidate.id === selectedCandidateId) ?? null;
   const tray = !plan ? (
     <div className="flex justify-center">
-      <div className="float pointer-events-auto px-6 py-3 text-center">
+      <div className="pointer-events-auto px-6 py-3 text-center">
         {phase === 'error' ? (
           <ErrorNote message={planError ?? 'Route comparison could not be completed.'} onRetry={() => void runPlan()} />
         ) : (
@@ -312,7 +320,7 @@ export function VoyagePlanner(): JSX.Element {
       </div>
     </div>
   ) : (
-    <div className="float pointer-events-auto overflow-hidden">
+    <div className="pointer-events-auto overflow-hidden">
       <header className="flex items-center justify-between gap-3 px-5 py-3">
         <div className="flex min-w-0 items-baseline gap-3">
           <h2 className="display truncate text-base text-ink">Compare calculated route options</h2>
@@ -441,7 +449,159 @@ export function VoyagePlanner(): JSX.Element {
     </>
   );
 
-  return <MapStage id="plan" map={map} top={top} tray={tray} />;
+  // ------------------------------------------------------------------ left dock: Plan + Layers
+  const leftDock = (
+    <>
+      <Panel
+        title="Plan"
+        right={phase === 'ready' ? <Badge tone="ok">Ready</Badge> : phase === 'planning' ? <Badge tone="caution">Planning…</Badge> : undefined}
+        className="shrink-0"
+      >
+        {bar}
+      </Panel>
+
+      <Panel title="Layers" subtitle="What the chart draws">
+        <div className="mb-2 flex gap-1">
+          {(['concentration', 'classes', 'change', 'thickness'] as const).map((mode) => (
+            <button
+              key={mode}
+              type="button"
+              title={modeAvail[mode].reason ?? undefined}
+              aria-pressed={rasterMode === mode}
+              aria-disabled={!modeAvail[mode].available}
+              className={`btn flex-1 ${rasterMode === mode ? 'btn-accent' : ''} ${modeAvail[mode].available ? '' : 'opacity-50'}`}
+              onClick={() => setRasterMode(mode)}
+            >
+              {mode}
+            </button>
+          ))}
+        </div>
+        {!modeAvail[rasterMode].available && (
+          <p role="status" className="text-2xs text-warn">
+            {modeAvail[rasterMode].reason} Nothing is drawn for this mode.
+          </p>
+        )}
+        <Slider
+          label="Raster opacity"
+          value={rasterOpacity}
+          min={0.1}
+          max={1}
+          step={0.02}
+          display={num(rasterOpacity * 100, 0) + '%'}
+          onChange={setRasterOpacity}
+        />
+        <Slider
+          label="Forecast time"
+          value={leadHours}
+          min={0}
+          max={168}
+          step={6}
+          display={`+${num(leadHours, 0)} h`}
+          onChange={setLeadHours}
+        />
+        <div className="mt-2 grid grid-cols-2 gap-1">
+          {LAYER_LABELS.map(({ key, label }) => (
+            <Toggle key={key} label={label} checked={layers[key]} onChange={() => toggleLayer(key)} />
+          ))}
+        </div>
+      </Panel>
+    </>
+  );
+
+  // ------------------------------------------------------------------ right dock: Inspect + Routes + Evidence
+  const skillRows = (skill.data?.rows ?? []).map((r) => ({
+    lead: r.lead_hours,
+    forecast: r.rmse,
+    persistence: r.persistence_rmse,
+    iiee: r.iiee_fraction,
+    skillScore: r.skill_score_vs_persistence,
+  }));
+
+  const rightDock = (
+    <>
+      <Panel
+        title="Inspect"
+        subtitle={inspect ? undefined : 'Click the chart'}
+      >
+        {!inspect || !point.data ? (
+          <EmptyState title="Nothing selected" detail="Click anywhere on the chart to read the model there." />
+        ) : (
+          <>
+            <KeyValue label="Position" value={`${num(point.data.lat, 3)}, ${num(point.data.lon, 3)}`} />
+            <KeyValue label="Concentration" value={tenths(point.data.concentration)} />
+            <KeyValue label="Thickness" value={num(point.data.thickness_m, 2)} unit="m" />
+            <KeyValue label="Stage" value={point.data.stage_of_development} />
+            <KeyValue label="Drift" value={`${num(point.data.drift_speed_ms, 3)} m/s → ${num(point.data.drift_dir_to_deg, 0)}°`} />
+            <KeyValue label="Compression" value={num(point.data.compression_index, 2)} />
+            <KeyValue label="Besetting risk" value={point.data.besetting_risk} />
+          </>
+        )}
+      </Panel>
+
+      <Panel
+        title="Routes"
+        right={<Badge tone="accent">{routeAlternatives.length} candidates</Badge>}
+      >
+        {tray}
+      </Panel>
+
+      <Panel
+        title="Evidence"
+        subtitle="Forecast skill vs persistence"
+        right={skill.data ? <Badge tone="accent">simulated</Badge> : undefined}
+      >
+        {skillRows.length === 0 ? (
+          <EmptyState title="No skill data" detail="Backend unreachable." />
+        ) : (
+          <>
+            <div className="h-40">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={skillRows} margin={{ top: 4, right: 6, bottom: 0, left: -18 }}>
+                  <CartesianGrid stroke="rgb(var(--c-hair))" strokeDasharray="2 3" />
+                  <XAxis dataKey="lead" stroke="rgb(var(--c-ink-3))" tick={{ fontSize: 10 }} unit="h" />
+                  <YAxis stroke="rgb(var(--c-ink-3))" tick={{ fontSize: 10 }} />
+                  <Tooltip
+                    contentStyle={{ background: 'rgb(var(--c-panel))', border: '1px solid rgb(var(--c-hair-2))', fontSize: 11 }}
+                    labelStyle={{ color: 'rgb(var(--c-ink-2))' }}
+                  />
+                  <Legend wrapperStyle={{ fontSize: 10 }} />
+                  <Line type="monotone" dataKey="forecast" name="Forecast RMSE" stroke="rgb(var(--c-accent))" dot={false} strokeWidth={2} />
+                  <Line type="monotone" dataKey="persistence" name="Persistence RMSE" stroke="rgb(var(--c-warn))" dot={false} strokeDasharray="4 3" />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+            <table className="mt-2 w-full text-2xs">
+              <thead className="text-ink-3">
+                <tr>
+                  <th className="text-left font-normal">Lead</th>
+                  <th className="text-right font-normal">RMSE</th>
+                  <th className="text-right font-normal">Persist.</th>
+                  <th className="text-right font-normal">Skill</th>
+                  <th className="text-right font-normal">IIEE</th>
+                </tr>
+              </thead>
+              <tbody className="num">
+                {skillRows.map((r) => (
+                  <tr key={r.lead} className="border-t border-hair/60">
+                    <td className="py-0.5 text-left">{num(r.lead, 0)} h</td>
+                    <td className="py-0.5 text-right">{num(r.forecast, 4)}</td>
+                    <td className="py-0.5 text-right text-ink-3">{num(r.persistence, 4)}</td>
+                    <td className={`py-0.5 text-right ${r.skillScore > 0 ? 'text-ok' : 'text-danger'}`}>
+                      {r.skillScore > 0 ? '+' : ''}
+                      {num(r.skillScore, 3)}
+                    </td>
+                    <td className="py-0.5 text-right text-ink-3">{num(r.iiee, 3)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </>
+        )}
+      </Panel>
+    </>
+  );
+
+  return <MapStage id="plan" map={map} leftDock={leftDock} rightDock={rightDock} leftDockLabel="Plan" rightDockLabel="Details" />;
 }
 
 // ----------------------------------------------------------------------------- pieces
