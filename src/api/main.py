@@ -17,6 +17,7 @@ import os
 import threading
 import time
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from typing import Any, AsyncIterator, Dict
 
 from fastapi import FastAPI, HTTPException, Request
@@ -39,6 +40,7 @@ from src.api.routers import observed_ice as observed_ice_router
 from src.api.routers import real_flow as real_flow_router
 from src.api.routers import physics as physics_router
 from src.api.routers import voyages as voyages_router
+from src.api.routers import evidence as evidence_router
 
 def resolve_cors_origins(env: dict[str, str] | None = None) -> list[str] | None:
     if env is None:
@@ -98,7 +100,10 @@ def _warm_caches() -> None:
                     vessel=vessel,
                     ice_class=vessel.ice_class,
                     installed_power_kw=vessel.installed_power_kw,
-                ).optimize_route(origin[0], origin[1], dest[0], dest[1])
+                ).optimize_route(
+                    origin[0], origin[1], dest[0], dest[1],
+                    departure_iso=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                )
 
         _WARMUP.update(
             state="ready",
@@ -160,6 +165,7 @@ app.include_router(navigation_router.router)
 app.include_router(observed_ice_router.router)
 app.include_router(real_flow_router.router)
 app.include_router(voyages_router.router)
+app.include_router(evidence_router.router)
 
 
 @app.get("/", tags=["meta"])
