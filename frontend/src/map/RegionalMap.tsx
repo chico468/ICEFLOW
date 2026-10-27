@@ -21,6 +21,7 @@ import type { IcebergProfile, ObservedIceberg } from '../api/types';
 import { useEnvironmentLayers, useRegionalContext } from '../api/queries';
 import { resolveTileTemplate } from '../api/client';
 import { MapToolbar, ToolButton } from '../components/MapToolbar';
+import { ProvenanceBadge } from '../components/ProvenanceBadge';
 import { useReducedMotion } from '../hooks/useReducedMotion';
 import {
   buildRegionalEnvironmentRequest,
@@ -893,7 +894,7 @@ export function RegionalMap({
   const readoutRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapboxMap | null>(null);
   const pointerPointRef = useRef<[number, number] | null>(null);
-  const windEnabledRef = useRef(true);
+  const windEnabledRef = useRef(false);
   const baseZoomRef = useRef(0);
   const fittedKeyRef = useRef('');
   const regionKeyRef = useRef('');
@@ -952,7 +953,7 @@ export function RegionalMap({
   const regionKey = `${region.lon_min},${region.lon_max},${region.lat_min},${region.lat_max}`;
   const [mapReady, setMapReady] = useState(false);
   const [mapView, setMapView] = useState<{ zoom: number; centre: string } | null>(null);
-  const [windParticlesEnabled, setWindParticlesEnabled] = useState(true);
+  const [windParticlesEnabled, setWindParticlesEnabled] = useState(false);
   const [windSourceStatus, setWindSourceStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [windLayerPresent, setWindLayerPresent] = useState(false);
   const [windError, setWindError] = useState<string | null>(null);
@@ -1693,13 +1694,14 @@ data-wind-source-status={windSourceStatus}
           <>
             <ToolButton
               label="Wind particles"
-              hint="GFS atmospheric wind velocity; not sea-ice drift or ocean currents."
+              hint="GFS atmospheric wind velocity; not sea-ice drift or ocean currents. Off by default."
               onClick={() => setWindParticlesEnabled((enabled) => !enabled)}
               pressed={windParticlesEnabled}
               disabled={!windLayerPresent}
             >
               <Wind size={15} />
             </ToolButton>
+            <ProvenanceBadge status="forecast" size="sm" showIcon={false} title="Wind particles come from the GFS model, not observation" />
           </>,
         ]}
       />
@@ -1772,6 +1774,7 @@ data-wind-source-status={windSourceStatus}
         className="pointer-events-none absolute left-[5%] top-12 z-20 w-[min(300px,calc(100%-3.5rem))] rounded-lg border border-hair bg-panel/95 p-2.5 shadow-lg backdrop-blur"
       >
         <strong className="text-xs text-ink">Observed sea-ice edge</strong>
+        <ProvenanceBadge status="observation" size="sm" showIcon={false} className="ml-1" />
         <div
           role={seaIceStatus === 'error' ? 'alert' : 'status'}
           aria-live="polite"

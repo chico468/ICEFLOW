@@ -14,6 +14,7 @@ import type { RasterMode } from '../map/layers';
 import { useReducedMotion } from '../hooks/useReducedMotion';
 import { useAppStore } from '../store/useAppStore';
 import { Slider, Toggle } from './ui';
+import { ProvenanceBadge, type SourceStatus } from './ProvenanceBadge';
 
 const RASTER_MODES: { mode: RasterMode; label: string; hint: string }[] = [
   { mode: 'concentration', label: 'Concentration', hint: 'Continuous ramp, 0 to 100 percent' },
@@ -22,16 +23,16 @@ const RASTER_MODES: { mode: RasterMode; label: string; hint: string }[] = [
   { mode: 'thickness', label: 'Thickness', hint: 'Ice thickness in metres' },
 ];
 
-type Row = { key: keyof LayerToggles; label: string; hint?: string };
+type Row = { key: keyof LayerToggles; label: string; hint?: string; proven?: SourceStatus };
 
 const GROUPS: { title: string; rows: Row[] }[] = [
   {
     title: 'Sea ice',
     rows: [
-      { key: 'iceRaster', label: 'Ice raster', hint: 'Model grid of sea-ice concentration' },
-      { key: 'iceEdge', label: 'Ice edge' },
-      { key: 'compression', label: 'Compression shading' },
-      { key: 'drift', label: 'Ice drift vectors' },
+      { key: 'iceRaster', label: 'Ice raster', hint: 'Model grid of sea-ice concentration', proven: 'synthetic' },
+      { key: 'iceEdge', label: 'Ice edge', proven: 'synthetic' },
+      { key: 'compression', label: 'Compression shading', proven: 'synthetic' },
+      { key: 'drift', label: 'Ice drift vectors', proven: 'synthetic' },
     ],
   },
   {
@@ -44,8 +45,8 @@ const GROUPS: { title: string; rows: Row[] }[] = [
   {
     title: 'Icebergs',
     rows: [
-      { key: 'icebergs', label: 'Simulated catalogue', hint: 'Seeded and drifted by the model' },
-      { key: 'observedBergs', label: 'Observed snapshot (stale)', hint: 'USNIC-format file; shows its own date and age' },
+      { key: 'icebergs', label: 'Simulated catalogue', hint: 'Seeded and drifted by the model', proven: 'synthetic' },
+      { key: 'observedBergs', label: 'Observed snapshot (stale)', hint: 'USNIC-format file; shows its own date and age', proven: 'observation' },
     ],
   },
   {
@@ -65,11 +66,14 @@ export function MapLayerPanel({
   open,
   onClose,
   availability,
+  view = 'polar',
 }: {
   open: boolean;
   onClose: () => void;
   /** Which ice modes the loaded data supports, and why not. */
   availability: Record<RasterMode, ModeAvailability>;
+  /** 'polar' for the navigation chart (default); 'regional' hides the wind/current block. */
+  view?: 'polar' | 'regional';
 }): JSX.Element | null {
   const layers = useAppStore((s) => s.layers);
   const toggleLayer = useAppStore((s) => s.toggleLayer);
@@ -154,11 +158,13 @@ export function MapLayerPanel({
         </div>
       </div>
 
-      {GROUPS.map((g) => (
+      {GROUPS.filter((g) => !(view === 'regional' && g.title === 'Wind and current')).map((g) => (
         <div key={g.title} className="mb-2">
           <div className="mb-0.5 text-2xs font-medium text-ink">{g.title}</div>
           {g.rows.map((r) => (
-            <Toggle key={r.key} label={r.label} hint={r.hint} checked={layers[r.key]} onChange={() => toggleLayer(r.key)} />
+            <Toggle key={r.key} label={r.label} hint={r.hint} checked={layers[r.key]} onChange={() => toggleLayer(r.key)}>
+              {r.proven && <ProvenanceBadge status={r.proven} size="sm" />}
+            </Toggle>
           ))}
           {g.title === 'Wind and current' && (
             <div className="mt-1.5">

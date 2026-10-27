@@ -290,11 +290,13 @@ export function Toggle({
   checked,
   onChange,
   hint,
+  children,
 }: {
   label: string;
   checked: boolean;
   onChange: (v: boolean) => void;
   hint?: string;
+  children?: ReactNode;
 }): JSX.Element {
   return (
     <button
@@ -318,6 +320,7 @@ export function Toggle({
         />
       </span>
       <span className="truncate">{label}</span>
+      {children}
     </button>
   );
 }

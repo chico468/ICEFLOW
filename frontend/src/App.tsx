@@ -18,6 +18,7 @@
  */
 import { Activity, BarChart3, Layers, Ship, Snowflake } from 'lucide-react';
 import { ProvenanceBar } from './components/ProvenanceBar';
+import { ProvenanceBadge } from './components/ProvenanceBadge';
 import { ScreenActiveContext } from './components/screenActive';
 import { useHealth } from './api/queries';
 import { Analytics } from './screens/Analytics';
@@ -67,7 +68,16 @@ export function App(): JSX.Element {
         </div>
 
         <div className="flex min-w-0 flex-1 justify-center">
-          <ProvenanceBar />
+          {activeScreen === 'planner' || activeScreen === 'bridge' ? (
+            <div className="flex items-center gap-2 text-2xs">
+              <span className="text-ink-3">Regional data:</span>
+              <ProvenanceBadge status="observation" size="sm" source="Copernicus sea-ice edge" />
+              <ProvenanceBadge status="forecast" size="sm" source="GFS wind" />
+              <ProvenanceBadge status="synthetic" size="sm" source="Model iceberg catalogue" />
+            </div>
+          ) : (
+            <ProvenanceBar />
+          )}
         </div>
 
         <div className="flex shrink-0 items-center gap-3">
