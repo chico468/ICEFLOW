@@ -1,0 +1,223 @@
+{
+  "generated_at": "2026-10-28T11:55:48+00:00",
+  "git_sha": "672c5bae50baef9268b9bd65b670a27f9ac1b501",
+  "data_source": "real",
+  "product": "BYU/NIC consolidated Antarctic iceberg database v6",
+  "version": "v6",
+  "train_start_year": 2005,
+  "train_end_year": 2017,
+  "val_year": 2018,
+  "test_start_year": 2019,
+  "test_end_year": 2022,
+  "lead_days": [
+    1,
+    3,
+    7
+  ],
+  "n_tracks_total": 464,
+  "rows": [
+    {
+      "task": "iceberg_drift",
+      "lead_days": 1,
+      "domain": "antarctic_waters",
+      "season": "all",
+      "model": "gbm_residual",
+      "rmse": 81.7936,
+      "ci": [
+        -81.4061,
+        16.3026
+      ],
+      "skill_vs_baseline": 0.32704,
+      "n": 21466,
+      "n_icebergs": 50,
+      "metric": "great_circle_error_km"
+    },
+    {
+      "task": "iceberg_drift",
+      "lead_days": 1,
+      "domain": "antarctic_waters",
+      "season": "all",
+      "model": "no_movement",
+      "rmse": 8.699,
+      "ci": [
+        null,
+        null
+      ],
+      "skill_vs_baseline": null,
+      "n": 21466,
+      "n_icebergs": 50,
+      "metric": "great_circle_error_km"
+    },
+    {
+      "task": "iceberg_drift",
+      "lead_days": 1,
+      "domain": "antarctic_waters",
+      "season": "all",
+      "model": "velocity_3d",
+      "rmse": 121.5438,
+      "ci": [
+        null,
+        null
+      ],
+      "skill_vs_baseline": null,
+      "n": 21466,
+      "n_icebergs": 50,
+      "metric": "great_circle_error_km"
+    },
+    {
+      "task": "iceberg_drift",
+      "lead_days": 3,
+      "domain": "antarctic_waters",
+      "season": "all",
+      "model": "gbm_residual",
+      "rmse": 193.1246,
+      "ci": [
+        43.8858,
+        284.0978
+      ],
+      "skill_vs_baseline": -10.37145,
+      "n": 21347,
+      "n_icebergs": 50,
+      "metric": "great_circle_error_km"
+    },
+    {
+      "task": "iceberg_drift",
+      "lead_days": 3,
+      "domain": "antarctic_waters",
+      "season": "all",
+      "model": "no_movement",
+      "rmse": 22.7588,
+      "ci": [
+        null,
+        null
+      ],
+      "skill_vs_baseline": null,
+      "n": 21347,
+      "n_icebergs": 50,
+      "metric": "great_circle_error_km"
+    },
+    {
+      "task": "iceberg_drift",
+      "lead_days": 3,
+      "domain": "antarctic_waters",
+      "season": "all",
+      "model": "velocity_3d",
+      "rmse": 16.9833,
+      "ci": [
+        null,
+        null
+      ],
+      "skill_vs_baseline": null,
+      "n": 21347,
+      "n_icebergs": 50,
+      "metric": "great_circle_error_km"
+    },
+    {
+      "task": "iceberg_drift",
+      "lead_days": 7,
+      "domain": "antarctic_waters",
+      "season": "all",
+      "model": "gbm_residual",
+      "rmse": 272.9997,
+      "ci": [
+        18.2365,
+        239.8019
+      ],
+      "skill_vs_baseline": -1.21688,
+      "n": 21127,
+      "n_icebergs": 50,
+      "metric": "great_circle_error_km"
+    },
+    {
+      "task": "iceberg_drift",
+      "lead_days": 7,
+      "domain": "antarctic_waters",
+      "season": "all",
+      "model": "no_movement",
+      "rmse": 48.4972,
+      "ci": [
+        null,
+        null
+      ],
+      "skill_vs_baseline": null,
+      "n": 21127,
+      "n_icebergs": 50,
+      "metric": "great_circle_error_km"
+    },
+    {
+      "task": "iceberg_drift",
+      "lead_days": 7,
+      "domain": "antarctic_waters",
+      "season": "all",
+      "model": "velocity_3d",
+      "rmse": 123.146,
+      "ci": [
+        null,
+        null
+      ],
+      "skill_vs_baseline": null,
+      "n": 21127,
+      "n_icebergs": 50,
+      "metric": "great_circle_error_km"
+    }
+  ],
+  "promoted": {
+    "iceberg": {
+      "1": false,
+      "3": false,
+      "7": false
+    }
+  },
+  "coverage": {
+    "1": {
+      "target": 0.9,
+      "empirical": 0.9,
+      "cal_p50_km": 1.9992,
+      "cal_p90_km": 12.902,
+      "cal_radius_km": 12.9106
+    },
+    "3": {
+      "target": 0.9,
+      "empirical": 0.9,
+      "cal_p50_km": 7.6,
+      "cal_p90_km": 32.5321,
+      "cal_radius_km": 32.5713
+    },
+    "7": {
+      "target": 0.9,
+      "empirical": 0.9,
+      "cal_p50_km": 15.2302,
+      "cal_p90_km": 65.8199,
+      "cal_radius_km": 65.8338
+    }
+  },
+  "radii": {
+    "1": {
+      "p50": 1.9992,
+      "p90": 12.902
+    },
+    "3": {
+      "p50": 7.6,
+      "p90": 32.5321
+    },
+    "7": {
+      "p50": 15.2302,
+      "p90": 65.8199
+    }
+  },
+  "evaluation_status": {
+    "trained_on": "real",
+    "operational_skill_validated": false,
+    "used_in_routing": false,
+    "promoted_leads": [],
+    "status": "real_data_training_complete"
+  },
+  "caveats": [
+    "Data: BYU/NIC consolidated Antarctic iceberg database v6 (ftp.mers.byu.edu / www.scp.byu.edu/iceberg).",
+    "Split: train 2005-2017, val 2018, test 2019-2022, by iceberg track time.",
+    "Grounded segments removed: speed below 0.1 kt (GROUNDING_SPEED_THRESHOLD_KNOTS).",
+    "Baseline (b): 3-day constant velocity. ML must beat this with CI-by-iceberg excluding zero.",
+    "Metric: great-circle error in km. Radii: p50/p90 from split-conformal on validation residuals.",
+    "Dates are Julian day YYYYDDD in the source; parsed to ISO for splitting."
+  ]
+}
