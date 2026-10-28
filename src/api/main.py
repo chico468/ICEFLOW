@@ -34,6 +34,7 @@ from src.core.constants import (
 )
 from src.api.routers import environment as environment_router
 from src.api.routers import copernicus_layers as copernicus_layers_router
+from src.api.routers import evidence as evidence_router
 from src.api.routers import geo as geo_router
 from src.api.routers import navigation as navigation_router
 from src.api.routers import observed_ice as observed_ice_router
@@ -160,6 +161,7 @@ if _cors_origins is not None:
 app.include_router(geo_router.router)
 app.include_router(environment_router.router)
 app.include_router(copernicus_layers_router.router)
+app.include_router(evidence_router.router)
 app.include_router(physics_router.router)
 app.include_router(navigation_router.router)
 app.include_router(observed_ice_router.router)
