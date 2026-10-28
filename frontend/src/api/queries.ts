@@ -18,6 +18,7 @@ import type {
   HealthResponse,
   IceField,
   IceState,
+  ScorecardResponse,
   IcebergForecast,
   IcebergsResponse,
   ObservedIcebergsResponse,
@@ -77,6 +78,14 @@ export function useForecastSkill(): UseQueryResult<ForecastSkillResponse> {
     queryKey: ['forecast-skill'],
     queryFn: () => api.getForecastSkill('6,12,24,48,72,120,168'),
     ...FOREVER,
+  });
+}
+
+export function useScorecard(): UseQueryResult<ScorecardResponse> {
+  return useQuery({
+    queryKey: ['evidence-scorecard'],
+    queryFn: api.getScorecard,
+    staleTime: Infinity,
   });
 }
 

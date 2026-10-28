@@ -16,6 +16,7 @@ import type {
   ForecastSkillResponse,
   HealthResponse,
   IceEdgeResponse,
+  ScorecardResponse,
   IceField,
   IceState,
   IcebergForecast,
@@ -114,6 +115,8 @@ function post<T>(path: string, body: unknown): Promise<T> {
 // ------------------------------------------------------------------------------- system
 
 export const getHealth = () => get<HealthResponse>('/health');
+
+export const getScorecard = () => get<ScorecardResponse>('/evidence/scorecard');
 
 // ---------------------------------------------------------------------------------- geo
 

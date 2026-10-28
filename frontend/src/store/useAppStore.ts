@@ -23,7 +23,7 @@ import type { FlowStyle } from '../map/flow';
 import type { RasterMode } from '../map/layers';
 import { defaultRouteCandidate, isSelectableRouteCandidate } from '../lib/routeSelection';
 
-export type ScreenId = 'flow' | 'bridge' | 'planner' | 'forecast' | 'icebergs' | 'analytics';
+export type ScreenId = 'flow' | 'bridge' | 'planner' | 'forecast' | 'icebergs' | 'analytics' | 'scorecard';
 
 export interface PlannerConfig {
   originId: string;

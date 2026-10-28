@@ -25,6 +25,44 @@ export interface SyntheticFlagged {
   provenance?: Provenance;
 }
 
+// ---------------------------------------------------------------------------- evidence scorecard
+
+export interface ScorecardRow {
+  task: 'sic' | 'iceberg';
+  lead_days: number;
+  domain: string;
+  season: string;
+  model: string;
+  rmse?: number | null;
+  error_km?: number | null;
+  ci: [number, number];
+  skill_vs_baseline: number | null;
+  n: number;
+}
+
+export interface ScorecardPromoted {
+  sic: Record<string, boolean>;
+  iceberg: Record<string, boolean>;
+}
+
+export interface ScorecardCoverage {
+  [leadDays: string]: { target: number; empirical: number };
+}
+
+export interface ScorecardResponse {
+  generated_at: string;
+  git_sha: string | null;
+  data_source: 'real' | 'none';
+  product: string | null;
+  version: string | null;
+  train_years: string | null;
+  test_years: string | null;
+  rows: ScorecardRow[];
+  promoted: ScorecardPromoted;
+  coverage: ScorecardCoverage;
+  caveats: string[];
+}
+
 /** Resolved calendar time plus independent simulation/model-relative offsets. */
 export interface EnvironmentTimeResolution {
   mode: 'active_voyage' | 'planning_forecast';

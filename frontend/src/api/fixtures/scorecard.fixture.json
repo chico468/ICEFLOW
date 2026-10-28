@@ -1,0 +1,113 @@
+{
+  "generated_at": "2024-01-15T18:30:00Z",
+  "git_sha": "b2bf064a",
+  "data_source": "none",
+  "product": "SIC + iceberg drift hindcast",
+  "version": "0.4.0",
+  "train_years": "2005-2019",
+  "test_years": "2022-2024",
+  "rows": [
+    {
+      "task": "sic",
+      "lead_days": 3,
+      "domain": "variable-ice-zone",
+      "season": "all-season",
+      "model": "damped_persistence",
+      "rmse": 0.2223,
+      "ci": [0.2110, 0.2341],
+      "skill_vs_baseline": 0.0,
+      "n": 124580
+    },
+    {
+      "task": "sic",
+      "lead_days": 7,
+      "domain": "variable-ice-zone",
+      "season": "all-season",
+      "model": "gbm_residual",
+      "rmse": 0.0821,
+      "ci": [0.0775, 0.0869],
+      "skill_vs_baseline": 0.15,
+      "n": 124580
+    },
+    {
+      "task": "sic",
+      "lead_days": 14,
+      "domain": "variable-ice-zone",
+      "season": "all-season",
+      "model": "gbm_residual",
+      "rmse": 0.0844,
+      "ci": [0.0790, 0.0901],
+      "skill_vs_baseline": 0.12,
+      "n": 124580
+    },
+    {
+      "task": "sic",
+      "lead_days": 7,
+      "domain": "variable-ice-zone",
+      "season": "nov-mar",
+      "model": "gbm_residual",
+      "rmse": 0.0789,
+      "ci": [0.0734, 0.0847],
+      "skill_vs_baseline": 0.18,
+      "n": 43210
+    },
+    {
+      "task": "sic",
+      "lead_days": 14,
+      "domain": "indian_ocean_sector",
+      "season": "all-season",
+      "model": "gbm_residual",
+      "rmse": 0.1102,
+      "ci": [0.1020, 0.1189],
+      "skill_vs_baseline": 0.09,
+      "n": 18450
+    },
+    {
+      "task": "iceberg",
+      "lead_days": 1,
+      "domain": "variable-ice-zone",
+      "season": "all-season",
+      "model": "constant_velocity_damped",
+      "error_km": 18.4,
+      "ci": [16.2, 20.9],
+      "skill_vs_baseline": 0.11,
+      "n": 3412
+    },
+    {
+      "task": "iceberg",
+      "lead_days": 3,
+      "domain": "variable-ice-zone",
+      "season": "all-season",
+      "model": "ml_residual_on_velocity",
+      "error_km": 41.7,
+      "ci": [37.9, 45.8],
+      "skill_vs_baseline": 0.07,
+      "n": 3412
+    },
+    {
+      "task": "iceberg",
+      "lead_days": 7,
+      "domain": "variable-ice-zone",
+      "season": "all-season",
+      "model": "ml_residual_on_velocity",
+      "error_km": 89.3,
+      "ci": [82.1, 97.4],
+      "skill_vs_baseline": 0.04,
+      "n": 3412
+    }
+  ],
+  "promoted": {
+    "sic": { "3": false, "7": true, "14": true },
+    "iceberg": { "1": true, "3": true, "7": false }
+  },
+  "coverage": {
+    "3": { "target": 0.9, "empirical": 0.88 },
+    "7": { "target": 0.9, "empirical": 0.91 },
+    "14": { "target": 0.9, "empirical": 0.89 }
+  },
+  "caveats": [
+    "SSMIS-era training data; AMSR2-era (2025-01 onwards) evaluated separately.",
+    "Conformal 90% intervals clipped to [0, 1]; empirical coverage measured on held-out test years only.",
+    "Iceberg ML residual is only promoted when it beats constant-velocity under the per-iceberg CI gate."
+  ]
+}

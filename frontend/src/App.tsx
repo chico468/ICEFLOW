@@ -16,7 +16,7 @@
  * viewport the user has panned and zoomed; rebuilding that on every tab change would lose their
  * place, and a chart that forgets where you were looking is an irritating one.
  */
-import { Activity, BarChart3, Layers, Ship, Snowflake } from 'lucide-react';
+import { Activity, BarChart3, ClipboardList, Layers, Ship, Snowflake } from 'lucide-react';
 import { ProvenanceBar } from './components/ProvenanceBar';
 import { ProvenanceBadge } from './components/ProvenanceBadge';
 import { ScreenActiveContext } from './components/screenActive';
@@ -25,6 +25,7 @@ import { Analytics } from './screens/Analytics';
 import { BridgeConsole } from './screens/BridgeConsole';
 import { IceForecast } from './screens/IceForecast';
 import { IcebergTracker } from './screens/IcebergTracker';
+import { Scorecard } from './screens/Scorecard';
 import { VoyagePlanner } from './screens/VoyagePlanner';
 import { useAppStore, type ScreenId } from './store/useAppStore';
 
@@ -42,6 +43,7 @@ const TABS: Tab[] = [
   { id: 'forecast', label: 'Sea ice', icon: Snowflake, simple: false },
   { id: 'icebergs', label: 'Icebergs', icon: Activity, simple: false },
   { id: 'analytics', label: 'Insights', icon: BarChart3, simple: false },
+  { id: 'scorecard', label: 'Scorecard', icon: ClipboardList, simple: false },
 ];
 
 export function App(): JSX.Element {
@@ -143,6 +145,9 @@ export function App(): JSX.Element {
           </Screen>
           <Screen id="analytics" active={activeScreen}>
             <Analytics />
+          </Screen>
+          <Screen id="scorecard" active={activeScreen}>
+            <Scorecard />
           </Screen>
         </main>
       </div>
