@@ -12,8 +12,7 @@ import type { Provenance, ScorecardResponse } from '../api/types';
 import { ProvenanceBadge } from '../components/ProvenanceBadge';
 import { Panel, Stat } from '../components/ui';
 import { int, num, shortIso } from '../lib/format';
-import scorecardFixtureRaw from '../api/fixtures/scorecard.fixture.json';
-const scorecardFixture = scorecardFixtureRaw as unknown as ScorecardResponse;
+import { scorecardFixture, scorecardIsSampleData } from '../lib/scorecard';
 
 const MODEL_PROVENANCE: Record<string, Provenance> = {
   damped_persistence: {
@@ -66,13 +65,39 @@ export function Scorecard(): JSX.Element {
     );
   }
 
-  const s = scorecard ?? scorecardFixture;
-  const fromFixture = !scorecard || isError || s.data_source === 'none' && s.git_sha === scorecardFixture.git_sha;
+  // Never present fixture numbers as real results: when the endpoint is unreachable (or there is no
+  // data at all) we fall back to the fixture and flag it prominently as sample data.
+  const apiUnavailable = isError;
+  const s: ScorecardResponse = apiUnavailable || !scorecard ? scorecardFixture : scorecard;
+  const sampleData = apiUnavailable || !scorecard || scorecardIsSampleData(s, apiUnavailable);
 
   return (
     <div className="h-full overflow-y-auto p-4">
+      {sampleData && (
+        <div className="mb-3 rounded-xl border border-[rgb(var(--c-warn))] bg-[rgb(var(--c-warn))]/10 p-3">
+          <div className="flex items-start gap-2">
+            <div className="shrink-0 border border-[rgb(var(--c-warn))] rounded p-[2px]">
+              <span className="block text-[10px] font-semibold text-[rgb(var(--c-warn))]">SAMPLE DATA</span>
+            </div>
+            <div className="text-xs leading-relaxed">
+              <div className="font-semibold text-ink">SAMPLE DATA, not real results</div>
+              <div className="mt-0.5 text-[11px] text-ink-3/80">
+                {apiUnavailable
+                  ? `The scorecard endpoint could not be reached${error ? ` (${error.message})` : ''}, so the fixture below is shown instead.`
+                  : 'No scorecard data is available, so the fixture below is shown instead.'}
+                {' '}
+                These numbers are sample data — do not use them as real results.
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="mx-auto grid max-w-[1500px] grid-cols-1 gap-4 lg:grid-cols-2">
-        <Panel title="Scorecard" subtitle={fromFixture ? 'Fixture (backend unreachable)' : shortIso(s.generated_at)}>
+        <Panel
+          title="Scorecard"
+          subtitle={sampleData ? 'Fixture (backend unreachable)' : shortIso(s.generated_at)}
+        >
           <div className="mb-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
             <Stat label="Data source" value={s.data_source} tone={s.data_source === 'real' ? 'ok' : 'caution'} />
             <Stat label="Product" value={s.product ?? '—'} size="sm" />
@@ -92,7 +117,7 @@ export function Scorecard(): JSX.Element {
             </div>
           )}
           <div className="mt-2 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[8px] border border-hair-2 text-ink-2 bg-panel-2">
-            {fromFixture ? 'Falling back to fixture' : 'Live endpoint /api/v1/evidence/scorecard'}
+            {sampleData ? 'Falling back to fixture' : 'Live endpoint /api/v1/evidence/scorecard'}
             {isError && <span className="text-[8px] opacity-60">· {error?.message ?? 'unreachable'}</span>}
           </div>
         </Panel>

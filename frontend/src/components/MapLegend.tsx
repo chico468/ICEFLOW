@@ -99,7 +99,7 @@ export function MapLegend({
 
   return (
     <section
-      className={`float absolute z-10 overflow-y-auto px-3 py-2 ${open ? 'w-[268px]' : 'max-w-[min(360px,60%)]'}`}
+      className={`float absolute z-10 overflow-y-auto px-3 py-2 ${open ? 'max-w-[min(268px,calc(100%-260px))]' : 'max-w-[min(360px,60%)]'}`}
       style={{
         top: 12,
         left: 12,

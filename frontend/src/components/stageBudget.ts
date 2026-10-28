@@ -11,7 +11,13 @@
 
 /** The smallest the map cell is allowed to be, in CSS pixels. */
 export const MAP_MIN_HEIGHT = 300;
-export const MAP_MIN_WIDTH = 320;
+/**
+ * The smallest the map cell is allowed to be, in CSS pixels, as a function of the viewport width.
+ * The map keeps at least 520 px, or half the viewport, whichever is larger.
+ */
+export function mapMinWidth(stageWidth: number): number {
+  return Math.max(520, Math.floor(stageWidth * 0.5));
+}
 /** Height of the bottom dock's tab bar. */
 export const DOCK_BAR_HEIGHT = 40;
 /** Tallest the bottom dock panel may grow. */
@@ -25,10 +31,20 @@ const TOP_BAR_MIN = 64;
 
 /** The minimum width a side dock panel must have to be worth opening. */
 export const SIDE_DOCK_PANEL_MIN = 200;
-/** Tallest a side dock panel may grow. */
-export const SIDE_DOCK_PANEL_MAX = 480;
 /** Width of a side dock's tab strip. */
 export const SIDE_DOCK_BAR_WIDTH = 36;
+
+/** Left dock: opens at 340 px, may grow to 380 px. */
+export const SIDE_DOCK_LEFT_OPEN = 340;
+export const SIDE_DOCK_LEFT_MAX = 380;
+/** Right dock: opens at 320 px and stays there. */
+export const SIDE_DOCK_RIGHT_OPEN = 320;
+export const SIDE_DOCK_RIGHT_MAX = 320;
+
+/** Below this viewport width the side docks overlay the map as drawers instead of shrinking it. */
+export const SIDE_DOCK_DRAWER_BREAKPOINT = 1100;
+/** Below this viewport width only one side dock panel may be open at a time. */
+export const SIDE_DOCK_SINGLE_BREAKPOINT = 1400;
 
 export interface VerticalBudget {
   /** Tallest the open bottom dock panel may be. */
@@ -69,7 +85,11 @@ function verticalBudget(stageHeight: number, topHeight: number, hasDock: boolean
 
 /**
  * Compute the horizontal layout budget given the stage width and whether each side dock is open.
- * An open side dock claims its panel max width (capped by available space); a closed one claims zero.
+ *
+ * Below SIDE_DOCK_DRAWER_BREAKPOINT the docks overlay the map as drawers and claim no width, so the
+ * map keeps the full stage width. Otherwise an open side dock claims its panel width (capped by the
+ * map's minimum), a closed one claims its tab strip. If there isn't room for the map minimum, the
+ * open panels shrink toward their minimum share, proportionally.
  */
 export function horizontalBudget(
   stageWidth: number,
@@ -78,15 +98,19 @@ export function horizontalBudget(
   leftOpen: boolean,
   rightOpen: boolean,
 ): HorizontalBudget {
-  const leftWants = leftOpen ? SIDE_DOCK_PANEL_MAX : SIDE_DOCK_BAR_WIDTH;
-  const rightWants = rightOpen ? SIDE_DOCK_PANEL_MAX : SIDE_DOCK_BAR_WIDTH;
-  const barsOnly = (hasLeft ? SIDE_DOCK_BAR_WIDTH : 0) + (hasRight ? SIDE_DOCK_BAR_WIDTH : 0);
+  const drawer = stageWidth < SIDE_DOCK_DRAWER_BREAKPOINT;
+  const leftWants = drawer ? 0 : (leftOpen ? SIDE_DOCK_LEFT_OPEN : SIDE_DOCK_BAR_WIDTH);
+  const rightWants = drawer ? 0 : (rightOpen ? SIDE_DOCK_RIGHT_OPEN : SIDE_DOCK_BAR_WIDTH);
+  const barsOnly = drawer ? 0 : (hasLeft ? SIDE_DOCK_BAR_WIDTH : 0) + (hasRight ? SIDE_DOCK_BAR_WIDTH : 0);
   const panelsNeed = leftWants + rightWants;
-  let leftPanelMax = leftOpen ? SIDE_DOCK_PANEL_MAX : 0;
-  let rightPanelMax = rightOpen ? SIDE_DOCK_PANEL_MAX : 0;
-  const mapWidthRaw = stageWidth - panelsNeed;
-  if (mapWidthRaw < MAP_MIN_WIDTH) {
-    const available = stageWidth - barsOnly - MAP_MIN_WIDTH;
+  const minMap = mapMinWidth(stageWidth);
+
+  let leftPanelMax = drawer ? 0 : (leftOpen ? SIDE_DOCK_LEFT_OPEN : 0);
+  let rightPanelMax = drawer ? 0 : (rightOpen ? SIDE_DOCK_RIGHT_OPEN : 0);
+
+  let mapWidthRaw = drawer ? stageWidth : stageWidth - panelsNeed;
+  if (mapWidthRaw < minMap) {
+    const available = drawer ? Math.max(0, stageWidth - minMap) : stageWidth - barsOnly - minMap;
     // Shrink the open panels to their minimum share, proportionally.
     if (leftOpen && rightOpen) {
       const half = Math.floor(available / 2);
@@ -98,11 +122,11 @@ export function horizontalBudget(
       rightPanelMax = Math.max(SIDE_DOCK_PANEL_MIN, available);
     }
   }
-  const leftCanOpen = leftPanelMax >= SIDE_DOCK_PANEL_MIN;
-  const rightCanOpen = rightPanelMax >= SIDE_DOCK_PANEL_MIN;
-  const leftW = leftOpen && leftCanOpen ? leftPanelMax : (hasLeft ? SIDE_DOCK_BAR_WIDTH : 0);
-  const rightW = rightOpen && rightCanOpen ? rightPanelMax : (hasRight ? SIDE_DOCK_BAR_WIDTH : 0);
-  const mapWidth = stageWidth - leftW - rightW;
+  const leftCanOpen = drawer ? true : leftPanelMax >= SIDE_DOCK_PANEL_MIN;
+  const rightCanOpen = drawer ? true : rightPanelMax >= SIDE_DOCK_PANEL_MIN;
+  const leftW = drawer ? 0 : (leftOpen && leftCanOpen ? leftPanelMax : (hasLeft ? SIDE_DOCK_BAR_WIDTH : 0));
+  const rightW = drawer ? 0 : (rightOpen && rightCanOpen ? rightPanelMax : (hasRight ? SIDE_DOCK_BAR_WIDTH : 0));
+  const mapWidth = drawer ? stageWidth : stageWidth - leftW - rightW;
   return { leftCanOpen, leftPanelMax, rightCanOpen, rightPanelMax, mapWidth };
 }
 

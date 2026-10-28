@@ -40,7 +40,12 @@ import { ChevronDown, ChevronUp } from 'lucide-react';
 import {
   DOCK_BAR_HEIGHT,
   DOCK_PANEL_MAX,
+  SIDE_DOCK_DRAWER_BREAKPOINT,
+  SIDE_DOCK_LEFT_MAX,
+  SIDE_DOCK_RIGHT_MAX,
+  SIDE_DOCK_SINGLE_BREAKPOINT,
   fullBudget,
+  mapMinWidth,
   type StageBudget,
 } from './stageBudget';
 import { StageInsetsContext, type StageInsets } from './stageInsets';
@@ -95,7 +100,8 @@ function usePersistentString(key: string): [string | null, (v: string) => void] 
 /** Short windows start with the dock closed, so the chart is not buried on first load. */
 const roomForDock = (): boolean => window.innerHeight >= 800;
 
-/** Short windows start with the side dock closed. */
+/** Wide windows start with the left (Plan) dock open; the right (Inspect) dock starts collapsed
+ *  and only opens on a click, a selection or an existing route. */
 const roomForSideDock = (): boolean => window.innerWidth >= 1200;
 
 /** Flatten fragments so a `shelf` or `leftDock` written as <>...</> yields its panels. */
@@ -201,6 +207,7 @@ function SideDock({
   open,
   canOpen,
   panelMax,
+  drawer,
   onOpen,
   onTab,
   savedTab,
@@ -212,6 +219,8 @@ function SideDock({
   open: boolean;
   canOpen: boolean;
   panelMax: number;
+  /** Below the drawer breakpoint the dock overlays the map as a slide-in drawer. */
+  drawer?: boolean;
   onOpen: (v: boolean) => void;
   onTab: (v: string) => void;
   savedTab: string | null;
@@ -221,6 +230,20 @@ function SideDock({
   const activeIndex = Math.max(0, savedTab ? labels.indexOf(savedTab) : 0);
   const active = panels[activeIndex];
   const dockOpen = open && canOpen;
+
+  const drawerPanelW: number = drawer ? (dockOpen ? (panelMax > 0 ? panelMax : 280) : 0) : 0;
+  const drawerStyle: React.CSSProperties | undefined = drawer
+    ? {
+        position: 'fixed',
+        top: 0,
+        bottom: 0,
+        zIndex: 20,
+        width: drawerPanelW,
+        transform: dockOpen ? 'translateX(0)' : side === 'left' ? 'translateX(-100%)' : 'translateX(100%)',
+        transition: 'transform 0.22s ease-out',
+        [side === 'left' ? 'left' : 'right']: 0,
+      }
+    : undefined;
 
   const onTabKey = (e: KeyboardEvent<HTMLDivElement>): void => {
     if (!['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(e.key)) return;
@@ -236,8 +259,16 @@ function SideDock({
     <section
       data-testid={`${side}-dock`}
       aria-label={label}
-      className={`flex shrink-0 items-stretch border-${side === 'left' ? 'r' : 'l'} border-hair bg-panel`}
+      className={`flex shrink-0 items-stretch border-${side === 'left' ? 'r' : 'l'} border-hair bg-panel ${drawer ? 'shadow-panel' : ''}`}
+      style={drawerStyle}
     >
+      {drawer && dockOpen && (
+        <div
+          className="fixed inset-0 z-10 bg-ink/40 backdrop-blur-sm"
+          aria-hidden="true"
+          onClick={() => onOpen(false)}
+        />
+      )}
       <div
         role="tablist"
         aria-label={label}
@@ -284,7 +315,10 @@ function SideDock({
           role="tabpanel"
           aria-labelledby={`${uid}-${side}tab-${activeIndex}`}
           className="overflow-y-auto border-t border-hair"
-          style={{ maxWidth: panelMax, width: panelMax === 0 ? 280 : undefined }}
+          style={{
+            maxWidth: drawer ? undefined : panelMax,
+            width: drawer ? undefined : panelMax === 0 ? 280 : undefined,
+          }}
         >
           {(active.props as PanelProps).subtitle && (
             <p className="px-4 pt-2 text-2xs text-ink-3">{(active.props as PanelProps).subtitle}</p>
@@ -442,17 +476,27 @@ export function MapStage({
   const hasTray = Boolean(tray);
 
   const bottomDockState = useDockState(`${id}.bottom`, roomForDock());
+  // Left dock opens by default when there is room; the right dock starts collapsed until a click,
+  // a selection or a route exists.
   const leftDockState = useDockState(`${id}.left`, roomForSideDock());
-  const rightDockState = useDockState(`${id}.right`, roomForSideDock());
+  const rightDockState = useDockState(`${id}.right`, false);
 
   const stageHeight = useHeight(stageRef, true);
   const stageWidth = useSize(stageRef);
   const topHeight = useHeight(topRef, Boolean(top));
 
+  /** Below the drawer breakpoint the docks overlay the map as drawers and claim no width. */
+  const drawer = stageWidth > 0 && stageWidth < SIDE_DOCK_DRAWER_BREAKPOINT;
+  /** Below the single-dock breakpoint only one side dock panel may be open at a time. */
+  const single = stageWidth > 0 && stageWidth < SIDE_DOCK_SINGLE_BREAKPOINT;
+  // Left dock has priority when only one panel can be open.
+  const leftOpen = leftDockState.open;
+  const rightOpen = single && leftOpen ? false : rightDockState.open;
+
   const room = useMemo(
     () =>
       stageHeight > 0 && stageWidth > 0
-        ? fullBudget(stageWidth, stageHeight, topHeight, hasBottomDock, hasTray, hasLeftDock, hasRightDock, leftDockState.open, rightDockState.open)
+        ? fullBudget(stageWidth, stageHeight, topHeight, hasBottomDock, hasTray, hasLeftDock, hasRightDock, leftOpen, rightOpen)
         : {
             panelMax: DOCK_PANEL_MAX,
             canOpen: true,
@@ -460,12 +504,12 @@ export function MapStage({
             topMax: 10_000,
             mapHeight: 300,
             leftCanOpen: true,
-            leftPanelMax: 480,
+            leftPanelMax: SIDE_DOCK_LEFT_MAX,
             rightCanOpen: true,
-            rightPanelMax: 480,
-            mapWidth: 320,
+            rightPanelMax: SIDE_DOCK_RIGHT_MAX,
+            mapWidth: mapMinWidth(Math.max(stageWidth, 1)),
           } as StageBudget,
-    [stageHeight, stageWidth, topHeight, hasBottomDock, hasTray, hasLeftDock, hasRightDock, leftDockState.open, rightDockState.open],
+    [stageHeight, stageWidth, topHeight, hasBottomDock, hasTray, hasLeftDock, hasRightDock, leftOpen, rightOpen],
   );
 
   return (
@@ -481,14 +525,14 @@ export function MapStage({
       )}
 
       <div data-testid="map-cell" className="relative min-h-0 flex-1 overflow-hidden" style={{ minHeight: room.mapHeight, minWidth: room.mapWidth }}>
-        <div className="absolute inset-0 flex">
-          {hasLeftDock && (
+        <div className="absolute inset-0 flex relative">
+          {!drawer && hasLeftDock && (
             <SideDock
               uid={uid}
               label={leftDockLabel}
               panels={leftPanels}
               side="left"
-              open={leftDockState.open}
+              open={leftOpen}
               canOpen={room.leftCanOpen}
               panelMax={room.leftPanelMax}
               onOpen={leftDockState.setOpen}
@@ -497,11 +541,41 @@ export function MapStage({
             />
           )}
 
-          <div data-testid="map-inner" className="relative min-w-0 flex-1 overflow-hidden">
+          <div data-testid="map-inner" className={`relative min-w-0 flex-1 overflow-hidden ${drawer ? 'z-0' : ''}`}>
             <StageInsetsContext.Provider value={NO_INSETS}>{map}</StageInsetsContext.Provider>
           </div>
 
-          {hasRightDock && (
+          {!drawer && hasRightDock && (
+            <SideDock
+              uid={uid}
+              label={rightDockLabel}
+              panels={rightPanels}
+              side="right"
+              open={rightOpen}
+              canOpen={room.rightCanOpen}
+              panelMax={room.rightPanelMax}
+              onOpen={rightDockState.setOpen}
+              onTab={rightDockState.setSavedTab}
+              savedTab={rightDockState.savedTab}
+            />
+          )}
+
+          {drawer && hasLeftDock && (
+            <SideDock
+              uid={uid}
+              label={leftDockLabel}
+              panels={leftPanels}
+              side="left"
+              open={leftDockState.open}
+              canOpen={room.leftCanOpen}
+              panelMax={room.leftPanelMax}
+              drawer
+              onOpen={leftDockState.setOpen}
+              onTab={leftDockState.setSavedTab}
+              savedTab={leftDockState.savedTab}
+            />
+          )}
+          {drawer && hasRightDock && (
             <SideDock
               uid={uid}
               label={rightDockLabel}
@@ -510,6 +584,7 @@ export function MapStage({
               open={rightDockState.open}
               canOpen={room.rightCanOpen}
               panelMax={room.rightPanelMax}
+              drawer
               onOpen={rightDockState.setOpen}
               onTab={rightDockState.setSavedTab}
               savedTab={rightDockState.savedTab}

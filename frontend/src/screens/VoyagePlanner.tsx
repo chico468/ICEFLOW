@@ -11,7 +11,6 @@
 import { useState, type ReactNode } from 'react';
 import {
   AlertTriangle,
-  ArrowRight,
   ChevronDown,
   ChevronUp,
   Play,
@@ -176,8 +175,8 @@ export function VoyagePlanner(): JSX.Element {
               <div className="text-2xs text-ink-3">Fetching stations and ports.</div>
             </div>
           ) : (
-            <div className="flex items-end gap-2">
-              <div className="w-[215px]">
+            <div className="flex flex-col gap-2 w-full">
+              <div className="w-full">
                 <Select
                   label="Origin"
                   value={planner.originId}
@@ -185,8 +184,7 @@ export function VoyagePlanner(): JSX.Element {
                   onChange={(v) => setPlanner({ originId: v })}
                 />
               </div>
-              <ArrowRight size={16} className="mb-2.5 shrink-0 text-ink-3" aria-hidden />
-              <div className="w-[215px]">
+              <div className="w-full">
                 <Select
                   label="Destination"
                   value={planner.destinationId}
@@ -199,8 +197,8 @@ export function VoyagePlanner(): JSX.Element {
         </Group>
 
         <Group title="Vessel">
-          <div className="flex items-end gap-2">
-            <div className="w-[300px]">
+          <div className="flex flex-col gap-2 w-full">
+            <div className="w-full">
               <Select
                 label="Ship"
                 value={planner.vesselKey}
@@ -208,7 +206,7 @@ export function VoyagePlanner(): JSX.Element {
                 onChange={(v) => setPlanner({ vesselKey: v })}
               />
             </div>
-            <div className="w-[120px]">
+            <div className="w-full">
               <Select
                 label="Ice class"
                 value={planner.iceClass}
@@ -223,7 +221,7 @@ export function VoyagePlanner(): JSX.Element {
           <div className="flex items-end gap-2">
             <div className="w-[230px]">
               <label className="block">
-                <div className="mb-1 text-2xs text-ink-2">Departure (ship local)</div>
+                <div className="mb-1 text-2xs text-ink-2">Local time (this device)</div>
                 <input
                   type="datetime-local"
                   className="field w-full"
