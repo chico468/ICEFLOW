@@ -239,26 +239,26 @@ export function IcebergTracker(): JSX.Element {
                 <div className="mt-3 h-36">
                   <ResponsiveContainer width="100%" height="100%">
                     <AreaChart data={deterioration} margin={{ top: 4, right: 6, bottom: 0, left: -20 }}>
-                      <CartesianGrid stroke="#D3DDE2" strokeDasharray="2 3" />
-                      <XAxis dataKey="hour" stroke="#587383" tick={{ fontSize: 10 }} unit="h" />
-                      <YAxis stroke="#587383" tick={{ fontSize: 10 }} />
+                      <CartesianGrid stroke="rgb(var(--c-hair))" strokeDasharray="2 3" />
+                      <XAxis dataKey="hour" stroke="rgb(var(--c-ink-3))" tick={{ fontSize: 10 }} unit="h" />
+                      <YAxis stroke="rgb(var(--c-ink-3))" tick={{ fontSize: 10 }} />
                       <Tooltip
-                        contentStyle={{ background: '#FFFFFF', border: '1px solid #AEBEC6', fontSize: 11 }}
+                        contentStyle={{ background: 'rgb(var(--c-panel))', border: '1px solid rgb(var(--c-hair-2))', fontSize: 11 }}
                       />
                       <Area
                         type="monotone"
                         dataKey="r90"
                         name="90% radius (km)"
-                        stroke="#5B3FD1"
-                        fill="#5B3FD1"
+                        stroke="rgb(var(--c-violet))"
+                        fill="rgb(var(--c-violet))"
                         fillOpacity={0.18}
                       />
                       <Area
                         type="monotone"
                         dataKey="r50"
                         name="50% radius (km)"
-                        stroke="#0B5C8E"
-                        fill="#0B5C8E"
+                        stroke="rgb(var(--c-accent))"
+                        fill="rgb(var(--c-accent))"
                         fillOpacity={0.25}
                       />
                     </AreaChart>
