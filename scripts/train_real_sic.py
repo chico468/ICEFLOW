@@ -24,7 +24,7 @@ import sys
 import time
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import joblib
 import numpy as np
@@ -49,6 +49,20 @@ from src.ml.real_sic_forecaster import RealSICForecaster as RealForecast
 
 DEFAULT_SEED = 26059
 REAL_ARTEFACT_NAME = "real_sic_forecaster.joblib"
+SCORECARD_REPORT_NAME = "real_sic_ml_report.json"
+
+
+def _git_sha() -> Optional[str]:
+    try:
+        import subprocess as sp
+        return sp.check_output(
+            ["git", "rev-parse", "HEAD"],
+            cwd=str(Path(__file__).resolve().parents[1]),
+            stderr=sp.DEVNULL,
+            text=True,
+        ).strip() or None
+    except Exception:
+        return None
 
 
 def _doy_key(d: date) -> Tuple[int, int]:
@@ -113,6 +127,8 @@ def main(argv: List[str] | None = None) -> int:
     parser.add_argument("--n-boot", type=int, default=200)
     parser.add_argument("--quick", action="store_true",
                         help="Quick smoke run with a small date subset")
+    parser.add_argument("--evaluate-only", action="store_true",
+                        help="Load saved model and evaluate without retraining")
     args = parser.parse_args(argv)
 
     if args.quick:
@@ -211,7 +227,7 @@ def main(argv: List[str] | None = None) -> int:
     sample_other = 0.01 if not args.quick else 0.001
     train_ds = build_real_sic_dataset(
         sic_by_date, train_dates, clim, taus,
-        grid["lat"], grid["lon"], grid["sector_id"],
+        grid["lat"], grid["lon"], grid["sector_id"], grid["areas"],
         REAL_LEAD_DAYS,
         sample_viz_fraction=sample_viz,
         sample_other_fraction=sample_other,
@@ -219,13 +235,13 @@ def main(argv: List[str] | None = None) -> int:
     )
     val_ds = build_real_sic_dataset(
         sic_by_date, val_dates, clim, taus,
-        grid["lat"], grid["lon"], grid["sector_id"],
+        grid["lat"], grid["lon"], grid["sector_id"], grid["areas"],
         REAL_LEAD_DAYS, sample_viz_fraction=val_sample_viz, sample_other_fraction=0.0,
         rng_seed=args.seed + 100,
     )
     test_ds = build_real_sic_dataset(
         sic_by_date, test_dates, clim, taus,
-        grid["lat"], grid["lon"], grid["sector_id"],
+        grid["lat"], grid["lon"], grid["sector_id"], grid["areas"],
         REAL_LEAD_DAYS, sample_viz_fraction=val_sample_viz, sample_other_fraction=0.0,
         rng_seed=args.seed + 200,
     )
@@ -236,12 +252,22 @@ def main(argv: List[str] | None = None) -> int:
 
     # ------------------------------------------------------------------ 5. Train
     print()
-    print("  Fitting per-lead HistGradientBoostingRegressor...")
-    t0 = time.perf_counter()
-    model = RealForecast(leads=REAL_LEAD_DAYS, random_state=args.seed)
-    model.fit(train_ds, val_ds, taus)
-    fit_s = time.perf_counter() - t0
-    print(f"  Total training time: {fit_s:.1f}s")
+    if args.evaluate_only:
+        print("  Evaluate-only mode: loading saved model (skip training)...")
+        artefact_path_existing = Path(MODELS_DIR) / REAL_ARTEFACT_NAME
+        if not artefact_path_existing.is_file():
+            print(f"  ERROR: No saved model at {artefact_path_existing}")
+            return 1
+        model = RealForecast.load(artefact_path_existing)
+        fit_s = 0.0
+        print(f"  Loaded {artefact_path_existing.name} ({artefact_path_existing.stat().st_size / 1024:.0f} KB)")
+    else:
+        print("  Fitting per-lead HistGradientBoostingRegressor...")
+        t0 = time.perf_counter()
+        model = RealForecast(leads=REAL_LEAD_DAYS, random_state=args.seed)
+        model.fit(train_ds, val_ds, taus)
+        fit_s = time.perf_counter() - t0
+        print(f"  Total training time: {fit_s:.1f}s")
 
     # ------------------------------------------------------------------ 6. Evaluate
     print()
@@ -259,92 +285,46 @@ def main(argv: List[str] | None = None) -> int:
     print("  Sensor check (AMSR2 era, 2025+):")
     sensor_2025_start = date(2025, 1, 1)
     sensor_dates = [d for d in all_dates if d >= sensor_2025_start]
+    sensor_metrics = None
     if sensor_dates:
         sensor_ds = build_real_sic_dataset(
             sic_by_date, sensor_dates, clim, taus,
-            grid["lat"], grid["lon"], grid["sector_id"],
+            grid["lat"], grid["lon"], grid["sector_id"], grid["areas"],
             REAL_LEAD_DAYS, sample_viz_fraction=val_sample_viz, sample_other_fraction=0.0,
             rng_seed=args.seed + 300,
         )
         if len(sensor_ds) > 0:
             sensor_metrics = model.evaluate(sensor_ds, n_boot=n_boot_quick, seed=args.seed + 3)
             _print_results(sensor_metrics, "SENSOR-CHECK")
-            test_metrics["sensor_check_2025"] = {
-                "n_samples": sensor_metrics["n_samples"],
-                "overall": sensor_metrics["overall"],
-                "per_lead": sensor_metrics["per_lead"],
-            }
         else:
             print("  No sensor-check data available (no 2025+ dates with lead pairs)")
     else:
         print("  No 2025+ data in cache for sensor check")
 
-    # ------------------------------------------------------------------ 8. Save
+    # ------------------------------------------------------------------ 8. Save model (skip in evaluate-only)
     artefact_path = Path(MODELS_DIR) / REAL_ARTEFACT_NAME
     artefact_path.parent.mkdir(parents=True, exist_ok=True)
-    model.save(artefact_path)
-    print()
-    print(f"  Saved model to {artefact_path.name} ({artefact_path.stat().st_size / 1024:.0f} KB)")
+    if not args.evaluate_only:
+        model.save(artefact_path)
+        print()
+        print(f"  Saved model to {artefact_path.name} ({artefact_path.stat().st_size / 1024:.0f} KB)")
 
-    payload: Dict[str, Any] = {
-        "system": "ICEFLOW",
-        "trained_on": "real",
-        "problem_statement": "BE-2",
-        "trained_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "training_wall_time_s": round(fit_s, 2),
-        "mode": "quick" if args.quick else "full",
-        "seed": args.seed,
-        "python_version": platform.python_version(),
-        "sklearn_version": sklearn.__version__,
-        "numpy_version": np.__version__,
-        "data_provenance": (
-            "Real NSIDC V6 daily sea-ice concentration (G02202, 25 km polar "
-            "stereographic). Train on train_years, val on val_years, test on test_years. "
-            f"Record length: {len(sic_by_date)} days; gaps: {len(gaps)}."
-        ),
-        "product": "NOAA/NSIDC CDR G02202 Version 6",
-        "product_version": "v06r00",
-        "date_range": [str(min(sic_by_date.keys())), str(max(sic_by_date.keys()))],
-        "leads_days": list(REAL_LEAD_DAYS),
-        "embargo_days": EMBARGO_DAYS,
-        "splits": {
-            "train_years": sorted({d.year for d in train_dates}),
-            "val_years": sorted({d.year for d in val_dates}),
-            "test_years": sorted({d.year for d in test_dates}),
-        },
-        "taus": {str(k): round(v, 2) for k, v in taus.items()},
-        "feature_names": list(FEATURE_NAMES_REAL),
-        "artefact": artefact_path.name,
-        "n_features": len(FEATURE_NAMES_REAL),
-        "dataset": {
-            "n_train_rows": len(train_ds),
-            "n_val_rows": len(val_ds),
-            "n_test_rows": len(test_ds),
-            "n_viz_cells": n_viz,
-            "n_ocean_cells": n_ocean,
-            "sample_viz_fraction": sample_viz,
-            "val_test_sample_viz_fraction": val_sample_viz,
-            "sample_other_fraction": sample_other,
-        },
-        "fit_seconds": round(fit_s, 2),
-        "val_metrics": val_metrics,
-        "test_metrics": test_metrics,
-        "promoted_leads": test_metrics["promoted_leads"],
-        "coverage_90_ci": test_metrics["coverage_90_ci"],
-        "evaluation_status": {
-            "trained_on": "real",
-            "operational_skill_validated": False,
-            "used_in_routing": False,
-            "promoted_leads": test_metrics["promoted_leads"],
-            "status": "real_data_training_complete",
-        },
-    }
+    # ------------------------------------------------------------------ 9. Scorecard report
+    scorecard = _build_scorecard_report(
+        test_metrics, taus, val_metrics,
+        {},
+        sensor_metrics,
+        train_dates, val_dates, test_dates,
+        len(sic_by_date), len(gaps), fit_s,
+        sample_viz, val_sample_viz, sample_other,
+        _git_sha(),
+    )
 
-    metrics_path_obj = metrics_path()
-    metrics_path_obj.parent.mkdir(parents=True, exist_ok=True)
-    with open(metrics_path_obj, "w", encoding="utf-8") as fh:
-        json.dump(payload, fh, indent=2, sort_keys=False, default=_json_default)
-    print(f"  Metrics written to {metrics_path_obj}")
+    report_path = Path(MODELS_DIR) / "eval" / "real_sic_ml_report.json"
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(report_path, "w", encoding="utf-8") as fh:
+        json.dump(scorecard, fh, indent=2, sort_keys=False, default=_json_default)
+    print(f"  Scorecard report written to {report_path}")
 
     return 0
 
@@ -369,7 +349,195 @@ def _print_results(metrics: Dict[str, Any], tag: str) -> None:
             f"[{pl['viz_rmse_diff_ci'][0]:>8.4f},{pl['viz_rmse_diff_ci'][1]:>8.4f}] "
             f"  {str(pl['promoted']):>8s}"
         )
-    print(f"  Coverage (90% CI): overall={metrics['coverage_90_ci']['overall']}")
+    cov = metrics.get("coverage_90_ci", {})
+    print(f"  Coverage (90% CI): overall={cov.get('overall', 'n/a')}")
+
+
+def _build_scorecard_report(
+    test_metrics: Dict[str, Any],
+    taus: Dict[int, float],
+    val_metrics: Dict[str, Any],
+    per_lead_test: Dict[str, Any],
+    sensor_metrics: Optional[Dict[str, Any]],
+    train_dates: List[date],
+    val_dates: List[date],
+    test_dates: List[date],
+    record_length: int,
+    n_gaps: int,
+    fit_s: float,
+    sample_viz: float,
+    val_sample_viz: float,
+    sample_other: float,
+    git_sha: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Build the SPRINT contract scorecard report for the scorecard endpoint.
+
+    rows: [{task, lead_days, domain, season, model, rmse, ci:[lo,hi], skill_vs_baseline, n}]
+          domain is "all_ocean" or "variable_ice_zone" or "sector:<name>" or "iiee_15pct"
+          season is "all" or "nov_mar"
+    """
+    from src.ml.real_dataset import SECTORS_SIMPLE
+
+    rows: List[Dict[str, Any]] = []
+    sector_names = list(SECTORS_SIMPLE.keys())
+    test_per_lead = test_metrics["per_lead"]
+    cov = test_metrics["coverage_90_ci"]
+
+    for pl in test_per_lead:
+        lead = pl["lead_days"]
+        # Main model row (VIZ cells, all-season).
+        rows.append({
+            "task": "sic",
+            "lead_days": lead,
+            "domain": "variable_ice_zone",
+            "season": "all",
+            "model": "gbm_residual",
+            "rmse": pl["viz_model_rmse"],
+            "ci": pl["viz_rmse_diff_ci"],
+            "skill_vs_baseline": round(1.0 - pl["viz_model_rmse"] / pl["viz_baseline_rmse"], 5)
+                if pl["viz_baseline_rmse"] > 0 else float("nan"),
+            "n": pl["n_samples"],
+            "promoted": pl.get("promoted", False),
+        })
+        # Nov-Mar VIZ row.
+        rows.append({
+            "task": "sic",
+            "lead_days": lead,
+            "domain": "variable_ice_zone",
+            "season": "nov_mar",
+            "model": "gbm_residual",
+            "rmse": pl["viz_model_rmse"],
+            "ci": pl["viz_nov_mar_rmse_diff_ci"],
+            "skill_vs_baseline": float("nan"),
+            "n": pl["n_samples"],
+            "promoted": pl.get("promoted", False),
+        })
+        # Baseline row for context.
+        rows.append({
+            "task": "sic",
+            "lead_days": lead,
+            "domain": "variable_ice_zone",
+            "season": "all",
+            "model": "damped_persistence",
+            "rmse": pl["viz_baseline_rmse"],
+            "ci": [float("nan"), float("nan")],
+            "skill_vs_baseline": float("nan"),
+            "n": pl["n_samples"],
+            "promoted": False,
+        })
+        # IIEE rows.
+        rows.append({
+            "task": "sic",
+            "lead_days": lead,
+            "domain": "iiee_15pct",
+            "season": "all",
+            "model": "gbm_residual",
+            "rmse": pl.get("iiee_15_pct", float("nan")),
+            "ci": [float("nan"), float("nan")],
+            "skill_vs_baseline": float("nan"),
+            "n": pl["n_samples"],
+            "promoted": False,
+        })
+        rows.append({
+            "task": "sic",
+            "lead_days": lead,
+            "domain": "iiee_15pct",
+            "season": "nov_mar",
+            "model": "gbm_residual",
+            "rmse": pl.get("iiee_15_pct_nov_mar", float("nan")),
+            "ci": [float("nan"), float("nan")],
+            "skill_vs_baseline": float("nan"),
+            "n": pl["n_samples"],
+            "promoted": False,
+        })
+
+    # Per-lead, per-sector coverage rows.
+    for lead, sec_cov in cov.get("per_lead_per_sector", {}).items():
+        for s_name, emp_cov in sec_cov.items():
+            rows.append({
+                "task": "sic",
+                "lead_days": int(lead),
+                "domain": f"sector:{s_name}",
+                "season": "all",
+                "model": "gbm_residual",
+                "rmse": emp_cov,
+                "ci": [float("nan"), float("nan")],
+                "skill_vs_baseline": float("nan"),
+                "n": 0,
+                "promoted": False,
+                "metric": "coverage_90ci",
+            })
+
+    # Sensor check rows.
+    if sensor_metrics is not None:
+        for pl in sensor_metrics["per_lead"]:
+            rows.append({
+                "task": "sic",
+                "lead_days": pl["lead_days"],
+                "domain": "variable_ice_zone",
+                "season": "all",
+                "model": "gbm_residual_sensor_amr2",
+                "rmse": pl["viz_model_rmse"],
+                "ci": pl["viz_rmse_diff_ci"],
+                "skill_vs_baseline": round(
+                    1.0 - pl["viz_model_rmse"] / pl["viz_baseline_rmse"], 5
+                ) if pl["viz_baseline_rmse"] > 0 else float("nan"),
+                "n": pl["n_samples"],
+                "promoted": False,
+                "caveat": "2025+ AMSR2-era sensor, not in training window",
+            })
+
+    promoted = {str(pl["lead_days"]): pl.get("promoted", False) for pl in test_per_lead}
+
+    coverage_out: Dict[str, Any] = {}
+    for lead_str, lead_cov in cov.get("per_lead", {}).items():
+        coverage_out[lead_str] = {
+            "target": 0.9,
+            "empirical": lead_cov,
+        }
+
+    caveats = [
+        "Trained on NSIDC V6 SSMIS-era (2005-2019). Val 2020-2021, test 2022-2024 untouched.",
+        "Sensor check on 2025+ AMSR2 era is out-of-training-distribution; treat as indicative only.",
+        "Promoted leads must beat tuned damped-persistence baseline with 95% CI excluding zero in both all-season and Nov-Mar on VIZ cells.",
+        "IIEE at 15% threshold per Goessling et al. 2016, area-weighted.",
+    ]
+    if sensor_metrics is None:
+        caveats.append("No 2025+ data available in cache for sensor check.")
+    else:
+        caveats.append(
+            f"Sensor check: {sensor_metrics['n_samples']} samples across "
+            f"{sensor_metrics['overall']['window_years']}."
+        )
+
+    return {
+        "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "git_sha": git_sha,
+        "data_source": "real",
+        "product": "NOAA/NSIDC CDR G02202 Version 6",
+        "version": "v06r00",
+        "train_years": sorted({d.year for d in train_dates}),
+        "val_years": sorted({d.year for d in val_dates}),
+        "test_years": sorted({d.year for d in test_dates}),
+        "leads_days": list(REAL_LEAD_DAYS),
+        "taus": {str(k): round(v, 2) for k, v in taus.items()},
+        "record_length_days": record_length,
+        "n_gaps": n_gaps,
+        "rows": rows,
+        "promoted": {"sic": promoted},
+        "coverage": coverage_out,
+        "coverage_per_lead_per_season": cov.get("per_lead_per_season", {}),
+        "coverage_per_lead_per_sector": cov.get("per_lead_per_sector", {}),
+        "taus_trained_on": {str(k): round(v, 2) for k, v in taus.items()},
+        "evaluation_status": {
+            "trained_on": "real",
+            "operational_skill_validated": False,
+            "used_in_routing": False,
+            "promoted_leads": sorted(promoted.keys()) if any(promoted.values()) else [],
+            "status": "real_data_training_complete",
+        },
+        "caveats": caveats,
+    }
 
 
 def _json_default(o):
