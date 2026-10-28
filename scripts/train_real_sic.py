@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import platform
 import sys
 import time
@@ -322,8 +323,7 @@ def main(argv: List[str] | None = None) -> int:
 
     report_path = Path(MODELS_DIR) / "eval" / "real_sic_ml_report.json"
     report_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(report_path, "w", encoding="utf-8") as fh:
-        json.dump(scorecard, fh, indent=2, sort_keys=False, default=_json_default)
+    _json_dump(scorecard, report_path)
     print(f"  Scorecard report written to {report_path}")
 
     return 0
@@ -385,6 +385,9 @@ def _build_scorecard_report(
 
     for pl in test_per_lead:
         lead = pl["lead_days"]
+        viz_model_rmse = pl["viz_model_rmse"]
+        viz_baseline_rmse = pl["viz_baseline_rmse"]
+        viz_skill = round(1.0 - viz_model_rmse / viz_baseline_rmse, 5) if viz_baseline_rmse > 0 else None
         # Main model row (VIZ cells, all-season).
         rows.append({
             "task": "sic",
@@ -392,12 +395,10 @@ def _build_scorecard_report(
             "domain": "variable_ice_zone",
             "season": "all",
             "model": "gbm_residual",
-            "rmse": pl["viz_model_rmse"],
+            "rmse": viz_model_rmse,
             "ci": pl["viz_rmse_diff_ci"],
-            "skill_vs_baseline": round(1.0 - pl["viz_model_rmse"] / pl["viz_baseline_rmse"], 5)
-                if pl["viz_baseline_rmse"] > 0 else float("nan"),
+            "skill_vs_baseline": viz_skill,
             "n": pl["n_samples"],
-            "promoted": pl.get("promoted", False),
         })
         # Nov-Mar VIZ row.
         rows.append({
@@ -406,11 +407,10 @@ def _build_scorecard_report(
             "domain": "variable_ice_zone",
             "season": "nov_mar",
             "model": "gbm_residual",
-            "rmse": pl["viz_model_rmse"],
+            "rmse": viz_model_rmse,
             "ci": pl["viz_nov_mar_rmse_diff_ci"],
-            "skill_vs_baseline": float("nan"),
+            "skill_vs_baseline": None,
             "n": pl["n_samples"],
-            "promoted": pl.get("promoted", False),
         })
         # Baseline row for context.
         rows.append({
@@ -419,24 +419,25 @@ def _build_scorecard_report(
             "domain": "variable_ice_zone",
             "season": "all",
             "model": "damped_persistence",
-            "rmse": pl["viz_baseline_rmse"],
-            "ci": [float("nan"), float("nan")],
-            "skill_vs_baseline": float("nan"),
+            "rmse": viz_baseline_rmse,
+            "ci": [None, None],
+            "skill_vs_baseline": None,
             "n": pl["n_samples"],
-            "promoted": False,
         })
         # IIEE rows.
+        iiee_all = pl.get("iiee_15_pct")
+        iiee_nov_mar = pl.get("iiee_15_pct_nov_mar")
         rows.append({
             "task": "sic",
             "lead_days": lead,
             "domain": "iiee_15pct",
             "season": "all",
             "model": "gbm_residual",
-            "rmse": pl.get("iiee_15_pct", float("nan")),
-            "ci": [float("nan"), float("nan")],
-            "skill_vs_baseline": float("nan"),
+            "rmse": iiee_all,
+            "ci": [None, None],
+            "skill_vs_baseline": None,
             "n": pl["n_samples"],
-            "promoted": False,
+            "metric": "iiee_pct",
         })
         rows.append({
             "task": "sic",
@@ -444,11 +445,11 @@ def _build_scorecard_report(
             "domain": "iiee_15pct",
             "season": "nov_mar",
             "model": "gbm_residual",
-            "rmse": pl.get("iiee_15_pct_nov_mar", float("nan")),
-            "ci": [float("nan"), float("nan")],
-            "skill_vs_baseline": float("nan"),
+            "rmse": iiee_nov_mar,
+            "ci": [None, None],
+            "skill_vs_baseline": None,
             "n": pl["n_samples"],
-            "promoted": False,
+            "metric": "iiee_pct",
         })
 
     # Per-lead, per-sector coverage rows.
@@ -461,29 +462,28 @@ def _build_scorecard_report(
                 "season": "all",
                 "model": "gbm_residual",
                 "rmse": emp_cov,
-                "ci": [float("nan"), float("nan")],
-                "skill_vs_baseline": float("nan"),
+                "ci": [None, None],
+                "skill_vs_baseline": None,
                 "n": 0,
-                "promoted": False,
                 "metric": "coverage_90ci",
             })
 
     # Sensor check rows.
     if sensor_metrics is not None:
         for pl in sensor_metrics["per_lead"]:
+            s_model_rmse = pl["viz_model_rmse"]
+            s_base_rmse = pl["viz_baseline_rmse"]
+            s_skill = round(1.0 - s_model_rmse / s_base_rmse, 5) if s_base_rmse > 0 else None
             rows.append({
                 "task": "sic",
                 "lead_days": pl["lead_days"],
                 "domain": "variable_ice_zone",
                 "season": "all",
                 "model": "gbm_residual_sensor_amr2",
-                "rmse": pl["viz_model_rmse"],
+                "rmse": s_model_rmse,
                 "ci": pl["viz_rmse_diff_ci"],
-                "skill_vs_baseline": round(
-                    1.0 - pl["viz_model_rmse"] / pl["viz_baseline_rmse"], 5
-                ) if pl["viz_baseline_rmse"] > 0 else float("nan"),
+                "skill_vs_baseline": s_skill,
                 "n": pl["n_samples"],
-                "promoted": False,
                 "caveat": "2025+ AMSR2-era sensor, not in training window",
             })
 
@@ -519,7 +519,7 @@ def _build_scorecard_report(
         "train_years": sorted({d.year for d in train_dates}),
         "val_years": sorted({d.year for d in val_dates}),
         "test_years": sorted({d.year for d in test_dates}),
-        "leads_days": list(REAL_LEAD_DAYS),
+        "lead_days": list(REAL_LEAD_DAYS),
         "taus": {str(k): round(v, 2) for k, v in taus.items()},
         "record_length_days": record_length,
         "n_gaps": n_gaps,
@@ -544,12 +544,27 @@ def _json_default(o):
     if isinstance(o, (np.integer,)):
         return int(o)
     if isinstance(o, (np.floating,)):
-        return float(o)
+        v = float(o)
+        return None if not math.isfinite(v) else v
     if isinstance(o, np.ndarray):
-        return o.tolist()
+        return [_json_default(x) for x in o.tolist()]
     if isinstance(o, (np.bool_,)):
         return bool(o)
     return str(o)
+
+
+def _json_dump(obj: dict, path: Path) -> None:
+    """Dump JSON with NaN/Infinity sanitized to null (valid JSON)."""
+    def sanitize(v):
+        if isinstance(v, dict):
+            return {k: sanitize(x) for k, x in v.items()}
+        if isinstance(v, list):
+            return [sanitize(x) for x in v]
+        if isinstance(v, float):
+            return None if not math.isfinite(v) else v
+        return v
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(sanitize(obj), f, indent=2, ensure_ascii=False)
 
 
 if __name__ == "__main__":

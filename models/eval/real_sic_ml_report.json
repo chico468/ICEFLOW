@@ -30,11 +30,6 @@
     2023,
     2024
   ],
-  "leads_days": [
-    3,
-    7,
-    14
-  ],
   "taus": {
     "3": 22.98,
     "7": 25.06,
@@ -55,8 +50,7 @@
         -0.00548
       ],
       "skill_vs_baseline": 0.06218,
-      "n": 1739352,
-      "promoted": false
+      "n": 1739352
     },
     {
       "task": "sic",
@@ -69,9 +63,8 @@
         -0.00614,
         0.0042
       ],
-      "skill_vs_baseline": NaN,
-      "n": 1739352,
-      "promoted": false
+      "skill_vs_baseline": null,
+      "n": 1739352
     },
     {
       "task": "sic",
@@ -81,12 +74,11 @@
       "model": "damped_persistence",
       "rmse": 0.12865,
       "ci": [
-        NaN,
-        NaN
+        null,
+        null
       ],
-      "skill_vs_baseline": NaN,
-      "n": 1739352,
-      "promoted": false
+      "skill_vs_baseline": null,
+      "n": 1739352
     },
     {
       "task": "sic",
@@ -96,12 +88,12 @@
       "model": "gbm_residual",
       "rmse": 5.3343,
       "ci": [
-        NaN,
-        NaN
+        null,
+        null
       ],
-      "skill_vs_baseline": NaN,
+      "skill_vs_baseline": null,
       "n": 1739352,
-      "promoted": false
+      "metric": "iiee_pct"
     },
     {
       "task": "sic",
@@ -111,12 +103,12 @@
       "model": "gbm_residual",
       "rmse": 5.1523,
       "ci": [
-        NaN,
-        NaN
+        null,
+        null
       ],
-      "skill_vs_baseline": NaN,
+      "skill_vs_baseline": null,
       "n": 1739352,
-      "promoted": false
+      "metric": "iiee_pct"
     },
     {
       "task": "sic",
@@ -130,8 +122,7 @@
         -0.00539
       ],
       "skill_vs_baseline": 0.058,
-      "n": 1739352,
-      "promoted": false
+      "n": 1739352
     },
     {
       "task": "sic",
@@ -144,9 +135,8 @@
         -0.00433,
         0.00765
       ],
-      "skill_vs_baseline": NaN,
-      "n": 1739352,
-      "promoted": false
+      "skill_vs_baseline": null,
+      "n": 1739352
     },
     {
       "task": "sic",
@@ -156,12 +146,11 @@
       "model": "damped_persistence",
       "rmse": 0.16122,
       "ci": [
-        NaN,
-        NaN
+        null,
+        null
       ],
-      "skill_vs_baseline": NaN,
-      "n": 1739352,
-      "promoted": false
+      "skill_vs_baseline": null,
+      "n": 1739352
     },
     {
       "task": "sic",
@@ -171,12 +160,12 @@
       "model": "gbm_residual",
       "rmse": 5.3343,
       "ci": [
-        NaN,
-        NaN
+        null,
+        null
       ],
-      "skill_vs_baseline": NaN,
+      "skill_vs_baseline": null,
       "n": 1739352,
-      "promoted": false
+      "metric": "iiee_pct"
     },
     {
       "task": "sic",
@@ -186,12 +175,12 @@
       "model": "gbm_residual",
       "rmse": 6.3401,
       "ci": [
-        NaN,
-        NaN
+        null,
+        null
       ],
-      "skill_vs_baseline": NaN,
+      "skill_vs_baseline": null,
       "n": 1739352,
-      "promoted": false
+      "metric": "iiee_pct"
     },
     {
       "task": "sic",
@@ -205,8 +194,7 @@
         -0.00055
       ],
       "skill_vs_baseline": 0.02196,
-      "n": 1739352,
-      "promoted": false
+      "n": 1739352
     },
     {
       "task": "sic",
@@ -219,9 +207,8 @@
         -0.00035,
         0.0106
       ],
-      "skill_vs_baseline": NaN,
-      "n": 1739352,
-      "promoted": false
+      "skill_vs_baseline": null,
+      "n": 1739352
     },
     {
       "task": "sic",
@@ -231,12 +218,11 @@
       "model": "damped_persistence",
       "rmse": 0.18127,
       "ci": [
-        NaN,
-        NaN
+        null,
+        null
       ],
-      "skill_vs_baseline": NaN,
-      "n": 1739352,
-      "promoted": false
+      "skill_vs_baseline": null,
+      "n": 1739352
     },
     {
       "task": "sic",
@@ -246,12 +232,12 @@
       "model": "gbm_residual",
       "rmse": 5.3343,
       "ci": [
-        NaN,
-        NaN
+        null,
+        null
       ],
-      "skill_vs_baseline": NaN,
+      "skill_vs_baseline": null,
       "n": 1739352,
-      "promoted": false
+      "metric": "iiee_pct"
     },
     {
       "task": "sic",
@@ -261,12 +247,12 @@
       "model": "gbm_residual",
       "rmse": 7.0601,
       "ci": [
-        NaN,
-        NaN
+        null,
+        null
       ],
-      "skill_vs_baseline": NaN,
+      "skill_vs_baseline": null,
       "n": 1739352,
-      "promoted": false
+      "metric": "iiee_pct"
     },
     {
       "task": "sic",
@@ -276,12 +262,11 @@
       "model": "gbm_residual",
       "rmse": 0.9227,
       "ci": [
-        NaN,
-        NaN
+        null,
+        null
       ],
-      "skill_vs_baseline": NaN,
+      "skill_vs_baseline": null,
       "n": 0,
-      "promoted": false,
       "metric": "coverage_90ci"
     },
     {
@@ -292,12 +277,11 @@
       "model": "gbm_residual",
       "rmse": 0.9095,
       "ci": [
-        NaN,
-        NaN
+        null,
+        null
       ],
-      "skill_vs_baseline": NaN,
+      "skill_vs_baseline": null,
       "n": 0,
-      "promoted": false,
       "metric": "coverage_90ci"
     },
     {
@@ -308,12 +292,11 @@
       "model": "gbm_residual",
       "rmse": 0.8673,
       "ci": [
-        NaN,
-        NaN
+        null,
+        null
       ],
-      "skill_vs_baseline": NaN,
+      "skill_vs_baseline": null,
       "n": 0,
-      "promoted": false,
       "metric": "coverage_90ci"
     },
     {
@@ -324,12 +307,11 @@
       "model": "gbm_residual",
       "rmse": 0.9103,
       "ci": [
-        NaN,
-        NaN
+        null,
+        null
       ],
-      "skill_vs_baseline": NaN,
+      "skill_vs_baseline": null,
       "n": 0,
-      "promoted": false,
       "metric": "coverage_90ci"
     },
     {
@@ -340,12 +322,11 @@
       "model": "gbm_residual",
       "rmse": 0.8757,
       "ci": [
-        NaN,
-        NaN
+        null,
+        null
       ],
-      "skill_vs_baseline": NaN,
+      "skill_vs_baseline": null,
       "n": 0,
-      "promoted": false,
       "metric": "coverage_90ci"
     },
     {
@@ -356,12 +337,11 @@
       "model": "gbm_residual",
       "rmse": 0.9176,
       "ci": [
-        NaN,
-        NaN
+        null,
+        null
       ],
-      "skill_vs_baseline": NaN,
+      "skill_vs_baseline": null,
       "n": 0,
-      "promoted": false,
       "metric": "coverage_90ci"
     },
     {
@@ -372,12 +352,11 @@
       "model": "gbm_residual",
       "rmse": 0.9122,
       "ci": [
-        NaN,
-        NaN
+        null,
+        null
       ],
-      "skill_vs_baseline": NaN,
+      "skill_vs_baseline": null,
       "n": 0,
-      "promoted": false,
       "metric": "coverage_90ci"
     },
     {
@@ -388,12 +367,11 @@
       "model": "gbm_residual",
       "rmse": 0.8754,
       "ci": [
-        NaN,
-        NaN
+        null,
+        null
       ],
-      "skill_vs_baseline": NaN,
+      "skill_vs_baseline": null,
       "n": 0,
-      "promoted": false,
       "metric": "coverage_90ci"
     },
     {
@@ -404,12 +382,11 @@
       "model": "gbm_residual",
       "rmse": 0.9052,
       "ci": [
-        NaN,
-        NaN
+        null,
+        null
       ],
-      "skill_vs_baseline": NaN,
+      "skill_vs_baseline": null,
       "n": 0,
-      "promoted": false,
       "metric": "coverage_90ci"
     },
     {
@@ -420,12 +397,11 @@
       "model": "gbm_residual",
       "rmse": 0.8694,
       "ci": [
-        NaN,
-        NaN
+        null,
+        null
       ],
-      "skill_vs_baseline": NaN,
+      "skill_vs_baseline": null,
       "n": 0,
-      "promoted": false,
       "metric": "coverage_90ci"
     },
     {
@@ -436,12 +412,11 @@
       "model": "gbm_residual",
       "rmse": 0.9019,
       "ci": [
-        NaN,
-        NaN
+        null,
+        null
       ],
-      "skill_vs_baseline": NaN,
+      "skill_vs_baseline": null,
       "n": 0,
-      "promoted": false,
       "metric": "coverage_90ci"
     },
     {
@@ -452,12 +427,11 @@
       "model": "gbm_residual",
       "rmse": 0.9058,
       "ci": [
-        NaN,
-        NaN
+        null,
+        null
       ],
-      "skill_vs_baseline": NaN,
+      "skill_vs_baseline": null,
       "n": 0,
-      "promoted": false,
       "metric": "coverage_90ci"
     },
     {
@@ -468,12 +442,11 @@
       "model": "gbm_residual",
       "rmse": 0.8744,
       "ci": [
-        NaN,
-        NaN
+        null,
+        null
       ],
-      "skill_vs_baseline": NaN,
+      "skill_vs_baseline": null,
       "n": 0,
-      "promoted": false,
       "metric": "coverage_90ci"
     },
     {
@@ -484,12 +457,11 @@
       "model": "gbm_residual",
       "rmse": 0.8927,
       "ci": [
-        NaN,
-        NaN
+        null,
+        null
       ],
-      "skill_vs_baseline": NaN,
+      "skill_vs_baseline": null,
       "n": 0,
-      "promoted": false,
       "metric": "coverage_90ci"
     },
     {
@@ -500,12 +472,11 @@
       "model": "gbm_residual",
       "rmse": 0.858,
       "ci": [
-        NaN,
-        NaN
+        null,
+        null
       ],
-      "skill_vs_baseline": NaN,
+      "skill_vs_baseline": null,
       "n": 0,
-      "promoted": false,
       "metric": "coverage_90ci"
     },
     {
@@ -521,7 +492,6 @@
       ],
       "skill_vs_baseline": 0.06509,
       "n": 571320,
-      "promoted": false,
       "caveat": "2025+ AMSR2-era sensor, not in training window"
     },
     {
@@ -537,7 +507,6 @@
       ],
       "skill_vs_baseline": 0.04968,
       "n": 564972,
-      "promoted": false,
       "caveat": "2025+ AMSR2-era sensor, not in training window"
     },
     {
@@ -553,7 +522,6 @@
       ],
       "skill_vs_baseline": -0.00696,
       "n": 553863,
-      "promoted": false,
       "caveat": "2025+ AMSR2-era sensor, not in training window"
     }
   ],
@@ -633,5 +601,10 @@
     "Promoted leads must beat tuned damped-persistence baseline with 95% CI excluding zero in both all-season and Nov-Mar on VIZ cells.",
     "IIEE at 15% threshold per Goessling et al. 2016, area-weighted.",
     "Sensor check: 1690155 samples across [2025]."
+  ],
+  "lead_days": [
+    3,
+    7,
+    14
   ]
 }
