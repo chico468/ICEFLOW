@@ -351,11 +351,13 @@ def ml_status() -> Dict[str, Any]:
         real_entry["feature_names"] = list(getattr(real_model, "feature_names", ()) or [])
         real_entry["n_features"] = len(real_entry["feature_names"])
         real_entry["n_train_rows"] = real_record.get("record_length_days", 0)
+        real_entry["covtarget"] = 0.9
+        real_entry["coverage_90_ci"] = real_record.get("coverage", {})
         real_entry["leads"] = list(getattr(real_model, "leads", REAL_LEAD_DAYS))
+        real_entry["lead_days"] = real_record.get("lead_days", list(REAL_LEAD_DAYS))
         real_entry["promoted_leads"] = [
             int(l) for l, v in real_record.get("promoted", {}).get("sic", {}).items() if v
         ] if real_record else []
-        real_entry["coverage_90_ci"] = real_record.get("coverage", {})
         real_entry["val_years"] = real_record.get("val_years", [])
         real_entry["test_years"] = real_record.get("test_years", [])
     real_entry["caveat"] = (
@@ -366,25 +368,18 @@ def ml_status() -> Dict[str, Any]:
     entries["real_sic_forecaster"] = real_entry
 
     any_trained = any(e.get("artefact_present") or e["status"] != "not trained" for e in entries.values())
-    real_report_path = Path(MODELS_DIR) / "eval" / "real_sic_ml_report.json"
-    real_data_report = None
-    if real_report_path.exists():
-        try:
-            with open(real_report_path, "r", encoding="utf-8") as fh:
-                report = json.load(fh)
-            if report.get("data_source") == "real":
-                real_data_report = {
-                    "path": str(real_report_path),
-                    "date": report.get("generated_at"),
-                    "product": report.get("product"),
-                    "product_version": report.get("version"),
-                    "train_years": report.get("train_years"),
-                    "test_years": report.get("test_years"),
-                }
-        except Exception:
-            pass
-
     has_real = real_entry["artefact_present"] or real_entry["status"] != "not trained"
+    real_data_report = None
+    if real_record and real_record.get("data_source") == "real":
+        real_data_report = {
+            "path": str(_real_report_path()),
+            "date": real_record.get("generated_at"),
+            "product": real_record.get("product"),
+            "product_version": real_record.get("version"),
+            "train_years": real_record.get("train_years"),
+            "test_years": real_record.get("test_years"),
+            "lead_days": real_record.get("lead_days"),
+        }
     if has_real:
         data_provenance = (
             "Mixed. The real_sic_forecaster is trained on NSIDC V6 observations "
@@ -413,7 +408,7 @@ def ml_status() -> Dict[str, Any]:
         "any_trained": any_trained,
         "models_dir": str(MODELS_DIR),
         "metrics_file_present": metrics_path().exists(),
-        "trained_at": real_record.get("trained_at") if isinstance(real_record, dict) else metrics.get("trained_at"),
+        "trained_at": real_record.get("generated_at") if isinstance(real_record, dict) else metrics.get("trained_at"),
         "training_wall_time_s": metrics.get("training_wall_time_s"),
         "seed": metrics.get("seed"),
         "sklearn_version": metrics.get("sklearn_version"),
