@@ -1,7 +1,8 @@
 """Icebergs, route planning and route comparison."""
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List, Literal, Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field, field_validator
@@ -23,6 +24,7 @@ from src.core.route_optimizer import (
     PolarRouteOptimizer,
     RouteAlternativesResult,
     RouteWeights,
+    WaypointEta,
 )
 from src.data.icebergs import get_iceberg_profiles, get_profile
 from src.data.observed_icebergs import load_snapshot as load_observed_icebergs
@@ -172,12 +174,23 @@ class RouteRequest(BaseModel):
     lead_hours: float = 0.0
     grid_resolution_deg: float = Field(default=0.5, ge=0.25, le=2.0)
     avoid_icebergs: bool = True
+    # v1.1 additions: wall-clock departure and the environment mode that produced the data.
+    departure_iso: Optional[str] = None
+    environment_mode: Optional[Literal["simulated", "real_ice", "replay"]] = None
+    replay_date: Optional[str] = None
 
     @field_validator("planning_reference_iso")
     @classmethod
     def _validate_planning_reference(cls, value: Optional[str]) -> Optional[str]:
         if value is not None:
             parse_utc_datetime(value, "planning_reference_iso")
+        return value
+
+    @field_validator("departure_iso")
+    @classmethod
+    def _validate_departure_iso(cls, value: Optional[str]) -> Optional[str]:
+        if value is not None:
+            parse_utc_datetime(value, "departure_iso")
         return value
 
 
@@ -199,6 +212,22 @@ def _resolve_request(req: RouteRequest):
     return start, dest, vessel
 
 
+def _wall_clock(req: RouteRequest):
+    """Resolve the wall-clock departure: the requested departure_iso, or now UTC."""
+    if req.departure_iso:
+        departure = parse_utc_datetime(req.departure_iso, "departure_iso")
+    else:
+        departure = datetime.now(timezone.utc)
+    return departure, departure.isoformat()
+
+
+def _stamp_environment(result, departure: datetime, departure_iso: str, environment_mode: str):
+    """Annotate a planning result with wall-clock times and environment provenance."""
+    result.departure_iso = departure_iso
+    result.environment_mode = environment_mode
+    result.provenance = dict(DATA_PROVENANCE)
+
+
 @router.post("/route/optimize", response_model=OptimizationSummary)
 def optimize(req: RouteRequest) -> OptimizationSummary:
     """
@@ -214,17 +243,30 @@ def optimize(req: RouteRequest) -> OptimizationSummary:
         weights=req.weights,
         installed_power_kw=vessel.installed_power_kw,
     )
-    return optimizer.optimize_route(
+    summary = optimizer.optimize_route(
         start[0], start[1], dest[0], dest[1],
         grid_resolution_deg=req.grid_resolution_deg,
         departure_time_hours=req.departure_time_hours,
         avoid_icebergs=req.avoid_icebergs,
     )
+    departure, departure_iso = _wall_clock(req)
+    _stamp_summary(summary, departure, departure_iso, req.environment_mode or "simulated")
+    return summary
+
+
+def _stamp_summary(summary: OptimizationSummary, departure: datetime, departure_iso: str, environment_mode: str):
+    summary.departure_iso = departure_iso
+    summary.environment_mode = environment_mode
+    summary.provenance = dict(DATA_PROVENANCE)
+    if summary.total_transit_hours is not None:
+        summary.arrival_iso = (departure + timedelta(hours=summary.total_transit_hours)).isoformat()
 
 
 @router.post("/route/alternatives", response_model=RouteAlternativesResult)
 def alternatives(req: RouteRequest) -> RouteAlternativesResult:
     """Compare distinct objective profiles using one shared environmental cache and iceberg forecast."""
+    departure, departure_iso = _wall_clock(req)
+    environment_mode = req.environment_mode or "simulated"
     start, dest, vessel = _resolve_request(req)
     optimizer = PolarRouteOptimizer(
         vessel=vessel,
@@ -232,12 +274,21 @@ def alternatives(req: RouteRequest) -> RouteAlternativesResult:
         weights=req.weights,
         installed_power_kw=vessel.installed_power_kw,
     )
-    return optimizer.optimize_alternatives(
+    result = optimizer.optimize_alternatives(
         start[0], start[1], dest[0], dest[1],
         grid_resolution_deg=req.grid_resolution_deg,
         departure_time_hours=req.departure_time_hours,
         avoid_icebergs=req.avoid_icebergs,
     )
+    _stamp_environment(result, departure, departure_iso, environment_mode)
+    for candidate in result.candidates:
+        ev = candidate.evaluation
+        ev.arrival_iso = (departure + timedelta(hours=ev.total_transit_hours)).isoformat()
+        ev.waypoint_etas = [
+            WaypointEta(index=i, eta_iso=(departure + timedelta(hours=w.cumulative_hours)).isoformat())
+            for i, w in enumerate(ev.waypoints)
+        ]
+    return result
 
 
 @router.post("/route/compare")

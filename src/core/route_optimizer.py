@@ -124,6 +124,13 @@ class Waypoint(BaseModel):
     attainable_speed_knots: float = 0.0
 
 
+class WaypointEta(BaseModel):
+    """Clock time at which the ship reaches one waypoint."""
+
+    index: int
+    eta_iso: str
+
+
 class RouteEvaluation(BaseModel):
     """The result of sailing one track through the physics."""
 
@@ -140,6 +147,9 @@ class RouteEvaluation(BaseModel):
     is_feasible: bool
     infeasible_reason: str = ""
     prohibited_waypoints: int = 0
+    # v1.1 additions: clock times derived from the voyage departure.
+    arrival_iso: Optional[str] = None
+    waypoint_etas: List[WaypointEta] = Field(default_factory=list)
 
 
 class SearchDiagnostics(BaseModel):
@@ -187,6 +197,11 @@ class OptimizationSummary(BaseModel):
         "the difference. No fixed multiplier is applied."
     )
     is_synthetic_environment: bool = True
+    # v1.1 additions: wall-clock departure and the environment that produced the data.
+    departure_iso: Optional[str] = None
+    arrival_iso: Optional[str] = None
+    environment_mode: Optional[str] = None
+    provenance: Optional[Dict[str, str]] = None
 
 
 class RouteProfile(BaseModel):
@@ -218,6 +233,10 @@ class RouteAlternativesResult(BaseModel):
     planning_ms: float
     is_synthetic_environment: bool = True
     environment_provenance: Dict[str, Dict[str, str]] = Field(default_factory=dict)
+    # v1.1 additions: wall-clock departure and the environment that produced the data.
+    departure_iso: Optional[str] = None
+    environment_mode: Optional[str] = None
+    provenance: Optional[Dict[str, str]] = None
 
 
 # --------------------------------------------------------------------------------------
