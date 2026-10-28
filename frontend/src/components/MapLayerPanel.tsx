@@ -11,10 +11,11 @@ import { Pause, Play } from 'lucide-react';
 import type { LayerToggles } from '../map/MapEngine';
 import type { ModeAvailability } from '../map/iceModes';
 import type { RasterMode } from '../map/layers';
+import type { Provenance } from '../api/types';
 import { useReducedMotion } from '../hooks/useReducedMotion';
 import { useAppStore } from '../store/useAppStore';
 import { Slider, Toggle } from './ui';
-import { ProvenanceBadge, type SourceStatus } from './ProvenanceBadge';
+import { ProvenanceBadge } from './ProvenanceBadge';
 
 const RASTER_MODES: { mode: RasterMode; label: string; hint: string }[] = [
   { mode: 'concentration', label: 'Concentration', hint: 'Continuous ramp, 0 to 100 percent' },
@@ -23,30 +24,38 @@ const RASTER_MODES: { mode: RasterMode; label: string; hint: string }[] = [
   { mode: 'thickness', label: 'Thickness', hint: 'Ice thickness in metres' },
 ];
 
-type Row = { key: keyof LayerToggles; label: string; hint?: string; proven?: SourceStatus };
+type Row = { key: keyof LayerToggles; label: string; hint?: string; proven?: Provenance };
+
+const ICE_FIELD_PROV: Provenance = { kind: 'simulated', source: 'Model ice field' };
+const ICEBERG_CATALOGUE_PROV: Provenance = {
+  kind: 'real-seed',
+  source: 'Model iceberg catalogue',
+};
+const OBSERVED_BERGS_PROV: Provenance = { kind: 'observed', source: 'USNIC-format snapshot' };
+const FLOW_PROV: Provenance = { kind: 'simulated', source: 'Model flow field' };
 
 const GROUPS: { title: string; rows: Row[] }[] = [
   {
     title: 'Sea ice',
     rows: [
-      { key: 'iceRaster', label: 'Ice raster', hint: 'Model grid of sea-ice concentration', proven: 'synthetic' },
-      { key: 'iceEdge', label: 'Ice edge', proven: 'synthetic' },
-      { key: 'compression', label: 'Compression shading', proven: 'synthetic' },
-      { key: 'drift', label: 'Ice drift vectors', proven: 'synthetic' },
+      { key: 'iceRaster', label: 'Ice raster', hint: 'Model grid of sea-ice concentration', proven: ICE_FIELD_PROV },
+      { key: 'iceEdge', label: 'Ice edge', proven: ICE_FIELD_PROV },
+      { key: 'compression', label: 'Compression shading', proven: ICE_FIELD_PROV },
+      { key: 'drift', label: 'Ice drift vectors', proven: ICE_FIELD_PROV },
     ],
   },
   {
     title: 'Wind and current',
     rows: [
-      { key: 'windFlow', label: 'Atmospheric wind', hint: '10 m eastward/northward velocity vectors' },
-      { key: 'currentFlow', label: 'Ocean currents', hint: 'Surface eastward/northward velocity vectors' },
+      { key: 'windFlow', label: 'Atmospheric wind', hint: '10 m eastward/northward velocity vectors', proven: FLOW_PROV },
+      { key: 'currentFlow', label: 'Ocean currents', hint: 'Surface eastward/northward velocity vectors', proven: FLOW_PROV },
     ],
   },
   {
     title: 'Icebergs',
     rows: [
-      { key: 'icebergs', label: 'Simulated catalogue', hint: 'Seeded and drifted by the model', proven: 'synthetic' },
-      { key: 'observedBergs', label: 'Observed snapshot (stale)', hint: 'USNIC-format file; shows its own date and age', proven: 'observation' },
+      { key: 'icebergs', label: 'Simulated catalogue', hint: 'Seeded and drifted by the model', proven: ICEBERG_CATALOGUE_PROV },
+      { key: 'observedBergs', label: 'Observed snapshot', hint: 'USNIC-format file; shows its own date and age', proven: OBSERVED_BERGS_PROV },
     ],
   },
   {
@@ -163,7 +172,7 @@ export function MapLayerPanel({
           <div className="mb-0.5 text-2xs font-medium text-ink">{g.title}</div>
           {g.rows.map((r) => (
             <Toggle key={r.key} label={r.label} hint={r.hint} checked={layers[r.key]} onChange={() => toggleLayer(r.key)}>
-              {r.proven && <ProvenanceBadge status={r.proven} size="sm" />}
+              {r.proven && <ProvenanceBadge provenance={r.proven} size="sm" />}
             </Toggle>
           ))}
           {g.title === 'Wind and current' && (

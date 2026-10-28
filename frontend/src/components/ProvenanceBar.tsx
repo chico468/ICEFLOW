@@ -58,11 +58,22 @@ export function ProvenanceBar(): JSX.Element {
   }
 
   const entries: [string, Provenance][] = data ? Object.entries(data.data_provenance) : [];
-  const synthetic = entries.filter(([, p]) => p.status === 'synthetic');
+  const simulated = entries.filter(([, p]) => p.kind === 'simulated');
   // 'real-seed' means real names and origins with positions the authors seeded: NOT observations. It must not
   // share a heading with genuinely real data, so it gets its own group.
-  const seeded = entries.filter(([, p]) => p.status === 'real-seed');
-  const real = entries.filter(([, p]) => p.status !== 'synthetic' && p.status !== 'real-seed');
+  const seeded = entries.filter(([, p]) => p.kind === 'real-seed');
+  const real = entries.filter(
+    ([, p]) => p.kind !== 'simulated' && p.kind !== 'real-seed',
+  );
+
+  function ageText(p: Provenance): string {
+    if (p.age_hours === null || p.age_hours === undefined) return 'age unknown';
+    return `${Number(p.age_hours).toFixed(0)} h old`;
+  }
+
+  function validText(p: Provenance): string {
+    return p.valid_time ?? 'valid time unknown';
+  }
 
   return (
     <div ref={rootRef} className="relative z-40 min-w-0">
@@ -118,15 +129,16 @@ export function ProvenanceBar(): JSX.Element {
           <div className="grid gap-5 px-5 pb-5 lg:grid-cols-2">
             <div>
               <div className="display mb-2 flex items-center gap-1.5 text-[14px] text-caution">
-                <FlaskConical size={14} /> Simulated ({synthetic.length})
+                <FlaskConical size={14} /> Simulated ({simulated.length})
               </div>
               <ul className="space-y-2">
-                {synthetic.map(([key, p]) => (
+                {simulated.map(([key, p]) => (
                   <li key={key} className="rounded-lg border border-caution/30 bg-caution/[0.06] p-2.5">
                     <div className="text-xs font-semibold text-caution">{prettyKey(key)}</div>
                     <div className="mt-0.5 text-2xs leading-relaxed text-ink-3">
                       Stands in for{' '}
-                      <span className="text-ink-2">{p.source.replace(/^stands in for /, '')}</span>.
+                      <span className="text-ink-2">{p.source.replace(/^stands in for /, '')}</span>
+                      {p.product ? ` · ${p.product}` : ''}. {ageText(p)}.
                     </div>
                   </li>
                 ))}
@@ -144,6 +156,7 @@ export function ProvenanceBar(): JSX.Element {
                       <div className="text-xs font-semibold text-caution">{prettyKey(key)}</div>
                       <div className="mt-0.5 text-2xs leading-relaxed text-ink-3">
                         <span className="text-ink-2">{p.source}</span>
+                        {p.product ? ` · ${p.product}` : ''}. {ageText(p)}.
                       </div>
                     </li>
                   ))}
@@ -159,9 +172,10 @@ export function ProvenanceBar(): JSX.Element {
                 {real.map(([key, p]) => (
                   <li key={key} className="rounded-lg border border-ok/30 bg-ok/[0.06] p-2.5">
                     <div className="text-xs font-semibold text-ok">{prettyKey(key)}</div>
-                    <div className="mt-0.5 text-2xs leading-relaxed text-ink-3">
-                      <span className="text-ink-2">{p.source}</span>
-                    </div>
+                      <div className="mt-0.5 text-2xs leading-relaxed text-ink-3">
+                        <span className="text-ink-2">{p.source}</span>
+                        {p.product ? ` · ${p.product}` : ''}. {ageText(p)} · {validText(p)}.
+                      </div>
                   </li>
                 ))}
               </ul>

@@ -10,12 +10,13 @@
 
 /** Every response that carries modelled environmental data labels itself. Principle P2. */
 export interface Provenance {
-  status: 'real' | 'real-seed' | 'real-observation' | 'synthetic' | string;
+  kind: 'observed' | 'real_forecast' | 'simulated' | 'experimental_ml' | 'real-seed';
   source: string;
-  note: string;
-  /** Present when the backend reports a dated observation (for example real iceberg positions). */
-  observed_date?: string;
-  age_days?: number;
+  product?: string;
+  /** UTC ISO-8601 timestamp the data is valid at. */
+  valid_time?: string;
+  /** Hours since valid_time; null when not applicable or unknown. */
+  age_hours?: number | null;
 }
 
 export interface SyntheticFlagged {

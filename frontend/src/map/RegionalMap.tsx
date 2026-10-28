@@ -1701,7 +1701,12 @@ data-wind-source-status={windSourceStatus}
             >
               <Wind size={15} />
             </ToolButton>
-            <ProvenanceBadge status="forecast" size="sm" showIcon={false} title="Wind particles come from the GFS model, not observation" />
+            <ProvenanceBadge
+              provenance={{ kind: 'real_forecast', source: 'Mapbox GFS demo tileset' }}
+              size="sm"
+              showIcon={false}
+              title="Context · Mapbox GFS demo tileset, not used in routing"
+            />
           </>,
         ]}
       />
@@ -1774,7 +1779,12 @@ data-wind-source-status={windSourceStatus}
         className="pointer-events-none absolute left-[5%] top-12 z-20 w-[min(300px,calc(100%-3.5rem))] rounded-lg border border-hair bg-panel/95 p-2.5 shadow-lg backdrop-blur"
       >
         <strong className="text-xs text-ink">Observed sea-ice edge</strong>
-        <ProvenanceBadge status="observation" size="sm" showIcon={false} className="ml-1" />
+        <ProvenanceBadge
+          provenance={{ kind: 'observed', source: 'Copernicus sea-ice edge' }}
+          size="sm"
+          showIcon={false}
+          className="ml-1"
+        />
         <div
           role={seaIceStatus === 'error' ? 'alert' : 'status'}
           aria-live="polite"

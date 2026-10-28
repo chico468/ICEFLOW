@@ -1,45 +1,47 @@
 /**
  * A compact inline badge that says where a piece of data came from.
  *
- * Principle P2: nothing here is hardcoded. It reads a Provenance record from
- * /api/v1/health and renders a colored chip so the user can see at a glance
- * whether a layer is observed, a real-data feed, or a simulated stand-in.
+ * Principle P2: nothing here is hardcoded. The badge renders from a typed
+ * Provenance record (kind, source, product, valid_time, age_hours) and derives
+ * its label, tone and icon from `kind` alone, so no per-layer text is baked in.
+ *
+ * Kinds: observed | real_forecast | simulated | experimental_ml | real-seed
+ *   observed        -> Observed
+ *   real_forecast   -> Forecast (real data)
+ *   simulated       -> Simulated
+ *   experimental_ml -> Experimental ML
+ *   real-seed       -> Real catalogue (drift simulated)
  *
  * Used inline with layer labels and controls, where a full ProvenanceBar
  * popover would be too heavy.
- *
- * Two usage modes:
- *  - Pass a full `Provenance` object (looked up from /api/v1/health).
- *  - Pass a simple `status` string ('synthetic' | 'observation' | 'real')
- *    when the provenance is known from the layer's source type.
  */
 import { Cloud, Database, FlaskConical, Globe, Satellite } from 'lucide-react';
 import type { Provenance } from '../api/types';
 
-export type SourceStatus = 'synthetic' | 'observation' | 'real' | 'analysis' | 'forecast';
+export type ProvenanceKind = Provenance['kind'];
 
-const STATUS_LABELS: Record<SourceStatus, string> = {
-  synthetic: 'Simulated',
-  observation: 'Observed',
-  real: 'Real',
-  analysis: 'Analysis',
-  forecast: 'Forecast',
+const KIND_LABELS: Record<ProvenanceKind, string> = {
+  observed: 'Observed',
+  real_forecast: 'Forecast (real data)',
+  simulated: 'Simulated',
+  experimental_ml: 'Experimental ML',
+  'real-seed': 'Real catalogue (drift simulated)',
 };
 
-const STATUS_TONES: Record<SourceStatus, 'ok' | 'caution' | 'accent' | 'neutral'> = {
-  synthetic: 'caution',
-  observation: 'ok',
-  real: 'ok',
-  analysis: 'accent',
-  forecast: 'accent',
+const KIND_TONES: Record<ProvenanceKind, 'ok' | 'caution' | 'accent' | 'neutral'> = {
+  observed: 'ok',
+  real_forecast: 'accent',
+  simulated: 'caution',
+  experimental_ml: 'caution',
+  'real-seed': 'neutral',
 };
 
-const STATUS_ICONS: Record<SourceStatus, React.ElementType> = {
-  synthetic: FlaskConical,
-  observation: Satellite,
-  real: Database,
-  analysis: Cloud,
-  forecast: Globe,
+const KIND_ICONS: Record<ProvenanceKind, React.ElementType> = {
+  observed: Satellite,
+  real_forecast: Globe,
+  simulated: FlaskConical,
+  experimental_ml: Cloud,
+  'real-seed': Database,
 };
 
 const SIZE_CLASSES = {
@@ -55,55 +57,42 @@ const TONE_CLASSES = {
   neutral: 'border-hair-2 text-ink-2 bg-panel-2',
 };
 
-/** Resolve a Provenance object to a SourceStatus. */
-export function provenanceToStatus(provenance: Provenance | undefined): SourceStatus {
-  if (!provenance) return 'synthetic';
-  if (provenance.status === 'real-observation') return 'observation';
-  if (provenance.status === 'synthetic' || provenance.status === 'real-seed') return 'synthetic';
-  if (provenance.status === 'real') {
-    if (provenance.source?.toLowerCase().includes('gfs') || provenance.source?.toLowerCase().includes('noaa')) {
-      return 'forecast';
-    }
-    if (provenance.source?.toLowerCase().includes('copernicus')) return 'analysis';
-    return 'real';
-  }
-  return 'synthetic';
-}
-
-/** Resolve a Provenance object to a display label. */
-export function provenanceLabel(provenance: Provenance | undefined): string {
-  const status = provenanceToStatus(provenance);
-  return STATUS_LABELS[status];
+export function provenanceKindLabel(provenance: Provenance): string {
+  return KIND_LABELS[provenance.kind];
 }
 
 export function ProvenanceBadge({
   provenance,
-  status,
-  source,
   className,
   title,
+  showAge = true,
   showIcon = true,
   size = 'md',
 }: {
-  /** Full Provenance record (takes priority over `status`). */
-  provenance?: Provenance;
-  /** Shorthand: pass a status string instead of a full Provenance object. */
-  status?: SourceStatus;
-  /** Custom source label shown in the title. */
-  source?: string;
+  /** Full Provenance record; the label, tone and icon come from its kind. */
+  provenance: Provenance;
   className?: string;
+  /** Optional tooltip override; defaults to provenance-derived title. */
   title?: string;
+  /** Append the age (hours) to the visible label. */
+  showAge?: boolean;
   showIcon?: boolean;
   size?: 'sm' | 'md' | 'lg';
 }): JSX.Element {
-  const resolvedStatus = provenance ? provenanceToStatus(provenance) : (status ?? 'synthetic');
-  const Icon = STATUS_ICONS[resolvedStatus];
-  const tone = STATUS_TONES[resolvedStatus];
-  const label = STATUS_LABELS[resolvedStatus];
+  const label = KIND_LABELS[provenance.kind];
+  const tone = KIND_TONES[provenance.kind];
+  const Icon = KIND_ICONS[provenance.kind];
   const sizeClass = SIZE_CLASSES[size];
   const toneClass = TONE_CLASSES[tone];
-  const badgeTitle = title
-    ?? (provenance?.source ? `${provenance.source}${provenance.note ? ` — ${provenance.note}` : ''}` : source ?? 'Unknown provenance');
+
+  const parts: string[] = [provenance.source];
+  if (provenance.product) parts.push(provenance.product);
+  if (provenance.valid_time) parts.push(`valid ${provenance.valid_time}`);
+  if (showAge && provenance.age_hours !== null && provenance.age_hours !== undefined) {
+    parts.push(`${Number(provenance.age_hours).toFixed(0)} h old`);
+  }
+  const badgeTitle = title ?? parts.join(' · ');
+
   return (
     <span
       className={`inline-flex items-center gap-0.5 rounded ${sizeClass} font-medium ${toneClass} ${className ?? ''}`}
@@ -116,6 +105,9 @@ export function ProvenanceBadge({
         />
       )}
       {label}
+      {showAge && provenance.age_hours !== null && provenance.age_hours !== undefined && (
+        <span className="text-[8px] opacity-60">· {Number(provenance.age_hours).toFixed(0)} h</span>
+      )}
     </span>
   );
 }

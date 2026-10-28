@@ -55,7 +55,7 @@ test('the flow legend keeps its honesty caveats (simulated, visual-aid speed, no
 
 test('provenance: seeded (real-seed) data is never listed under "Real"', () => {
   const bar = readFileSync(join(SRC, 'components', 'ProvenanceBar.tsx'), 'utf8').replace(/\s+/g, ' ');
-  assert.match(bar, /p\.status !== 'synthetic' && p\.status !== 'real-seed'/);
+  assert.match(bar, /p\.kind !== 'simulated' && p\.kind !== 'real-seed'/);
   assert.match(bar, /Seeded from real names, not observed/);
 });
 
