@@ -120,6 +120,22 @@ def reset_cache() -> None:
         _LOAD_ERRORS.clear()
 
 
+def _real_report_path() -> Path:
+    return Path(MODELS_DIR) / "eval" / "real_sic_ml_report.json"
+
+
+def load_real_report() -> Dict[str, Any]:
+    """Contents of models/eval/real_sic_ml_report.json, or {} if missing/malformed."""
+    path = _real_report_path()
+    if not path.exists():
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            return json.load(fh)
+    except Exception:
+        return {}
+
+
 def _read_metrics_mode(metrics: Dict[str, Any]) -> str:
     mode = metrics.get("mode")
     if isinstance(mode, str) and mode:
@@ -227,22 +243,25 @@ def ml_status() -> Dict[str, Any]:
     # Real-data SIC forecaster (BE-2). Separate from the synthetic loop.
     real_path = artefact_path(REAL_SIC_ARTEFACT_NAME)
     real_model = get_real_sic_forecaster()
-    real_record = metrics if isinstance(metrics, dict) and metrics.get("trained_on") == "real" else {}
+    real_record = load_real_report()
     real_entry: Dict[str, Any] = {
         "task": "sea-ice concentration forecast (real NSIDC V6 data)",
         "status": "real_data_trained" if real_model is not None else "not trained",
         "status_detail": "trained on real satellite observations" if real_model is not None else "not trained",
         "trained_on": "real",
         "operational_skill_validated": bool(real_record.get("evaluation_status", {}).get("operational_skill_validated", False)),
-        "beats_best_baseline": bool(
-            real_record.get("evaluation_status", {}).get("promoted_leads")
+        "beats_best_baseline": any(
+            real_record.get("promoted", {}).get("sic", {}).values()
         ) if real_record else False,
         "used_in_routing": bool(real_record.get("evaluation_status", {}).get("used_in_routing", False)),
-        "metrics_mode": _read_metrics_mode(metrics),
-        "trained_at": real_record.get("trained_at") if isinstance(real_record, dict) else None,
+        "metrics_mode": "real",
+        "trained_at": real_record.get("generated_at"),
         "artefact": real_path.name,
         "artefact_present": real_path.exists(),
-        "report_path": str(Path(MODELS_DIR) / "eval" / "real_sic_report.json"),
+        "report_path": str(Path(MODELS_DIR) / "eval" / "real_sic_ml_report.json"),
+        "product": real_record.get("product"),
+        "version": real_record.get("version"),
+        "taus": real_record.get("taus"),
     }
     if real_model is None:
         real_entry["reason"] = _LOAD_ERRORS.get(
@@ -254,14 +273,14 @@ def ml_status() -> Dict[str, Any]:
         real_entry["estimator"] = metadata.get("estimator", "HistGradientBoostingRegressor")
         real_entry["feature_names"] = list(getattr(real_model, "feature_names", ()) or [])
         real_entry["n_features"] = len(real_entry["feature_names"])
-        real_entry["n_train_rows"] = real_record.get("dataset", {}).get("n_train_rows") if isinstance(real_record, dict) else None
+        real_entry["n_train_rows"] = real_record.get("record_length_days", 0)
         real_entry["leads"] = list(getattr(real_model, "leads", REAL_LEAD_DAYS))
-        if isinstance(real_record, dict):
-            real_entry["val_metrics"] = real_record.get("val_metrics")
-            real_entry["test_metrics"] = real_record.get("test_metrics")
-            real_entry["promoted_leads"] = real_record.get("promoted_leads", [])
-            real_entry["coverage_90_ci"] = real_record.get("coverage_90_ci")
-            real_entry["taus"] = real_record.get("taus")
+        real_entry["promoted_leads"] = [
+            int(l) for l, v in real_record.get("promoted", {}).get("sic", {}).items() if v
+        ] if real_record else []
+        real_entry["coverage_90_ci"] = real_record.get("coverage", {})
+        real_entry["val_years"] = real_record.get("val_years", [])
+        real_entry["test_years"] = real_record.get("test_years", [])
     real_entry["caveat"] = (
         "Trained on real NSIDC V6 observations; not operationally validated. "
         "Promoted leads must beat the tuned baseline with CI excluding zero "
@@ -270,21 +289,21 @@ def ml_status() -> Dict[str, Any]:
     entries["real_sic_forecaster"] = real_entry
 
     any_trained = any(e.get("artefact_present") or e["status"] != "not trained" for e in entries.values())
-    real_report_path = Path(MODELS_DIR) / "eval" / "real_sic_report.json"
+    real_report_path = Path(MODELS_DIR) / "eval" / "real_sic_ml_report.json"
     real_data_report = None
     if real_report_path.exists():
         try:
-            if "/tests/" not in str(real_report_path):
-                with open(real_report_path, "r", encoding="utf-8") as fh:
-                    report = json.load(fh)
-                if report.get("data_source") == "real":
-                    real_data_report = {
-                        "path": str(real_report_path),
-                        "date": report.get("generated_at") or report.get("date"),
-                        "product": report.get("product") or report.get("data_source_name"),
-                        "product_version": report.get("product_version") or report.get("version"),
-                        "date_range": report.get("date_range"),
-                    }
+            with open(real_report_path, "r", encoding="utf-8") as fh:
+                report = json.load(fh)
+            if report.get("data_source") == "real":
+                real_data_report = {
+                    "path": str(real_report_path),
+                    "date": report.get("generated_at"),
+                    "product": report.get("product"),
+                    "product_version": report.get("version"),
+                    "train_years": report.get("train_years"),
+                    "test_years": report.get("test_years"),
+                }
         except Exception:
             pass
 

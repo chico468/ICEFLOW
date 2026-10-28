@@ -28,11 +28,43 @@ import numpy as np
 import sklearn
 from sklearn.ensemble import HistGradientBoostingRegressor
 
+from src.eval.regions import SECTORS_SIMPLE
 from src.ml.real_dataset import RealSICSplit, FEATURE_NAMES_REAL, REAL_LEAD_DAYS
 
 
 PROMOTION_CI_ALPHA = 0.05  # 95% CI of RMSE difference must exclude zero
 AUSTRAL_DEPARTURE_SEASON = (11, 12, 1, 2, 3)
+
+
+def _compute_iiee(
+    pred: np.ndarray,
+    truth: np.ndarray,
+    areas: np.ndarray,
+    threshold: float = 0.15,
+) -> float:
+    """IIEE: area-weighted fraction of cells that are overestimated or underestimated
+    at the 15% concentration threshold (Goessling et al. 2016).
+
+    Overestimated: forecast > threshold but truth <= threshold (false ice).
+    Underestimated: forecast <= threshold but truth > threshold (missed ice).
+    Excludes cells with NaN pred, truth, or zero/negative area.
+    """
+    valid = np.isfinite(pred) & np.isfinite(truth) & (areas > 0)
+    if valid.sum() == 0:
+        return float("nan")
+
+    p = pred[valid]
+    t = truth[valid]
+    a = areas[valid]
+
+    over = a[(p > threshold) & (t <= threshold)]
+    under = a[(p <= threshold) & (t > threshold)]
+    total = a.sum()
+
+    if total <= 0:
+        return float("nan")
+
+    return float((over.sum() + under.sum()) / total * 100.0)  # percent
 
 
 CANDIDATE_HYPERPARAMETERS: Tuple[Dict[str, Any], ...] = (
@@ -374,6 +406,9 @@ class RealSICForecaster:
             }
 
         per_lead: List[Dict[str, Any]] = []
+        sector_names = list(SECTORS_SIMPLE.keys())
+        novmar_months = np.array(AUSTRAL_DEPARTURE_SEASON, dtype=float)
+
         for lead in self.leads:
             mask = ds.lead_days == float(lead)
             if not np.any(mask):
@@ -381,9 +416,7 @@ class RealSICForecaster:
 
             # VIZ cells: truth between 5% and 95%.
             viz_mask = mask & (truth >= 0.05) & (truth <= 0.95)
-            novmar_viz_mask = viz_mask & np.isin(
-                ds.month, np.array(AUSTRAL_DEPARTURE_SEASON, dtype=float)
-            )
+            novmar_viz_mask = viz_mask & np.isin(ds.month, novmar_months)
 
             # All-season VIZ CI.
             _, _, ci_lo_viz, ci_hi_viz = _compute_rmse_diff_ci(
@@ -411,6 +444,17 @@ class RealSICForecaster:
                 np.ones(int(viz_mask.sum()), dtype=bool),
             )
 
+            # IIEE at 15% threshold (Goessling et al. 2016), area-weighted.
+            areas = getattr(ds, "cell_areas", np.ones(len(truth)))
+            iiee_all = _compute_iiee(full_pred, truth, areas) if len(areas) == len(truth) else float("nan")
+            if np.any(novmar_viz_mask):
+                iiee_nm = _compute_iiee(
+                    full_pred[novmar_viz_mask], truth[novmar_viz_mask],
+                    areas[novmar_viz_mask],
+                ) if np.any(novmar_viz_mask) else float("nan")
+            else:
+                iiee_nm = float("nan")
+
             promoted = bool(
                 all_season_excludes and novmar_excludes
                 and model_rmse_viz < baseline_rmse_viz
@@ -427,20 +471,53 @@ class RealSICForecaster:
             ]
             block["viz_rmse_diff_ci_excludes_zero_all_season"] = all_season_excludes
             block["viz_rmse_diff_ci_excludes_zero_nov_mar"] = novmar_excludes
+            block["iiee_15_pct"] = round(iiee_all, 4) if np.isfinite(iiee_all) else float("nan")
+            block["iiee_15_pct_nov_mar"] = round(iiee_nm, 4) if np.isfinite(iiee_nm) else float("nan")
             block["promoted"] = promoted
             per_lead.append(block)
 
         overall = score_block(np.ones(len(ds), dtype=bool))
         overall["window_years"] = list(ds.window_years)
 
-        # Coverage.
+        # Coverage: 90% intervals per lead, per season, per sector.
         lo, hi = self.predict_interval(ds, alpha=0.10)
         inside = (truth >= lo) & (truth <= hi) & np.isfinite(truth)
-        coverage = {"overall": round(float(np.mean(inside)), 4), "per_lead": {}}
+
+        coverage: Dict[str, Any] = {
+            "overall": round(float(np.mean(inside)), 4),
+            "per_lead": {},
+            "per_lead_per_season": {},
+            "per_lead_per_sector": {},
+        }
         for lead in self.leads:
-            m = ds.lead_days == float(lead)
-            if np.any(m):
-                coverage["per_lead"][str(lead)] = round(float(np.mean(inside[m])), 4)
+            lead_mask = ds.lead_days == float(lead)
+            if not np.any(lead_mask):
+                continue
+            inside_l = inside[lead_mask]
+
+            coverage["per_lead"][str(lead)] = round(float(np.mean(inside_l)), 4)
+
+            # Per season.
+            novmar_mask = np.isin(ds.month[lead_mask], novmar_months)
+            if np.any(novmar_mask):
+                coverage["per_lead_per_season"].setdefault(str(lead), {})["nov_mar"] = round(
+                    float(np.mean(inside_l[novmar_mask])), 4
+                )
+            if np.any(~novmar_mask):
+                coverage["per_lead_per_season"].setdefault(str(lead), {})["all_other"] = round(
+                    float(np.mean(inside_l[~novmar_mask])), 4
+                )
+
+            # Per sector.
+            sectors = ds.sector_id[lead_mask]
+            cov_by_sector: Dict[str, float] = {}
+            for s_idx, s_name in enumerate(sector_names):
+                s_mask = sectors == float(s_idx)
+                if np.any(s_mask):
+                    cov_by_sector[s_name] = round(
+                        float(np.mean(inside_l[s_mask])), 4
+                    )
+            coverage["per_lead_per_sector"][str(lead)] = cov_by_sector
 
         return {
             "n_samples": int(len(ds)),

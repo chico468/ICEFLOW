@@ -1,0 +1,637 @@
+{
+  "generated_at": "2026-10-28T04:11:03+00:00",
+  "git_sha": "6bd23575716202c9a79da49c33aa46912a72611c",
+  "data_source": "real",
+  "product": "NOAA/NSIDC CDR G02202 Version 6",
+  "version": "v06r00",
+  "train_years": [
+    2005,
+    2006,
+    2007,
+    2008,
+    2009,
+    2010,
+    2011,
+    2012,
+    2013,
+    2014,
+    2015,
+    2016,
+    2017,
+    2018,
+    2019
+  ],
+  "val_years": [
+    2020,
+    2021
+  ],
+  "test_years": [
+    2022,
+    2023,
+    2024
+  ],
+  "leads_days": [
+    3,
+    7,
+    14
+  ],
+  "taus": {
+    "3": 22.98,
+    "7": 25.06,
+    "14": 26.7
+  },
+  "record_length_days": 7668,
+  "n_gaps": 2,
+  "rows": [
+    {
+      "task": "sic",
+      "lead_days": 3,
+      "domain": "variable_ice_zone",
+      "season": "all",
+      "model": "gbm_residual",
+      "rmse": 0.12065,
+      "ci": [
+        -0.01163,
+        -0.00548
+      ],
+      "skill_vs_baseline": 0.06218,
+      "n": 1739352,
+      "promoted": false
+    },
+    {
+      "task": "sic",
+      "lead_days": 3,
+      "domain": "variable_ice_zone",
+      "season": "nov_mar",
+      "model": "gbm_residual",
+      "rmse": 0.12065,
+      "ci": [
+        -0.00614,
+        0.0042
+      ],
+      "skill_vs_baseline": NaN,
+      "n": 1739352,
+      "promoted": false
+    },
+    {
+      "task": "sic",
+      "lead_days": 3,
+      "domain": "variable_ice_zone",
+      "season": "all",
+      "model": "damped_persistence",
+      "rmse": 0.12865,
+      "ci": [
+        NaN,
+        NaN
+      ],
+      "skill_vs_baseline": NaN,
+      "n": 1739352,
+      "promoted": false
+    },
+    {
+      "task": "sic",
+      "lead_days": 3,
+      "domain": "iiee_15pct",
+      "season": "all",
+      "model": "gbm_residual",
+      "rmse": 5.3343,
+      "ci": [
+        NaN,
+        NaN
+      ],
+      "skill_vs_baseline": NaN,
+      "n": 1739352,
+      "promoted": false
+    },
+    {
+      "task": "sic",
+      "lead_days": 3,
+      "domain": "iiee_15pct",
+      "season": "nov_mar",
+      "model": "gbm_residual",
+      "rmse": 5.1523,
+      "ci": [
+        NaN,
+        NaN
+      ],
+      "skill_vs_baseline": NaN,
+      "n": 1739352,
+      "promoted": false
+    },
+    {
+      "task": "sic",
+      "lead_days": 7,
+      "domain": "variable_ice_zone",
+      "season": "all",
+      "model": "gbm_residual",
+      "rmse": 0.15187,
+      "ci": [
+        -0.01402,
+        -0.00539
+      ],
+      "skill_vs_baseline": 0.058,
+      "n": 1739352,
+      "promoted": false
+    },
+    {
+      "task": "sic",
+      "lead_days": 7,
+      "domain": "variable_ice_zone",
+      "season": "nov_mar",
+      "model": "gbm_residual",
+      "rmse": 0.15187,
+      "ci": [
+        -0.00433,
+        0.00765
+      ],
+      "skill_vs_baseline": NaN,
+      "n": 1739352,
+      "promoted": false
+    },
+    {
+      "task": "sic",
+      "lead_days": 7,
+      "domain": "variable_ice_zone",
+      "season": "all",
+      "model": "damped_persistence",
+      "rmse": 0.16122,
+      "ci": [
+        NaN,
+        NaN
+      ],
+      "skill_vs_baseline": NaN,
+      "n": 1739352,
+      "promoted": false
+    },
+    {
+      "task": "sic",
+      "lead_days": 7,
+      "domain": "iiee_15pct",
+      "season": "all",
+      "model": "gbm_residual",
+      "rmse": 5.3343,
+      "ci": [
+        NaN,
+        NaN
+      ],
+      "skill_vs_baseline": NaN,
+      "n": 1739352,
+      "promoted": false
+    },
+    {
+      "task": "sic",
+      "lead_days": 7,
+      "domain": "iiee_15pct",
+      "season": "nov_mar",
+      "model": "gbm_residual",
+      "rmse": 6.3401,
+      "ci": [
+        NaN,
+        NaN
+      ],
+      "skill_vs_baseline": NaN,
+      "n": 1739352,
+      "promoted": false
+    },
+    {
+      "task": "sic",
+      "lead_days": 14,
+      "domain": "variable_ice_zone",
+      "season": "all",
+      "model": "gbm_residual",
+      "rmse": 0.17729,
+      "ci": [
+        -0.00693,
+        -0.00055
+      ],
+      "skill_vs_baseline": 0.02196,
+      "n": 1739352,
+      "promoted": false
+    },
+    {
+      "task": "sic",
+      "lead_days": 14,
+      "domain": "variable_ice_zone",
+      "season": "nov_mar",
+      "model": "gbm_residual",
+      "rmse": 0.17729,
+      "ci": [
+        -0.00035,
+        0.0106
+      ],
+      "skill_vs_baseline": NaN,
+      "n": 1739352,
+      "promoted": false
+    },
+    {
+      "task": "sic",
+      "lead_days": 14,
+      "domain": "variable_ice_zone",
+      "season": "all",
+      "model": "damped_persistence",
+      "rmse": 0.18127,
+      "ci": [
+        NaN,
+        NaN
+      ],
+      "skill_vs_baseline": NaN,
+      "n": 1739352,
+      "promoted": false
+    },
+    {
+      "task": "sic",
+      "lead_days": 14,
+      "domain": "iiee_15pct",
+      "season": "all",
+      "model": "gbm_residual",
+      "rmse": 5.3343,
+      "ci": [
+        NaN,
+        NaN
+      ],
+      "skill_vs_baseline": NaN,
+      "n": 1739352,
+      "promoted": false
+    },
+    {
+      "task": "sic",
+      "lead_days": 14,
+      "domain": "iiee_15pct",
+      "season": "nov_mar",
+      "model": "gbm_residual",
+      "rmse": 7.0601,
+      "ci": [
+        NaN,
+        NaN
+      ],
+      "skill_vs_baseline": NaN,
+      "n": 1739352,
+      "promoted": false
+    },
+    {
+      "task": "sic",
+      "lead_days": 3,
+      "domain": "sector:Weddell Sea",
+      "season": "all",
+      "model": "gbm_residual",
+      "rmse": 0.9227,
+      "ci": [
+        NaN,
+        NaN
+      ],
+      "skill_vs_baseline": NaN,
+      "n": 0,
+      "promoted": false,
+      "metric": "coverage_90ci"
+    },
+    {
+      "task": "sic",
+      "lead_days": 3,
+      "domain": "sector:Indian Ocean",
+      "season": "all",
+      "model": "gbm_residual",
+      "rmse": 0.9095,
+      "ci": [
+        NaN,
+        NaN
+      ],
+      "skill_vs_baseline": NaN,
+      "n": 0,
+      "promoted": false,
+      "metric": "coverage_90ci"
+    },
+    {
+      "task": "sic",
+      "lead_days": 3,
+      "domain": "sector:Western Pacific",
+      "season": "all",
+      "model": "gbm_residual",
+      "rmse": 0.8673,
+      "ci": [
+        NaN,
+        NaN
+      ],
+      "skill_vs_baseline": NaN,
+      "n": 0,
+      "promoted": false,
+      "metric": "coverage_90ci"
+    },
+    {
+      "task": "sic",
+      "lead_days": 3,
+      "domain": "sector:Ross Sea",
+      "season": "all",
+      "model": "gbm_residual",
+      "rmse": 0.9103,
+      "ci": [
+        NaN,
+        NaN
+      ],
+      "skill_vs_baseline": NaN,
+      "n": 0,
+      "promoted": false,
+      "metric": "coverage_90ci"
+    },
+    {
+      "task": "sic",
+      "lead_days": 3,
+      "domain": "sector:Bellingshausen-Amundsen",
+      "season": "all",
+      "model": "gbm_residual",
+      "rmse": 0.8757,
+      "ci": [
+        NaN,
+        NaN
+      ],
+      "skill_vs_baseline": NaN,
+      "n": 0,
+      "promoted": false,
+      "metric": "coverage_90ci"
+    },
+    {
+      "task": "sic",
+      "lead_days": 7,
+      "domain": "sector:Weddell Sea",
+      "season": "all",
+      "model": "gbm_residual",
+      "rmse": 0.9176,
+      "ci": [
+        NaN,
+        NaN
+      ],
+      "skill_vs_baseline": NaN,
+      "n": 0,
+      "promoted": false,
+      "metric": "coverage_90ci"
+    },
+    {
+      "task": "sic",
+      "lead_days": 7,
+      "domain": "sector:Indian Ocean",
+      "season": "all",
+      "model": "gbm_residual",
+      "rmse": 0.9122,
+      "ci": [
+        NaN,
+        NaN
+      ],
+      "skill_vs_baseline": NaN,
+      "n": 0,
+      "promoted": false,
+      "metric": "coverage_90ci"
+    },
+    {
+      "task": "sic",
+      "lead_days": 7,
+      "domain": "sector:Western Pacific",
+      "season": "all",
+      "model": "gbm_residual",
+      "rmse": 0.8754,
+      "ci": [
+        NaN,
+        NaN
+      ],
+      "skill_vs_baseline": NaN,
+      "n": 0,
+      "promoted": false,
+      "metric": "coverage_90ci"
+    },
+    {
+      "task": "sic",
+      "lead_days": 7,
+      "domain": "sector:Ross Sea",
+      "season": "all",
+      "model": "gbm_residual",
+      "rmse": 0.9052,
+      "ci": [
+        NaN,
+        NaN
+      ],
+      "skill_vs_baseline": NaN,
+      "n": 0,
+      "promoted": false,
+      "metric": "coverage_90ci"
+    },
+    {
+      "task": "sic",
+      "lead_days": 7,
+      "domain": "sector:Bellingshausen-Amundsen",
+      "season": "all",
+      "model": "gbm_residual",
+      "rmse": 0.8694,
+      "ci": [
+        NaN,
+        NaN
+      ],
+      "skill_vs_baseline": NaN,
+      "n": 0,
+      "promoted": false,
+      "metric": "coverage_90ci"
+    },
+    {
+      "task": "sic",
+      "lead_days": 14,
+      "domain": "sector:Weddell Sea",
+      "season": "all",
+      "model": "gbm_residual",
+      "rmse": 0.9019,
+      "ci": [
+        NaN,
+        NaN
+      ],
+      "skill_vs_baseline": NaN,
+      "n": 0,
+      "promoted": false,
+      "metric": "coverage_90ci"
+    },
+    {
+      "task": "sic",
+      "lead_days": 14,
+      "domain": "sector:Indian Ocean",
+      "season": "all",
+      "model": "gbm_residual",
+      "rmse": 0.9058,
+      "ci": [
+        NaN,
+        NaN
+      ],
+      "skill_vs_baseline": NaN,
+      "n": 0,
+      "promoted": false,
+      "metric": "coverage_90ci"
+    },
+    {
+      "task": "sic",
+      "lead_days": 14,
+      "domain": "sector:Western Pacific",
+      "season": "all",
+      "model": "gbm_residual",
+      "rmse": 0.8744,
+      "ci": [
+        NaN,
+        NaN
+      ],
+      "skill_vs_baseline": NaN,
+      "n": 0,
+      "promoted": false,
+      "metric": "coverage_90ci"
+    },
+    {
+      "task": "sic",
+      "lead_days": 14,
+      "domain": "sector:Ross Sea",
+      "season": "all",
+      "model": "gbm_residual",
+      "rmse": 0.8927,
+      "ci": [
+        NaN,
+        NaN
+      ],
+      "skill_vs_baseline": NaN,
+      "n": 0,
+      "promoted": false,
+      "metric": "coverage_90ci"
+    },
+    {
+      "task": "sic",
+      "lead_days": 14,
+      "domain": "sector:Bellingshausen-Amundsen",
+      "season": "all",
+      "model": "gbm_residual",
+      "rmse": 0.858,
+      "ci": [
+        NaN,
+        NaN
+      ],
+      "skill_vs_baseline": NaN,
+      "n": 0,
+      "promoted": false,
+      "metric": "coverage_90ci"
+    },
+    {
+      "task": "sic",
+      "lead_days": 3,
+      "domain": "variable_ice_zone",
+      "season": "all",
+      "model": "gbm_residual_sensor_amr2",
+      "rmse": 0.14866,
+      "ci": [
+        -0.01718,
+        -0.00343
+      ],
+      "skill_vs_baseline": 0.06509,
+      "n": 571320,
+      "promoted": false,
+      "caveat": "2025+ AMSR2-era sensor, not in training window"
+    },
+    {
+      "task": "sic",
+      "lead_days": 7,
+      "domain": "variable_ice_zone",
+      "season": "all",
+      "model": "gbm_residual_sensor_amr2",
+      "rmse": 0.18325,
+      "ci": [
+        -0.01614,
+        -0.00052
+      ],
+      "skill_vs_baseline": 0.04968,
+      "n": 564972,
+      "promoted": false,
+      "caveat": "2025+ AMSR2-era sensor, not in training window"
+    },
+    {
+      "task": "sic",
+      "lead_days": 14,
+      "domain": "variable_ice_zone",
+      "season": "all",
+      "model": "gbm_residual_sensor_amr2",
+      "rmse": 0.20826,
+      "ci": [
+        -0.00285,
+        0.00901
+      ],
+      "skill_vs_baseline": -0.00696,
+      "n": 553863,
+      "promoted": false,
+      "caveat": "2025+ AMSR2-era sensor, not in training window"
+    }
+  ],
+  "promoted": {
+    "sic": {
+      "3": false,
+      "7": false,
+      "14": false
+    }
+  },
+  "coverage": {
+    "3": {
+      "target": 0.9,
+      "empirical": 0.9046
+    },
+    "7": {
+      "target": 0.9,
+      "empirical": 0.9025
+    },
+    "14": {
+      "target": 0.9,
+      "empirical": 0.8917
+    }
+  },
+  "coverage_per_lead_per_season": {
+    "3": {
+      "nov_mar": 0.932,
+      "all_other": 0.8852
+    },
+    "7": {
+      "nov_mar": 0.93,
+      "all_other": 0.8831
+    },
+    "14": {
+      "nov_mar": 0.9207,
+      "all_other": 0.8712
+    }
+  },
+  "coverage_per_lead_per_sector": {
+    "3": {
+      "Weddell Sea": 0.9227,
+      "Indian Ocean": 0.9095,
+      "Western Pacific": 0.8673,
+      "Ross Sea": 0.9103,
+      "Bellingshausen-Amundsen": 0.8757
+    },
+    "7": {
+      "Weddell Sea": 0.9176,
+      "Indian Ocean": 0.9122,
+      "Western Pacific": 0.8754,
+      "Ross Sea": 0.9052,
+      "Bellingshausen-Amundsen": 0.8694
+    },
+    "14": {
+      "Weddell Sea": 0.9019,
+      "Indian Ocean": 0.9058,
+      "Western Pacific": 0.8744,
+      "Ross Sea": 0.8927,
+      "Bellingshausen-Amundsen": 0.858
+    }
+  },
+  "taus_trained_on": {
+    "3": 22.98,
+    "7": 25.06,
+    "14": 26.7
+  },
+  "evaluation_status": {
+    "trained_on": "real",
+    "operational_skill_validated": false,
+    "used_in_routing": false,
+    "promoted_leads": [],
+    "status": "real_data_training_complete"
+  },
+  "caveats": [
+    "Trained on NSIDC V6 SSMIS-era (2005-2019). Val 2020-2021, test 2022-2024 untouched.",
+    "Sensor check on 2025+ AMSR2 era is out-of-training-distribution; treat as indicative only.",
+    "Promoted leads must beat tuned damped-persistence baseline with 95% CI excluding zero in both all-season and Nov-Mar on VIZ cells.",
+    "IIEE at 15% threshold per Goessling et al. 2016, area-weighted.",
+    "Sensor check: 1690155 samples across [2025]."
+  ]
+}

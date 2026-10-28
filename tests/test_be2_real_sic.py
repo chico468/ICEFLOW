@@ -101,11 +101,12 @@ def test_build_real_sic_dataset_structure():
     lon = np.linspace(-180, 180, clim_ref.shape[1])
     lat_grid, lon_grid = np.meshgrid(lat, lon, indexing="ij")
     sector_grid = np.zeros_like(clim_ref, dtype=np.int32)
+    areas_grid = np.ones_like(clim_ref, dtype=np.float64)
 
     taus = {3: 10.0, 7: 30.0, 14: 60.0}
     ds = build_real_sic_dataset(
         sic_by_date, train_dates[:60], clim, taus,
-        lat_grid, lon_grid, sector_grid,
+        lat_grid, lon_grid, sector_grid, areas_grid,
         REAL_LEAD_DAYS,
         sample_viz_fraction=0.5,
         sample_other_fraction=0.0,
@@ -139,16 +140,17 @@ def test_real_sic_forecaster_fit_predict():
     lon = np.linspace(-180, 180, clim_ref.shape[1])
     lat_grid, lon_grid = np.meshgrid(lat, lon, indexing="ij")
     sector_grid = np.zeros_like(clim_ref, dtype=np.int32)
+    areas_grid = np.ones_like(clim_ref, dtype=np.float64)
 
     taus = {3: 10.0, 7: 30.0, 14: 60.0}
     train_ds = build_real_sic_dataset(
         sic_by_date, train_dates[:60], clim, taus,
-        lat_grid, lon_grid, sector_grid, REAL_LEAD_DAYS,
+        lat_grid, lon_grid, sector_grid, areas_grid, REAL_LEAD_DAYS,
         sample_viz_fraction=0.5, sample_other_fraction=0.0, rng_seed=42,
     )
     val_ds = build_real_sic_dataset(
         sic_by_date, val_dates[:20], clim, taus,
-        lat_grid, lon_grid, sector_grid, REAL_LEAD_DAYS,
+        lat_grid, lon_grid, sector_grid, areas_grid, REAL_LEAD_DAYS,
         sample_viz_fraction=1.0, sample_other_fraction=0.0, rng_seed=43,
     )
 
@@ -188,16 +190,17 @@ def test_real_sic_forecaster_save_load(tmp_path):
     lon = np.linspace(-180, 180, clim_ref.shape[1])
     lat_grid, lon_grid = np.meshgrid(lat, lon, indexing="ij")
     sector_grid = np.zeros_like(clim_ref, dtype=np.int32)
+    areas_grid = np.ones_like(clim_ref, dtype=np.float64)
 
     taus = {3: 10.0, 7: 30.0, 14: 60.0}
     train_ds = build_real_sic_dataset(
         sic_by_date, train_dates, clim, taus,
-        lat_grid, lon_grid, sector_grid, REAL_LEAD_DAYS,
+        lat_grid, lon_grid, sector_grid, areas_grid, REAL_LEAD_DAYS,
         sample_viz_fraction=0.5, rng_seed=42,
     )
     val_ds = build_real_sic_dataset(
         sic_by_date, val_dates, clim, taus,
-        lat_grid, lon_grid, sector_grid, REAL_LEAD_DAYS,
+        lat_grid, lon_grid, sector_grid, areas_grid, REAL_LEAD_DAYS,
         sample_viz_fraction=1.0, rng_seed=43,
     )
 

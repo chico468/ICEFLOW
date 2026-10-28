@@ -73,6 +73,8 @@ class RealSICSplit:
     cell_y: np.ndarray
     cell_x: np.ndarray
     month: np.ndarray
+    sector_id: np.ndarray
+    cell_areas: np.ndarray
     feature_names: Tuple[str, ...]
     window_years: Tuple[int, ...]
 
@@ -210,6 +212,7 @@ def build_real_sic_dataset(
     lat_grid: np.ndarray,
     lon_grid: np.ndarray,
     sector_id_grid: np.ndarray,
+    areas_grid: np.ndarray,
     leads: Sequence[int] = REAL_LEAD_DAYS,
     sample_viz_fraction: float = 1.0,
     sample_other_fraction: float = 0.0,
@@ -250,6 +253,8 @@ def build_real_sic_dataset(
     rows_y_idx: List[np.ndarray] = []
     rows_x_idx: List[np.ndarray] = []
     rows_month: List[np.ndarray] = []
+    rows_sector: List[np.ndarray] = []
+    rows_areas: List[np.ndarray] = []
 
     sorted_dates = sorted(dates)
     max_lead = max(leads)
@@ -320,6 +325,7 @@ def build_real_sic_dataset(
             sid = sector_id_grid[ys, xs].astype(np.float64)
             base_v = baseline[ys, xs]
             pers_v = o0.copy()
+            area_v = areas_grid[ys, xs]
 
             valid = np.isfinite(o0) & np.isfinite(o1) & np.isfinite(c0) & np.isfinite(c1) & \
                     np.isfinite(ch1) & np.isfinite(ch3) & np.isfinite(ch7)
@@ -345,7 +351,7 @@ def build_real_sic_dataset(
             feats[:, 13] = sid[valid]                        # sector_id
 
             rows_X.append(feats)
-            rows_y.append(o1[valid] - base_v[valid])         # residual target
+            rows_y.append(o1[valid] - base_v[valid])
             rows_base.append(base_v[valid])
             rows_truth.append(o1[valid])
             rows_pers.append(pers_v[valid])
@@ -353,6 +359,8 @@ def build_real_sic_dataset(
             rows_y_idx.append(ys_v)
             rows_x_idx.append(xs_v)
             rows_month.append(np.full(n_valid, float(t0.month)))
+            rows_sector.append(sid[valid])
+            rows_areas.append(area_v[valid])
 
     if not rows_X:
         return RealSICSplit(
@@ -365,6 +373,8 @@ def build_real_sic_dataset(
             cell_y=np.empty((0,), dtype=np.intp),
             cell_x=np.empty((0,), dtype=np.intp),
             month=np.empty((0,), dtype=np.float64),
+            sector_id=np.empty((0,), dtype=np.float64),
+            cell_areas=np.empty((0,), dtype=np.float64),
             feature_names=FEATURE_NAMES_REAL,
             window_years=tuple(),
         )
@@ -379,6 +389,8 @@ def build_real_sic_dataset(
         cell_y=np.concatenate(rows_y_idx, axis=0),
         cell_x=np.concatenate(rows_x_idx, axis=0),
         month=np.concatenate(rows_month, axis=0),
+        sector_id=np.concatenate(rows_sector, axis=0),
+        cell_areas=np.concatenate(rows_areas, axis=0),
         feature_names=FEATURE_NAMES_REAL,
         window_years=tuple(sorted(set(d.year for d in dates))),
     )
@@ -452,21 +464,22 @@ def build_splits(
     lat_grid = grid["lat"]
     lon_grid = grid["lon"]
     sector_grid = grid["sector_id"]
+    areas_grid = grid["areas"]
 
     return {
         "train": build_real_sic_dataset(
             sic_by_date, train_dates, clim, taus,
-            lat_grid, lon_grid, sector_grid,
+            lat_grid, lon_grid, sector_grid, areas_grid,
             leads, sample_viz_fraction, sample_other_fraction, seed,
         ),
         "val": build_real_sic_dataset(
             sic_by_date, val_dates, clim, taus,
-            lat_grid, lon_grid, sector_grid,
+            lat_grid, lon_grid, sector_grid, areas_grid,
             leads, 1.0, 0.0, seed + 100,
         ),
         "test": build_real_sic_dataset(
             sic_by_date, test_dates, clim, taus,
-            lat_grid, lon_grid, sector_grid,
+            lat_grid, lon_grid, sector_grid, areas_grid,
             leads, 1.0, 0.0, seed + 200,
         ),
     }
