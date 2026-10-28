@@ -42,7 +42,7 @@ import type { LayerToggles } from '../map/MapEngine';
 import { SimulatedNotice } from '../components/SimulatedNotice';
 import { useIcePoint } from '../api/queries';
 import { modeAvailability } from '../map/iceModes';
-
+import { formatUtcIso } from '../lib/environmentTime';
 const ICE_CLASSES: IceClassKey[] = [
   'PC1', 'PC2', 'PC3', 'PC4', 'PC5', 'PC6', 'PC7',
   'IA_Super', 'IA', 'IB', 'IC', 'Not_Ice_Strengthened',
@@ -116,6 +116,20 @@ export function VoyagePlanner(): JSX.Element {
     label: `${v.display_name} — ${v.ice_class}, ${num(v.installed_power_kw / 1000, 1)} MW`,
   }));
 
+  const [departureLocal, setDepartureLocal] = useState(() => localInputString(new Date(planner.departureIso)));
+
+  function localInputString(d: Date): string {
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+
+  function toUtcIso(local: string): string {
+    return new Date(local).toISOString();
+  }
+
+  const horizon = new Date(Date.now() + 168 * 3600 * 1000);
+  const beyondHorizon = new Date(planner.departureIso) > horizon;
+
   async function runPlan(): Promise<void> {
     const requestedPlanner = JSON.stringify(planner);
     setPhase('planning');
@@ -134,6 +148,8 @@ export function VoyagePlanner(): JSX.Element {
         grid_resolution_deg: planner.gridResolutionDeg,
         avoid_icebergs: planner.avoidIcebergs,
         departure_time_hours: planner.departureTimeHours,
+        departure_iso: planner.departureIso,
+        environment_mode: beyondHorizon ? 'replay' : planner.environmentMode,
       });
       if (JSON.stringify(useAppStore.getState().planner) !== requestedPlanner) return;
       setPlan(result.balanced_summary);
@@ -201,6 +217,36 @@ export function VoyagePlanner(): JSX.Element {
               />
             </div>
           </div>
+        </Group>
+
+        <Group title="Departure" subtitle="UTC primary, ship-local secondary">
+          <div className="flex items-end gap-2">
+            <div className="w-[230px]">
+              <label className="block">
+                <div className="mb-1 text-2xs text-ink-2">Departure (ship local)</div>
+                <input
+                  type="datetime-local"
+                  className="field w-full"
+                  value={departureLocal}
+                  onChange={(e) => {
+                    setDepartureLocal(e.target.value);
+                    setPlanner({ departureIso: toUtcIso(e.target.value) });
+                  }}
+                />
+              </label>
+            </div>
+            <div className="flex flex-col gap-1 ml-2">
+              <span className="text-2xs text-ink-3">UTC</span>
+              <span className="text-xs font-semibold text-ink">
+                {formatUtcIso(new Date(planner.departureIso))}
+              </span>
+            </div>
+          </div>
+          {beyondHorizon && (
+            <p role="status" className="mt-1 text-2xs text-warn">
+              Beyond the 168 h forecast horizon — replay mode only.
+            </p>
+          )}
         </Group>
 
         <div className="flex flex-col gap-1 whitespace-nowrap pb-1 text-2xs text-ink-3">
@@ -306,6 +352,11 @@ export function VoyagePlanner(): JSX.Element {
     ?? plan?.optimized
     ?? null;
   const selectedCandidate = routeAlternatives.find((candidate) => candidate.id === selectedCandidateId) ?? null;
+  const arrivalIso =
+    plan?.arrival_iso ??
+    (plan && planner.departureIso
+      ? new Date(new Date(planner.departureIso).getTime() + plan.total_transit_hours * 3600 * 1000).toISOString()
+      : null);
   const tray = !plan ? (
     <div className="flex justify-center">
       <div className="pointer-events-auto px-6 py-3 text-center">
@@ -332,6 +383,12 @@ export function VoyagePlanner(): JSX.Element {
           <Badge tone="accent">{plan.vessel_name}</Badge>
           {alternativesPlanningMs !== null && (
             <Badge title="Measured server planning duration">{num(alternativesPlanningMs / 1000, 1)} s</Badge>
+          )}
+          {arrivalIso && (
+            <div className="flex flex-col gap-0.5 ml-3 border-l border-hair pl-3">
+              <span className="text-2xs text-ink-3">Arrival ETA</span>
+              <span className="text-xs font-semibold text-ink">{formatUtcIso(new Date(arrivalIso))}</span>
+            </div>
           )}
           <button
             type="button"
@@ -773,6 +830,24 @@ function RouteCandidateCard({
               <span>{num(result.prohibited_waypoints, 0)} prohibited waypoint(s)</span>
               <span>{candidate.is_feasible ? 'Feasibility: reached and permitted' : candidate.goal_reached ? 'Feasibility: prohibited' : 'Feasibility: destination not reached'}</span>
             </div>
+            {result.waypoint_etas?.length && (
+              <div className="mt-2 border-t border-hair pt-2">
+                <div className="text-2xs font-semibold text-ink-2">Waypoint ETAs (UTC)</div>
+                <div className="mt-1 grid grid-cols-4 gap-x-2 gap-y-1 text-2xs text-ink-2">
+                  {result.waypoint_etas.slice(0, 12).map(({ index, eta_iso }) => (
+                    <div key={index} className="flex flex-col gap-0.5">
+                      <span className="text-[9px] text-ink-3">#{index}</span>
+                      <span>{new Date(eta_iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                    </div>
+                  ))}
+                  {result.waypoint_etas.length > 12 && (
+                    <span className="text-[9px] text-ink-3">
+                      …and {result.waypoint_etas.length - 12} more
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
             <p className="mt-1 text-2xs text-ink-3">
               Weights · fuel {num(candidate.weights.fuel, 2)} · time {num(candidate.weights.time, 2)} · risk {num(candidate.weights.risk, 2)}
             </p>

@@ -632,6 +632,11 @@ export interface Waypoint {
   attainable_speed_knots: number;
 }
 
+export interface WaypointEta {
+  index: number;
+  eta_iso: string;
+}
+
 export interface RouteEvaluation {
   label: string;
   waypoints: Waypoint[];
@@ -646,6 +651,9 @@ export interface RouteEvaluation {
   is_feasible: boolean;
   infeasible_reason: string;
   prohibited_waypoints: number;
+  // v1.1: clock times derived from the voyage departure.
+  arrival_iso?: string;
+  waypoint_etas?: WaypointEta[];
 }
 
 export interface SearchDiagnostics {
@@ -687,6 +695,11 @@ export interface OptimizationSummary {
   warnings: string[];
   savings_method: string;
   is_synthetic_environment: boolean;
+  // v1.1: wall-clock departure and the environment that produced the data.
+  departure_iso?: string;
+  arrival_iso?: string;
+  environment_mode?: string;
+  provenance?: Record<string, string>;
 }
 
 export type RouteProfileId = 'safety-first' | 'balanced' | 'fuel-efficient' | 'fastest';
@@ -730,6 +743,10 @@ export interface RouteRequest {
   lead_hours?: number;
   grid_resolution_deg?: number;
   avoid_icebergs?: boolean;
+  // v1.1: wall-clock departure and the environment mode that produced the data.
+  departure_iso?: string;
+  environment_mode?: 'simulated' | 'real_ice' | 'replay';
+  replay_date?: string;
 }
 
 // ------------------------------------------------------------------------------- voyage
