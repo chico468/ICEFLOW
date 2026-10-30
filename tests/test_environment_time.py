@@ -274,7 +274,7 @@ def test_iceberg_api_reports_active_target_alignment(monkeypatch):
     from src.api.routers import navigation
 
     monkeypatch.setattr(navigation, "get_iceberg_profiles", lambda: [])
-    response = client.get("/api/v1/icebergs", params={"target_t_hours": 18})
+    response = client.get("/api/v1/icebergs", params={"mode": "simulated", "target_t_hours": 18})
 
     assert response.status_code == 200
     assert response.json()["time_alignment"]["forecast_lead_hours"] == 18
@@ -298,7 +298,7 @@ def test_iceberg_api_uses_elapsed_time_as_lead_from_seed_not_forcing_start(monke
     monkeypatch.setattr(navigation, "get_iceberg_profiles", lambda: [berg])
     monkeypatch.setattr(navigation, "predict_iceberg_drift", predict)
 
-    response = client.get("/api/v1/icebergs", params={"target_t_hours": 4})
+    response = client.get("/api/v1/icebergs", params={"mode": "simulated", "target_t_hours": 4})
 
     assert response.status_code == 200
     assert call["forecast_hours"] == 4
@@ -311,7 +311,7 @@ def test_iceberg_api_reports_unrepresentable_active_time(monkeypatch):
     from src.api.routers import navigation
 
     monkeypatch.setattr(navigation, "get_iceberg_profiles", lambda: [])
-    response = client.get("/api/v1/icebergs", params={"target_t_hours": 18.5})
+    response = client.get("/api/v1/icebergs", params={"mode": "simulated", "target_t_hours": 18.5})
 
     assert response.status_code == 200
     assert response.json()["icebergs"] == []

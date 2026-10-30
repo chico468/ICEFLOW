@@ -1,0 +1,164 @@
+{
+  "dataset": "BYU/NIC consolidated Antarctic iceberg database v6",
+  "n_raw_tracks": 601,
+  "n_moving_tracks": 464,
+  "leads": [
+    1,
+    3,
+    7
+  ],
+  "median_daily_displacement_moving_km": 5.943646190347807,
+  "val": {
+    "date_range": [
+      "2018-01-01",
+      "2018-12-31"
+    ],
+    "results": {
+      "1": {
+        "no_movement": {
+          "median_km": 1.456266366192233,
+          "p90_km": 15.16402365182023,
+          "n_steps": 8999,
+          "n_tracks": 32
+        },
+        "velocity_3d": {
+          "median_km": 2.1341660565946796,
+          "p90_km": 13.665032651766232,
+          "n_steps": 8999,
+          "n_tracks": 32
+        },
+        "velocity_7d_damped": {
+          "median_km": 1.858589818665482,
+          "p90_km": 13.096763117821215,
+          "n_steps": 8999,
+          "n_tracks": 32
+        }
+      },
+      "3": {
+        "no_movement": {
+          "median_km": 6.149922155491403,
+          "p90_km": 36.9931496996257,
+          "n_steps": 8948,
+          "n_tracks": 32
+        },
+        "velocity_3d": {
+          "median_km": 7.075197919444313,
+          "p90_km": 35.52993657632025,
+          "n_steps": 8948,
+          "n_tracks": 32
+        },
+        "velocity_7d_damped": {
+          "median_km": 6.119786725210645,
+          "p90_km": 32.56263148873121,
+          "n_steps": 8948,
+          "n_tracks": 32
+        }
+      },
+      "7": {
+        "no_movement": {
+          "median_km": 12.38870165314269,
+          "p90_km": 72.57159409503778,
+          "n_steps": 8877,
+          "n_tracks": 32
+        },
+        "velocity_3d": {
+          "median_km": 17.44754259894268,
+          "p90_km": 80.73108959870996,
+          "n_steps": 8877,
+          "n_tracks": 32
+        },
+        "velocity_7d_damped": {
+          "median_km": 13.388871905219254,
+          "p90_km": 63.598410695673344,
+          "n_steps": 8877,
+          "n_tracks": 32
+        }
+      }
+    }
+  },
+  "test": {
+    "date_range": [
+      "2019-01-01",
+      "2022-12-31"
+    ],
+    "results": {
+      "1": {
+        "no_movement": {
+          "median_km": 3.323241818910004,
+          "p90_km": 13.509816356731745,
+          "n_steps": 21449,
+          "n_tracks": 50
+        },
+        "velocity_3d": {
+          "median_km": 1.8833799508783968,
+          "p90_km": 8.77640574852302,
+          "n_steps": 21449,
+          "n_tracks": 50
+        },
+        "velocity_7d_damped": {
+          "median_km": 2.3461901865023345,
+          "p90_km": 10.31932956223138,
+          "n_steps": 21449,
+          "n_tracks": 50
+        }
+      },
+      "3": {
+        "no_movement": {
+          "median_km": 9.875510138550798,
+          "p90_km": 36.5827127776391,
+          "n_steps": 21327,
+          "n_tracks": 50
+        },
+        "velocity_3d": {
+          "median_km": 6.561482826517143,
+          "p90_km": 25.49050115894473,
+          "n_steps": 21327,
+          "n_tracks": 50
+        },
+        "velocity_7d_damped": {
+          "median_km": 7.233187868193021,
+          "p90_km": 27.432596069087218,
+          "n_steps": 21327,
+          "n_tracks": 50
+        }
+      },
+      "7": {
+        "no_movement": {
+          "median_km": 21.528619328114786,
+          "p90_km": 77.2376892148101,
+          "n_steps": 21104,
+          "n_tracks": 50
+        },
+        "velocity_3d": {
+          "median_km": 17.402943428372264,
+          "p90_km": 63.970271943034234,
+          "n_steps": 21104,
+          "n_tracks": 50
+        },
+        "velocity_7d_damped": {
+          "median_km": 16.11950050703065,
+          "p90_km": 59.241029989391855,
+          "n_steps": 21104,
+          "n_tracks": 50
+        }
+      }
+    }
+  },
+  "bug_audits": {
+    "approx_date_mismatches": {
+      "exact_matches_total": 827276,
+      "approx_matches_total": 828409,
+      "approx_off_by_day_total": 1133,
+      "approx_false_positives": 1133
+    },
+    "antimeridian_jumps": {
+      "antimeridian_day_jumps_gt300deg": 63
+    },
+    "duplicate_consecutive_positions": {
+      "duplicate_consecutive_positions": 111408
+    },
+    "corrupt_dates": {
+      "corrupt_year_counts": {}
+    }
+  }
+}

@@ -51,3 +51,24 @@ Rules enforced in code and tests:
 - Maximum inter-variable skew of 12 h in replay.
 - Waves missing under ice return `None` with `wave_valid=False`, never 0.
 - No silent fallback from a real provider to `SimulatedProvider`.
+
+## Icebergs API (observed by default)
+
+`GET /api/v1/icebergs` returns **observed** icebergs by default (principle P2: the default path
+shows real data, not simulated seeds):
+
+- **Source**: the USNIC-format snapshot in `data/raw/iceberg/AntarcticIcebergs_YYYYMMDD.csv`
+  (`src/data/observed_icebergs.py`), plus the BYU/NIC consolidated track (`src/ml/iceberg_dataset.py`)
+  when a target time `at` is given.
+- **BYU nearest-at-or-before-t0**: for `GET /api/v1/icebergs?at=<ISO>`, each berg is the latest
+  observation at or before `at`. Source dates are Julian days `YYYYDDD`, parsed exactly — no
+  approximate or interpolated matching. A berg with no on-or-before observation is omitted; a berg
+  is never invented.
+- **Each entry**: `id`/`berg_id`, `latitude`, `longitude`, `last_obs`, `age_days`, size
+  `length_nm`/`width_nm` (nautical miles), and `provenance: "observed"`.
+- **Forecast**: `lead_hours > 0` integrates each berg forward with the RK4 drift model and returns
+  `forecast_latitude`/`forecast_longitude` with `kind: "real_forecast"` and `radii_nm`.
+- **Simulated mode**: `GET /api/v1/icebergs?mode=simulated` returns the seeded catalogue
+  (`src/data/icebergs.py`, `provenance: "iceberg_catalogue"`). The old catalogue is simulated-mode
+  only; it is no longer the default path.
+

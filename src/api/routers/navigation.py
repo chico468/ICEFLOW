@@ -1,12 +1,13 @@
 """Icebergs, route planning and route comparison."""
 from __future__ import annotations
 
+from datetime import date, datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field, field_validator
 
-from src.core.constants import DATA_PROVENANCE, ICEBERG_EXCLUSION_RADIUS_NM
+from src.core.constants import DATA_PROVENANCE, ICEBERG_EXCLUSION_RADIUS_NM, KM_PER_NM
 from src.core.environment_time import parse_utc_datetime, resolve_iceberg_target_time
 from src.core.geo import great_circle_path
 from src.core.iceberg_tracker import (
@@ -27,6 +28,7 @@ from src.core.route_optimizer import (
 from src.data.icebergs import get_iceberg_profiles, get_profile
 from src.data.observed_icebergs import load_snapshot as load_observed_icebergs
 from src.data.stations import resolve_endpoint
+from src.ml.iceberg_dataset import load_database, nearest_at_or_before
 
 router = APIRouter(prefix="/api/v1", tags=["navigation"])
 
@@ -34,16 +36,37 @@ router = APIRouter(prefix="/api/v1", tags=["navigation"])
 # -------------------------------------------------------------------------- icebergs
 @router.get("/icebergs")
 def icebergs(
+    mode: str = Query(default="observed", pattern="^(observed|simulated)$"),
+    at: Optional[str] = Query(
+        default=None,
+        description="Target time (ISO-8601). In observed mode, each berg is the nearest "
+        "observation at or before this time (source dates are YYYYDDD, parsed exactly; "
+        "no approximate or interpolated matching).",
+    ),
     lead_hours: int = Query(default=0, ge=0, le=240),
     t_hours: float = Query(default=0.0),
     target_t_hours: Optional[float] = Query(default=None),
 ) -> Dict[str, Any]:
     """
-    The tracked catalogue, optionally propagated forward by the drift model.
+    Iceberg positions.
 
-    With `lead_hours` above zero every berg is integrated forward, so the positions returned are
-    computed rather than looked up.
+    Default ``mode="observed"`` returns real observed icebergs (USNIC/NIC snapshot, overlaid with
+    the BYU/NIC track nearest at or before ``at`` when ``at`` is given). Every entry carries
+    ``last_obs``, ``age_days``, size in nautical miles and provenance ``observed``. Seeded /
+    simulated catalogue positions are only returned with ``mode="simulated"``; the old catalogue
+    is no longer the default path.
+
+    With ``lead_hours`` above zero every berg is integrated forward by the drift model and the
+    returned positions are computed forecasts (kind ``real_forecast``) rather than look-ups.
     """
+    if mode == "simulated":
+        return _icebergs_simulated(lead_hours, t_hours, target_t_hours)
+    return _icebergs_observed(at, lead_hours)
+
+
+def _icebergs_simulated(
+    lead_hours: int, t_hours: float, target_t_hours: Optional[float]
+) -> Dict[str, Any]:
     target_alignment: Optional[Dict[str, Any]] = None
     step_hours_override: Optional[int] = None
     if target_t_hours is not None:
@@ -53,6 +76,7 @@ def icebergs(
             return {
                 "icebergs": [],
                 "count": 0,
+                "mode": "simulated",
                 "exclusion_radius_nm": ICEBERG_EXCLUSION_RADIUS_NM,
                 "provenance": DATA_PROVENANCE["iceberg_catalogue"],
                 "time_alignment": target_alignment,
@@ -83,12 +107,103 @@ def icebergs(
     res: Dict[str, Any] = {
         "icebergs": out,
         "count": len(out),
+        "mode": "simulated",
         "exclusion_radius_nm": ICEBERG_EXCLUSION_RADIUS_NM,
         "provenance": DATA_PROVENANCE["iceberg_catalogue"],
     }
     if target_alignment is not None:
         res["time_alignment"] = target_alignment
     return res
+
+
+def _icebergs_observed(at: Optional[str], lead_hours: int) -> Dict[str, Any]:
+    snapshot = load_observed_icebergs()
+    available = bool(snapshot.get("available"))
+    bergs: List[Dict[str, Any]] = [dict(b) for b in snapshot.get("icebergs", [])] if available else []
+
+    at_dt: Optional[datetime] = None
+    at_date: Optional[date] = None
+    if at is not None:
+        at_dt = parse_utc_datetime(at)
+        at_date = at_dt.date()
+
+    # BYU/NIC track: nearest observation at or before ``at``. Dates match exactly (YYYYDDD),
+    # never approximate; bergs with no on-or-before observation are omitted (never invented).
+    byu_positions: Dict[str, Dict[str, Any]] = {}
+    if at_date is not None:
+        tracks = load_database()
+        byu_positions = nearest_at_or_before(tracks, at_date)
+
+    # Key the NIC snapshot bergs by id, then overlay BYU positions (BYU takes precedence for
+    # position/date/size; NIC fills any size BYU lacks). BYU-only bergs are added.
+    by_id: Dict[str, Dict[str, Any]] = {b["id"]: b for b in bergs}
+    for berg_id, pos in byu_positions.items():
+        entry: Dict[str, Any] = {
+            "berg_id": berg_id,
+            "id": berg_id,
+            "latitude": pos["latitude"],
+            "longitude": pos["longitude"],
+            "last_obs": pos["last_obs"].isoformat(),
+            "observed_date": pos["last_obs"].isoformat(),
+            "length_nm": pos.get("size_major_nm"),
+            "width_nm": pos.get("size_minor_nm"),
+            "provenance": "observed",
+            "source": "BYU/NIC v6 track - nearest observation at or before t0",
+        }
+        if berg_id in by_id:
+            existing = by_id[berg_id]
+            existing.update(entry)
+            if existing.get("length_nm") is None and pos.get("size_major_nm") is not None:
+                existing["length_nm"] = pos["size_major_nm"]
+            if existing.get("width_nm") is None and pos.get("size_minor_nm") is not None:
+                existing["width_nm"] = pos["size_minor_nm"]
+        else:
+            by_id[berg_id] = entry
+
+    observed_bergs = list(by_id.values())
+
+    # Normalize every entry: berg_id (alias for id), last_obs (from observed_date when BYU did
+    # not supply it), provenance, and age relative to ``at`` (or the server clock).
+    clock = at_date or datetime.now(timezone.utc).date()
+    for b in observed_bergs:
+        b.setdefault("provenance", "observed")
+        b.setdefault("berg_id", b.get("id"))
+        if "last_obs" not in b and "observed_date" in b:
+            b["last_obs"] = b["observed_date"]
+        last = date.fromisoformat(b["last_obs"])
+        b["age_days"] = max(0, (clock - last).days)
+
+    # Optional forward drift forecast (computed positions, not look-ups).
+    if lead_hours > 0:
+        step_hours = max(6, lead_hours // 8)
+        for b in observed_bergs:
+            berg = IcebergProfile(
+                berg_id=b["berg_id"],
+                latitude=b["latitude"],
+                longitude=b["longitude"],
+                length_m=((b.get("length_nm") or 0.0) * KM_PER_NM * 1000.0),
+                width_m=((b.get("width_nm") or 0.0) * KM_PER_NM * 1000.0),
+            )
+            fc = predict_iceberg_drift(
+                berg, forecast_hours=lead_hours, time_step_hours=step_hours, ensemble_members=1,
+            )
+            last = fc.trajectory[-1]
+            b["forecast_latitude"] = last.latitude
+            b["forecast_longitude"] = last.longitude
+            b["forecast_lead_hours"] = lead_hours
+            b["kind"] = "real_forecast"
+            b["radii_nm"] = ICEBERG_EXCLUSION_RADIUS_NM
+
+    return {
+        "icebergs": observed_bergs,
+        "count": len(observed_bergs),
+        "mode": "observed",
+        "provenance": "observed",
+        "exclusion_radius_nm": ICEBERG_EXCLUSION_RADIUS_NM,
+        "snapshot_available": available,
+        "snapshot_date": snapshot.get("observed_date") if available else None,
+        "snapshot_stale": snapshot.get("stale") if available else None,
+    }
 
 
 class IcebergDriftRequest(BaseModel):
