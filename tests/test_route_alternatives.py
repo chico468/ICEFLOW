@@ -227,7 +227,7 @@ def test_alternatives_endpoint_forwards_one_resolved_voyage_request(monkeypatch)
     assert result is response
     assert seen["search"] == (
         (-58.0, 70.0, -69.0, 76.0),
-        {"grid_resolution_deg": 0.75, "departure_time_hours": 36.0, "avoid_icebergs": False},
+        {"grid_resolution_deg": 0.75, "departure_time_hours": 36.0, "avoid_icebergs": False, "departure_iso": None},
     )
 
 

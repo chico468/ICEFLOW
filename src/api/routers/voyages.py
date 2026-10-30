@@ -4,13 +4,14 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from datetime import datetime
 from typing import Any, Dict, List, Literal, Optional
 
 logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse, PlainTextResponse, Response
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from src.core.environment_time import parse_utc_datetime
 
@@ -18,6 +19,7 @@ from src.core.lindqvist_model import VesselParameters, get_vessel_preset
 from src.core.polaris_risk import IceClass
 from src.core.route_optimizer import RouteWeights
 from src.core.voyage import VoyageState, VoyageTick, create_voyage
+from src.data.nsidc_sea_ice import NSIDCUnavailableError
 from src.data.stations import get_waypoint, resolve_endpoint
 from src.services.bandwidth import bandwidth_report
 from src.services.exporters import (
@@ -44,6 +46,11 @@ class CreateVoyageRequest(BaseModel):
     departure_time_hours: float = Field(default=0.0, ge=0.0, allow_inf_nan=False)
     grid_resolution_deg: float = Field(default=0.5, ge=0.25, le=2.0)
     avoid_icebergs: bool = True
+    environment_mode: Literal["simulated", "real_ice", "replay"] = Field(
+        default="simulated",
+        description="simulated: synthetic ice; real_ice: latest cached NSIDC observation; replay: observed V6 field for replay_date.",
+    )
+    replay_date: Optional[str] = Field(default=None, description="ISO date (YYYY-MM-DD) for replay mode.")
 
     @field_validator("departure_iso")
     @classmethod
@@ -51,6 +58,19 @@ class CreateVoyageRequest(BaseModel):
         if value is not None:
             parse_utc_datetime(value, "departure_iso")
         return value
+
+    @field_validator("replay_date")
+    @classmethod
+    def _validate_replay_date(cls, value: Optional[str]) -> Optional[str]:
+        if value is not None:
+            datetime.strptime(value, "%Y-%m-%d")
+        return value
+
+    @model_validator(mode="after")
+    def _require_replay_date(self) -> "CreateVoyageRequest":
+        if self.environment_mode == "replay" and not self.replay_date:
+            raise ValueError("replay_date is required when environment_mode is 'replay'.")
+        return self
 
 
 class StepRequest(BaseModel):
@@ -83,21 +103,29 @@ def create(req: CreateVoyageRequest) -> VoyageState:
 
     departure = parse_utc_datetime(req.departure_iso, "departure_iso") if req.departure_iso else None
 
-    engine = create_voyage(
-        origin=origin,
-        destination=destination,
-        vessel=vessel,
-        ice_class=req.ice_class,
-        weights=req.weights,
-        route_profile_id=req.route_profile_id,
-        departure=departure,
-        departure_time_hours=req.departure_time_hours,
-        origin_name=origin_name,
-        destination_name=destination_name,
-        vessel_key=req.vessel_key,
-        avoid_icebergs=req.avoid_icebergs,
-        grid_resolution_deg=req.grid_resolution_deg,
-    )
+    try:
+        engine = create_voyage(
+            origin=origin,
+            destination=destination,
+            vessel=vessel,
+            ice_class=req.ice_class,
+            weights=req.weights,
+            route_profile_id=req.route_profile_id,
+            departure=departure,
+            departure_time_hours=req.departure_time_hours,
+            origin_name=origin_name,
+            destination_name=destination_name,
+            vessel_key=req.vessel_key,
+            avoid_icebergs=req.avoid_icebergs,
+            grid_resolution_deg=req.grid_resolution_deg,
+            environment_mode=req.environment_mode,
+            replay_date=req.replay_date,
+        )
+    except NSIDCUnavailableError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=f"environment_mode='{req.environment_mode}' could not be honoured: {exc}",
+        ) from exc
     get_store().register(engine)
     return engine.state
 

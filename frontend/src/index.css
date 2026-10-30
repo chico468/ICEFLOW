@@ -5,27 +5,27 @@
 /* ------------------------------------------------------------------------------------------
    Tokens. RGB triplets so Tailwind can apply opacity. Mirrored in src/map/palette.ts.
 
-   Palette idea: a daylight chart. Cool ice-white paper, white instrument cards, deep ICEFLOWy
-   ink, one polar blue for actions, and orange kept for the planned route and for hazard, so
-   anything warm on screen means something.
+   Navy / white / ice-blue theme: navy for primary text and primary actions, white surfaces,
+   ice blue for fills, highlights and borders, slate for secondary text. Data/semantic ramps
+   (route, ice bands, POLARIS risk, iceberg) are untouched and stay warm.
    ------------------------------------------------------------------------------------------ */
 @layer base {
   :root {
     color-scheme: light;
 
-    --c-ground: 237 242 244; /* #EDF2F4  paper */
+    --c-ground: 242 247 251; /* #F2F7FB  paper: ice-white */
     --c-panel: 255 255 255; /* #FFFFFF  cards */
-    --c-panel-2: 244 247 248; /* #F4F7F8  inputs, raised rows */
-    --c-panel-3: 232 239 242; /* #E8EFF2  hover */
-    --c-hair: 211 221 226; /* #D3DDE2  rules */
-    --c-hair-2: 174 190 198; /* #AEBEC6  input borders */
+    --c-panel-2: 233 244 253; /* #E9F4FD  inputs, raised rows */
+    --c-panel-3: 216 233 245; /* #D8E9F5  hover */
+    --c-hair: 207 232 247; /* #CFE8F7  rules */
+    --c-hair-2: 140 200 238; /* #8CC8EE  input borders */
 
-    --c-ink: 14 36 51; /* #0E2433  primary text */
-    --c-ink-2: 61 86 102; /* #3D5666 */
-    --c-ink-3: 88 115 131; /* #587383  5:1 on white */
+    --c-ink: 11 31 58; /* #0B1F3A  primary text */
+    --c-ink-2: 74 97 117; /* #4A6175  secondary text */
+    --c-ink-3: 90 116 132; /* #5A7484  tertiary text */
 
-    --c-accent: 11 92 142; /* #0B5C8E  polar blue: actions, focus */
-    --c-accent-2: 8 74 115; /* #084A73 */
+    --c-accent: 11 31 58; /* #0B1F3A  primary actions, focus */
+    --c-accent-2: 8 55 94; /* #08375E  action hover */
     --c-on-accent: 255 255 255;
     --c-route: 194 65 12; /* #C2410C  the planned route */
     --c-teal: 15 118 110; /* #0F766E  stations */

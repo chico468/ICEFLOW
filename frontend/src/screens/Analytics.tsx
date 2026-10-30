@@ -23,10 +23,10 @@ import { Badge, EmptyState, KeyValue, Panel, Stat } from '../components/ui';
 import { bytes, num, signed } from '../lib/format';
 import { useAppStore } from '../store/useAppStore';
 
-const AXIS = { stroke: '#587383', tick: { fontSize: 10 } } as const;
+const AXIS = { stroke: 'rgb(var(--c-ink-3))', tick: { fontSize: 10 } } as const;
 const TOOLTIP = {
-  contentStyle: { background: '#FFFFFF', border: '1px solid #AEBEC6', fontSize: 11 },
-  labelStyle: { color: '#3D5666' },
+  contentStyle: { background: 'rgb(var(--c-panel))', border: '1px solid rgb(var(--c-hair-2))', fontSize: 11 },
+  labelStyle: { color: 'rgb(var(--c-ink-2))' },
 } as const;
 
 export function Analytics(): JSX.Element {
@@ -112,13 +112,13 @@ export function Analytics(): JSX.Element {
               <div className="h-52">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={comparison} margin={{ top: 4, right: 6, bottom: 0, left: -14 }}>
-                    <CartesianGrid stroke="#D3DDE2" strokeDasharray="2 3" />
+                    <CartesianGrid stroke="rgb(var(--c-hair))" strokeDasharray="2 3" />
                     <XAxis dataKey="metric" {...AXIS} />
                     <YAxis {...AXIS} />
                     <Tooltip {...TOOLTIP} />
                     <Legend wrapperStyle={{ fontSize: 10 }} />
-                    <Bar dataKey="baseline" name="Ice-blind" fill="#B45309" />
-                    <Bar dataKey="optimised" name="Optimised" fill="#0B5C8E" />
+                    <Bar dataKey="baseline" name="Ice-blind" fill="rgb(var(--c-warn))" />
+                    <Bar dataKey="optimised" name="Optimised" fill="rgb(var(--c-accent))" />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -137,15 +137,15 @@ export function Analytics(): JSX.Element {
             <div className="h-64">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={rioProfile} margin={{ top: 4, right: 6, bottom: 0, left: -18 }}>
-                  <CartesianGrid stroke="#D3DDE2" strokeDasharray="2 3" />
+                  <CartesianGrid stroke="rgb(var(--c-hair))" strokeDasharray="2 3" />
                   <XAxis dataKey="nm" {...AXIS} unit=" nm" />
                   <YAxis {...AXIS} />
                   <Tooltip {...TOOLTIP} />
                   <Legend wrapperStyle={{ fontSize: 10 }} />
-                  <Line type="monotone" dataKey="rio" name="RIO" stroke="#1F7A4D" dot={false} strokeWidth={2} />
-                  <Line type="monotone" dataKey="concentration" name="Ice (tenths)" stroke="#3D5666" dot={false} />
-                  <Line type="monotone" dataKey="speed" name="Speed (kn)" stroke="#0B5C8E" dot={false} />
-                  <Line type="monotone" dataKey="thickness" name="Thickness (m)" stroke="#5B3FD1" dot={false} />
+                  <Line type="monotone" dataKey="rio" name="RIO" stroke="rgb(var(--c-ok))" dot={false} strokeWidth={2} />
+                  <Line type="monotone" dataKey="concentration" name="Ice (tenths)" stroke="rgb(var(--c-ink-2))" dot={false} />
+                  <Line type="monotone" dataKey="speed" name="Speed (kn)" stroke="rgb(var(--c-accent))" dot={false} />
+                  <Line type="monotone" dataKey="thickness" name="Thickness (m)" stroke="rgb(var(--c-violet))" dot={false} />
                 </LineChart>
               </ResponsiveContainer>
             </div>
@@ -163,18 +163,18 @@ export function Analytics(): JSX.Element {
               <div className="h-56">
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={speedSeries} margin={{ top: 4, right: 6, bottom: 0, left: -14 }}>
-                    <CartesianGrid stroke="#D3DDE2" strokeDasharray="2 3" />
+                    <CartesianGrid stroke="rgb(var(--c-hair))" strokeDasharray="2 3" />
                     <XAxis dataKey="speed" {...AXIS} unit=" kn" />
                     <YAxis {...AXIS} unit=" MW" />
                     <Tooltip {...TOOLTIP} />
                     <Legend wrapperStyle={{ fontSize: 10 }} />
-                    {(curve.data?.series ?? []).map((s, i) => (
+                    {curve.data?.series.map((s, i) => (
                       <Line
                         key={s.ice_thickness_m}
                         type="monotone"
                         dataKey={`h${s.ice_thickness_m}`}
                         name={`${s.ice_thickness_m} m ice`}
-                        stroke={['#0B5C8E', '#0F766E', '#A16207', '#B45309', '#B3261E'][i % 5]}
+                        stroke={['rgb(var(--c-accent))', 'rgb(var(--c-teal))', 'rgb(var(--c-caution))', 'rgb(var(--c-warn))', 'rgb(var(--c-danger))'][i % 5]}
                         dot={false}
                       />
                     ))}
