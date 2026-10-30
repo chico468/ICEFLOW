@@ -27,6 +27,7 @@ MODELS_DIR = Path(__file__).resolve().parents[2] / "models"
 SIC_ARTEFACT_NAME = "sic_forecaster.joblib"
 DRIFT_ARTEFACT_NAME = "drift_residual.joblib"
 GROWLER_ARTEFACT_NAME = "growler_classifier.joblib"
+ICEBERG_ARTEFACT_NAME = "iceberg_forecaster.joblib"
 METRICS_NAME = "metrics.json"
 
 
@@ -86,9 +87,32 @@ def get_growler_classifier():
     return _load("growler", artefact_path(GROWLER_ARTEFACT_NAME), GrowlerClassifier.load)
 
 
+def get_iceberg_forecaster():
+    """The trained iceberg drift forecaster (BE-3), or None."""
+    from src.ml.iceberg_forecaster import IcebergForecaster
+
+    return _load("iceberg", artefact_path(ICEBERG_ARTEFACT_NAME), IcebergForecaster.load)
+
+
 def load_metrics() -> Dict[str, Any]:
     """Contents of models/metrics.json, or an empty dictionary if it is missing or malformed."""
     path = metrics_path()
+    if not path.exists():
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            return json.load(fh)
+    except Exception:  # pragma: no cover - depends on a malformed file
+        return {}
+
+
+def _iceberg_report_path() -> Path:
+    return Path(MODELS_DIR) / "eval" / "iceberg_ml_report.json"
+
+
+def load_iceberg_report() -> Dict[str, Any]:
+    """Contents of models/eval/iceberg_ml_report.json, or {} if missing/malformed."""
+    path = _iceberg_report_path()
     if not path.exists():
         return {}
     try:
@@ -206,6 +230,59 @@ def ml_status() -> Dict[str, Any]:
                 entry["headline"] = record.get("headline")
                 entry["test_metrics"] = record.get("test")
         entries[key] = entry
+
+    # Iceberg drift forecaster (BE-3). Separate from the synthetic loop.
+    berg_path = artefact_path(ICEBERG_ARTEFACT_NAME)
+    berg_model = get_iceberg_forecaster()
+    berg_record = load_iceberg_report()
+    berg_entry: Dict[str, Any] = {
+        "task": "iceberg drift forecast (BYU/NIC v6)",
+        "status": "real_data_trained" if berg_model is not None else "not trained",
+        "status_detail": "trained on real iceberg tracks" if berg_model is not None else "not trained",
+        "trained_on": "real" if berg_model is not None else "not trained",
+        "operational_skill_validated": bool(
+            berg_record.get("evaluation_status", {}).get("operational_skill_validated", False)
+        ),
+        "beats_best_baseline": any(
+            berg_record.get("promoted", {}).get("iceberg", {}).values()
+        ) if berg_record else False,
+        "used_in_routing": bool(
+            berg_record.get("evaluation_status", {}).get("used_in_routing", False)
+        ),
+        "metrics_mode": "real" if berg_model is not None else "unknown",
+        "trained_at": berg_record.get("generated_at"),
+        "artefact": berg_path.name,
+        "artefact_present": berg_path.exists(),
+        "report_path": str(_iceberg_report_path()),
+        "product": berg_record.get("product"),
+        "version": berg_record.get("version"),
+        "lead_days": berg_record.get("lead_days", []),
+        "promoted_leads": [
+            int(l) for l, v in berg_record.get("promoted", {}).get("iceberg", {}).items() if v
+        ] if berg_record else [],
+        "radii": berg_record.get("radii", {}),
+        "coverage": berg_record.get("coverage", {}),
+    }
+    if berg_model is None:
+        berg_entry["reason"] = _LOAD_ERRORS.get(
+            "iceberg", "iceberg_forecaster artefact not found"
+        )
+        berg_entry["fallback"] = "synthetic physics model for iceberg drift"
+    else:
+        metadata = getattr(berg_model, "metadata", {}) or {}
+        berg_entry["estimator"] = metadata.get("estimator", "HistGradientBoostingRegressor")
+        berg_entry["feature_names"] = list(getattr(berg_model, "feature_names", ()) or [])
+        berg_entry["n_features"] = len(berg_entry["feature_names"])
+        berg_entry["leads"] = list(getattr(berg_model, "leads", []))
+        berg_entry["train_start_year"] = berg_record.get("train_start_year")
+        berg_entry["test_end_year"] = berg_record.get("test_end_year")
+        berg_entry["metric"] = "great_circle_error_km"
+    berg_entry["caveat"] = (
+        "Trained on BYU/NIC consolidated Antarctic iceberg database v6. "
+        "Promoted leads must beat the best baseline with bootstrap CI excluding zero on TEST. "
+        "Not operationally validated."
+    )
+    entries["iceberg_forecaster"] = berg_entry
 
     any_trained = any(e.get("artefact_present") or e["status"] != "not trained" for e in entries.values())
     real_report_path = Path(MODELS_DIR) / "eval" / "real_sic_report.json"

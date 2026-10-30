@@ -22,7 +22,8 @@ def test_observed_icebergs_are_labelled_observed_dated_and_kept_out_of_routing()
 
 def test_observed_route_does_not_shadow_the_drift_route():
     # /icebergs/{berg_id}/drift must still resolve for a catalogue berg.
-    first = client.get("/api/v1/icebergs").json()["icebergs"][0]["berg_id"]
+    # The default /icebergs path is now observed; catalogue bergs are behind mode="simulated".
+    first = client.get("/api/v1/icebergs?mode=simulated").json()["icebergs"][0]["berg_id"]
     assert client.get(f"/api/v1/icebergs/{first}/drift", params={"forecast_hours": 24}).status_code == 200
 
 

@@ -1,0 +1,88 @@
+{
+  "start": "2024-01-15",
+  "days": 1,
+  "bbox": [47.5, -61.5, 50.5, -58.5],
+  "generated_at": "2026-10-29T00:00:00+00:00",
+  "total_size_bytes": 39171,
+  "products": [
+    {
+      "product": "era5_wind_10m",
+      "dataset_id": "reanalysis-era5-single-levels",
+      "version": "v1",
+      "request_params": {
+        "variable": ["10m_u_component_of_wind", "10m_v_component_of_wind"],
+        "product_type": ["reanalysis"],
+        "data_format": "netcdf",
+        "download_format": "unarchived"
+      },
+      "sha256": "fixture-placeholder",
+      "download_time_s": 0.0,
+      "size_bytes": 10083,
+      "citation": "Hersbach et al. (2023), ERA5 fifth generation of reanalysis, C3S CDS, https://doi.org/10.24381/cds.bd0915c6",
+      "provenance_kind": "reanalysis",
+      "local_path": "era5_wind_10m_20240115_1d.nc",
+      "valid_from": "2024-01-15T00:00:00",
+      "valid_to": "2024-01-15T12:00:00"
+    },
+    {
+      "product": "era5_waves",
+      "dataset_id": "reanalysis-era5-single-levels",
+      "version": "v1",
+      "request_params": {
+        "variable": ["significant_height_of_combined_wind_waves_and_swell"],
+        "product_type": ["reanalysis"],
+        "data_format": "netcdf",
+        "download_format": "unarchived"
+      },
+      "sha256": "fixture-placeholder",
+      "download_time_s": 0.0,
+      "size_bytes": 9507,
+      "citation": "Hersbach et al. (2023), ERA5 fifth generation of reanalysis, C3S CDS, https://doi.org/10.24381/cds.bd0915c6",
+      "provenance_kind": "reanalysis",
+      "local_path": "era5_waves_20240115_1d.nc",
+      "valid_from": "2024-01-15T00:00:00",
+      "valid_to": "2024-01-15T12:00:00",
+      "separate_file": true
+    },
+    {
+      "product": "cmems_current",
+      "dataset_id": "GLOBAL_ANALYSISFORECAST_PHY_001_024",
+      "version": "0.083 deg",
+      "request_params": {
+        "variable": ["uo", "vo"],
+        "minimum_longitude": 47.5,
+        "maximum_longitude": 50.5,
+        "minimum_latitude": -61.5,
+        "maximum_latitude": -58.5
+      },
+      "sha256": "fixture-placeholder",
+      "download_time_s": 0.0,
+      "size_bytes": 10176,
+      "citation": "Copernicus Marine Service, GLOBAL ANALYSISFORECAST PHY 001 024, https://doi.org/10.48670/moi-00015",
+      "provenance_kind": "reanalysis",
+      "local_path": "cmems_current_20240115_1d.nc",
+      "valid_from": "2024-01-15T00:00:00",
+      "valid_to": "2024-01-15T12:00:00"
+    },
+    {
+      "product": "nrt_ice_concentration",
+      "dataset_id": "SEAICE_GLO_SEAICE_L4_NRT_OBSERVATIONS_011_001",
+      "version": "L4 NRT",
+      "request_params": {
+        "variable": ["ice_conc"],
+        "minimum_longitude": 47.5,
+        "maximum_longitude": 50.5,
+        "minimum_latitude": -61.5,
+        "maximum_latitude": -58.5
+      },
+      "sha256": "fixture-placeholder",
+      "download_time_s": 0.0,
+      "size_bytes": 9405,
+      "citation": "Copernicus Marine Service, SEAICE_GLO_SEAICE_L4_NRT_OBSERVATIONS_011_001, https://doi.org/10.48670/moi-00208",
+      "provenance_kind": "real-observation",
+      "local_path": "nrt_ice_concentration_20240115_1d.nc",
+      "valid_from": "2024-01-15T00:00:00",
+      "valid_to": "2024-01-15T12:00:00"
+    }
+  ]
+}
