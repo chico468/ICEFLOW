@@ -62,7 +62,10 @@ MIN_INTERNAL_TIMESTEP_S = 60.0
 TIMESTEP_SAFETY_DIVISOR = 5.0
 MAX_PHYSICAL_DRIFT_MS = 3.0  # a drifting berg faster than this is a numerical failure, not physics
 # How often the atmosphere and ocean are re-sampled along the track, in simulated seconds.
-FORCING_REFRESH_S = 1800.0
+# Icebergs drift at order 1 nm/hour, far below the noise field's correlation length, so an
+# hourly refresh keeps the track indistinguishable from a 30-minute refresh while halving the
+# environment sampling cost inside the route optimiser's exclusion build.
+FORCING_REFRESH_S = 3600.0
 
 
 class IcebergProfile(BaseModel):

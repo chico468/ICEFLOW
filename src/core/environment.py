@@ -159,16 +159,31 @@ class EnvironmentModel:
 
         Taking the curl of a scalar field guarantees the perturbation is non-divergent, which is
         what makes the eddies look like real eddies instead of sources and sinks.
+
+        The four finite-difference evaluations of the streamfunction are batched into a single
+        vectorised noise call so the route optimiser's per-step forcing refresh (hundreds of
+        single-point evaluations per iceberg drift integration) stays fast.
         """
         lat = np.asarray(lat, dtype=np.float64)
         lon = np.asarray(lon, dtype=np.float64)
         h = 0.35
-
-        def psi(la, lo):
-            return noise.fbm(lo / sx - t_hours / st, la / sy, t_hours / (st * 3.0), octaves=4)
-
-        dpsi_dlat = (psi(lat + h, lon) - psi(lat - h, lon)) / (2.0 * h)
-        dpsi_dlon = (psi(lat, lon + h) - psi(lat, lon - h)) / (2.0 * h)
+        z = t_hours / (st * 3.0)
+        x = np.stack([
+            lon / sx - t_hours / st,      # psi(lat + h, lon)
+            lon / sx - t_hours / st,      # psi(lat - h, lon)
+            (lon + h) / sx - t_hours / st,# psi(lat, lon + h)
+            (lon - h) / sx - t_hours / st,# psi(lat, lon - h)
+        ])
+        y = np.stack([
+            (lat + h) / sy,               # psi(lat + h, lon)
+            (lat - h) / sy,               # psi(lat - h, lon)
+            lat / sy,                     # psi(lat, lon + h)
+            lat / sy,                     # psi(lat, lon - h)
+        ])
+        z_batch = np.broadcast_to(z, x.shape)
+        psis = noise.fbm(x, y, z_batch, octaves=4)
+        dpsi_dlat = (psis[0] - psis[1]) / (2.0 * h)
+        dpsi_dlon = (psis[2] - psis[3]) / (2.0 * h)
         cos_lat = np.maximum(0.05, np.cos(np.radians(lat)))
         u = -amp * dpsi_dlat
         v = amp * dpsi_dlon / cos_lat
