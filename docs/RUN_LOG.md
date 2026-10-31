@@ -19,3 +19,14 @@
 5. Optimize 60s test if needed
 6. Check BE-2 closeout (IIEE table)
 7. Full pytest on real-voyage
+
+## 2026-10-31: BE-5 implementation complete (on real-voyage)
+- Committed docs/AUTONOMY.md and docs/RUN_LOG.md
+- BE-5 Tasks 1-5 complete:
+  1. Vectorised provider: added sample_grid to EnvironmentProvider protocol + all implementations (ReplayProvider, SimulatedProvider, LiveProvider, EnvironmentModel); FieldCache uses sample_grid instead of point-sample loops
+  2. Ice time semantics: added ice_time_mode ("departure_snapshot" | "daily") to PolarRouteOptimizer; daily mode loads ice per day and uses nearest day per slice
+  3. Removed real_ice silent synthetic fallback: real_ice now raises NSIDCUnavailableError instead of falling back to synthetic; updated tests accordingly
+  4. Injected EnvironmentProvider into route_optimizer.py (FieldCache), voyage.py (VoyageEngine), iceberg_tracker.py (_field_forcing), growler_radar.py (simulate_sweep)
+  5. 60s test: passes within limit (no optimization needed)
+- Full pytest: 340 passed, 1 warning in 254.89s
+- BE-2 closeout: IIEE table exists (models/eval/real_sic_report.md), lead-3 sanity check exists, Nov-Mar/austral_departure season exists, V6 product confirmed
