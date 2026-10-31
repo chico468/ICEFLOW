@@ -121,7 +121,8 @@ def main(argv: List[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--cache-dir", type=Path, default=None)
     parser.add_argument("--start", type=str, default="2005-01-01")
-    parser.add_argument("--end", type=str, default="2024-12-31")
+    parser.add_argument("--end", type=str, default="2025-12-31",
+                        help="End date inclusive; 2005-2024 train/val/test, 2025+ sensor check")
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
     parser.add_argument("--sample-viz-fraction", type=float, default=0.03,
                         help="Fraction of VIZ cells from each sampled training day")
@@ -302,6 +303,13 @@ def main(argv: List[str] | None = None) -> int:
     else:
         print("  No 2025+ data in cache for sensor check")
 
+    # Sensor check date range and sample count.
+    sensor_date_range = None
+    sensor_n_days = 0
+    if sensor_dates:
+        sensor_date_range = f"{min(sensor_dates).isoformat()} to {max(sensor_dates).isoformat()}"
+        sensor_n_days = len(sensor_dates)
+
     # ------------------------------------------------------------------ 8. Save model (skip in evaluate-only)
     artefact_path = Path(MODELS_DIR) / REAL_ARTEFACT_NAME
     artefact_path.parent.mkdir(parents=True, exist_ok=True)
@@ -319,6 +327,7 @@ def main(argv: List[str] | None = None) -> int:
         len(sic_by_date), len(gaps), fit_s,
         sample_viz, val_sample_viz, sample_other,
         _git_sha(),
+        sensor_date_range, sensor_n_days,
     )
 
     report_path = Path(MODELS_DIR) / "eval" / "real_sic_ml_report.json"
@@ -369,6 +378,8 @@ def _build_scorecard_report(
     val_sample_viz: float,
     sample_other: float,
     git_sha: Optional[str] = None,
+    sensor_date_range: Optional[str] = None,
+    sensor_n_days: int = 0,
 ) -> Dict[str, Any]:
     """Build the SPRINT contract scorecard report for the scorecard endpoint.
 
@@ -400,29 +411,32 @@ def _build_scorecard_report(
             "skill_vs_baseline": viz_skill,
             "n": pl["n_samples"],
         })
-        # Nov-Mar VIZ row.
+        # Nov-Mar VIZ row (own RMSE and n, not all-season).
+        viz_nm_rmse = pl.get("viz_nov_mar_model_rmse", float("nan"))
+        viz_nm_n = pl.get("viz_nov_mar_n_samples", pl["n_samples"])
         rows.append({
             "task": "sic",
             "lead_days": lead,
             "domain": "variable_ice_zone",
             "season": "nov_mar",
             "model": "gbm_residual",
-            "rmse": viz_model_rmse,
+            "rmse": viz_nm_rmse,
             "ci": pl["viz_nov_mar_rmse_diff_ci"],
             "skill_vs_baseline": None,
-            "n": pl["n_samples"],
+            "n": viz_nm_n,
         })
-        # Baseline row for context.
+        # Nov-Mar damped-persistence baseline row.
+        viz_nm_base_rmse = pl.get("viz_nov_mar_baseline_rmse", float("nan"))
         rows.append({
             "task": "sic",
             "lead_days": lead,
             "domain": "variable_ice_zone",
-            "season": "all",
+            "season": "nov_mar",
             "model": "damped_persistence",
-            "rmse": viz_baseline_rmse,
+            "rmse": viz_nm_base_rmse,
             "ci": [None, None],
             "skill_vs_baseline": None,
-            "n": pl["n_samples"],
+            "n": viz_nm_n,
         })
         # IIEE rows.
         iiee_all = pl.get("iiee_15_pct")
@@ -452,8 +466,9 @@ def _build_scorecard_report(
             "metric": "iiee_pct",
         })
 
-    # Per-lead, per-sector coverage rows.
+    # Per-lead, per-sector coverage rows (dedicated coverage field, not rmse).
     for lead, sec_cov in cov.get("per_lead_per_sector", {}).items():
+        sec_n = cov.get("per_lead_per_sector_n", {}).get(str(lead), {})
         for s_name, emp_cov in sec_cov.items():
             rows.append({
                 "task": "sic",
@@ -461,10 +476,10 @@ def _build_scorecard_report(
                 "domain": f"sector:{s_name}",
                 "season": "all",
                 "model": "gbm_residual",
-                "rmse": emp_cov,
+                "coverage": emp_cov,
                 "ci": [None, None],
                 "skill_vs_baseline": None,
-                "n": 0,
+                "n": sec_n.get(s_name, 0),
                 "metric": "coverage_90ci",
             })
 
@@ -479,10 +494,23 @@ def _build_scorecard_report(
                 "lead_days": pl["lead_days"],
                 "domain": "variable_ice_zone",
                 "season": "all",
-                "model": "gbm_residual_sensor_amr2",
+                "model": "gbm_residual_sensor_amsr2",
                 "rmse": s_model_rmse,
                 "ci": pl["viz_rmse_diff_ci"],
                 "skill_vs_baseline": s_skill,
+                "n": pl["n_samples"],
+                "caveat": "2025+ AMSR2-era sensor, not in training window",
+            })
+            # Sensor-era damped-persistence baseline row.
+            rows.append({
+                "task": "sic",
+                "lead_days": pl["lead_days"],
+                "domain": "variable_ice_zone",
+                "season": "all",
+                "model": "damped_persistence_sensor_amsr2",
+                "rmse": s_base_rmse,
+                "ci": [None, None],
+                "skill_vs_baseline": None,
                 "n": pl["n_samples"],
                 "caveat": "2025+ AMSR2-era sensor, not in training window",
             })
@@ -498,7 +526,7 @@ def _build_scorecard_report(
 
     caveats = [
         "Trained on NSIDC V6 SSMIS-era (2005-2019). Val 2020-2021, test 2022-2024 untouched.",
-        "Sensor check on 2025+ AMSR2 era is out-of-training-distribution; treat as indicative only.",
+        f"Sensor check evaluated on AMSR2-era data ({sensor_date_range or 'no 2025+ data'}, {sensor_n_days} days); out-of-training-distribution, indicative only.",
         "Promoted leads must beat tuned damped-persistence baseline with 95% CI excluding zero in both all-season and Nov-Mar on VIZ cells.",
         "IIEE at 15% threshold per Goessling et al. 2016, area-weighted.",
     ]
@@ -523,6 +551,8 @@ def _build_scorecard_report(
         "taus": {str(k): round(v, 2) for k, v in taus.items()},
         "record_length_days": record_length,
         "n_gaps": n_gaps,
+        "sensor_date_range": sensor_date_range,
+        "sensor_n_days": sensor_n_days,
         "rows": rows,
         "promoted": {"sic": promoted},
         "coverage": coverage_out,

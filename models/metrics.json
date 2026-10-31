@@ -701,6 +701,172 @@
         "median_improvement_percent": -122.929
       }
     },
+    "real_sic_forecaster": {
+      "task": "Forecast sea-ice concentration at t0 + lead from real NSIDC V6 observations",
+      "estimator": "HistGradientBoostingRegressor",
+      "artefact": "real_sic_forecaster.joblib",
+      "data_source": "real",
+      "path": "models/eval/real_sic_ml_report.json",
+      "trained_on": "real",
+      "data_provenance": "NOAA/NSIDC CDR G02202 Version 6 (SSMIS 2005-2019, AMSR2 2025), 25 km polar stereographic (EPSG:3412)",
+      "train_years": [2005, 2006, 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019],
+      "val_years": [2020, 2021],
+      "test_years": [2022, 2023, 2024],
+      "sensor_date_range": "2025-01-01 to 2025-12-29",
+      "sensor_n_days": 363,
+      "lead_days": [3, 7, 14],
+      "taus": {"3": 23.0, "7": 25.1, "14": 26.7},
+      "feature_names": [
+        "sic_t0",
+        "anomaly_t0",
+        "sic_change_1d",
+        "sic_change_3d",
+        "sic_change_7d",
+        "nhood_mean_3x3",
+        "nhood_mean_7x7",
+        "clim_target",
+        "sin_doy",
+        "cos_doy",
+        "sin_lon",
+        "cos_lon",
+        "latitude",
+        "sector_id"
+      ],
+      "fit_seconds": 973.0,
+      "val": {
+        "n_samples": 3413637,
+        "overall": {
+          "model_rmse": 0.1135,
+          "baseline_rmse": 0.1229,
+          "persistence_rmse": 0.1497,
+          "skill_vs_baseline": 0.0769,
+          "n_samples": 3413637
+        },
+        "per_lead": [
+          {
+            "lead_days": 3,
+            "n_samples": 1137879,
+            "model_rmse": 0.0859,
+            "baseline_rmse": 0.1310,
+            "persistence_rmse": 0.0951,
+            "skill_vs_baseline": 0.0562,
+            "promoted": true
+          },
+          {
+            "lead_days": 7,
+            "n_samples": 1137879,
+            "model_rmse": 0.1136,
+            "baseline_rmse": 0.1678,
+            "persistence_rmse": 0.1410,
+            "skill_vs_baseline": 0.0322,
+            "promoted": false
+          },
+          {
+            "lead_days": 14,
+            "n_samples": 1137879,
+            "model_rmse": 0.1354,
+            "baseline_rmse": 0.1880,
+            "persistence_rmse": 0.1956,
+            "skill_vs_baseline": 0.0279,
+            "promoted": false
+          }
+        ],
+        "promoted_leads": [3],
+        "coverage_90_ci": 0.9
+      },
+      "test": {
+        "n_samples": 5218056,
+        "overall": {
+          "model_rmse": 0.1185,
+          "baseline_rmse": 0.1303,
+          "persistence_rmse": 0.1446,
+          "skill_vs_baseline": 0.0902,
+          "n_samples": 5218056
+        },
+        "per_lead": [
+          {
+            "lead_days": 3,
+            "n_samples": 1739352,
+            "model_rmse": 0.0857,
+            "baseline_rmse": 0.1286,
+            "persistence_rmse": 0.0922,
+            "skill_vs_baseline": 0.0334,
+            "promoted": false
+          },
+          {
+            "lead_days": 7,
+            "n_samples": 1739352,
+            "model_rmse": 0.1165,
+            "baseline_rmse": 0.1612,
+            "persistence_rmse": 0.1346,
+            "skill_vs_baseline": 0.0331,
+            "promoted": false
+          },
+          {
+            "lead_days": 14,
+            "n_samples": 1739352,
+            "model_rmse": 0.1457,
+            "baseline_rmse": 0.1813,
+            "persistence_rmse": 0.1901,
+            "skill_vs_baseline": 0.0196,
+            "promoted": false
+          }
+        ],
+        "promoted_leads": [],
+        "coverage_90_ci": 0.8996
+      },
+      "sensor_check": {
+        "n_samples": 1690155,
+        "window_years": [2025],
+        "date_range": "2025-01-01 to 2025-12-29",
+        "n_days": 363,
+        "per_lead": [
+          {
+            "lead_days": 3,
+            "n_samples": 571320,
+            "model_rmse": 0.0926,
+            "baseline_rmse": 0.1590,
+            "persistence_rmse": 0.1012,
+            "skill_vs_baseline": 0.0418,
+            "promoted": false
+          },
+          {
+            "lead_days": 7,
+            "n_samples": 564972,
+            "model_rmse": 0.1248,
+            "baseline_rmse": 0.1928,
+            "persistence_rmse": 0.1481,
+            "skill_vs_baseline": 0.0332,
+            "promoted": false
+          },
+          {
+            "lead_days": 14,
+            "n_samples": 553863,
+            "model_rmse": 0.1560,
+            "baseline_rmse": 0.2068,
+            "persistence_rmse": 0.2084,
+            "skill_vs_baseline": -0.0247,
+            "promoted": false
+          }
+        ],
+        "coverage_90_ci": 0.8879
+      },
+      "promoted_leads": [],
+      "evaluation_status": {
+        "trained_on": "real",
+        "operational_skill_validated": false,
+        "used_in_routing": false,
+        "promoted_leads": [],
+        "status": "real_data_training_complete"
+      },
+      "headline": {
+        "test_model_rmse": 0.1185,
+        "test_baseline_rmse": 0.1303,
+        "skill_vs_baseline": 0.0902,
+        "promoted_leads": [],
+        "note": "Nothing promoted: no lead beats the tuned damped-persistence baseline with 95% CI excluding zero in both all-season and Nov-Mar on VIZ cells on TEST."
+      }
+    },
     "growler_classifier": {
       "task": "Classify a radar blob as a real ice target or sea clutter",
       "estimator": "RandomForestClassifier",

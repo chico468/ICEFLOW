@@ -1,6 +1,6 @@
 {
-  "generated_at": "2026-10-28T04:11:03+00:00",
-  "git_sha": "6bd23575716202c9a79da49c33aa46912a72611c",
+  "generated_at": "2026-10-31T03:53:12+00:00",
+  "git_sha": "3d2409fc6cc19acea747dd90277fa00aa10fa007",
   "data_source": "real",
   "product": "NOAA/NSIDC CDR G02202 Version 6",
   "version": "v06r00",
@@ -30,6 +30,11 @@
     2023,
     2024
   ],
+  "lead_days": [
+    3,
+    7,
+    14
+  ],
   "taus": {
     "3": 22.98,
     "7": 25.06,
@@ -37,6 +42,8 @@
   },
   "record_length_days": 7668,
   "n_gaps": 2,
+  "sensor_date_range": "2025-01-01 to 2025-12-29",
+  "sensor_n_days": 363,
   "rows": [
     {
       "task": "sic",
@@ -46,8 +53,8 @@
       "model": "gbm_residual",
       "rmse": 0.12065,
       "ci": [
-        -0.01163,
-        -0.00548
+        -0.01165,
+        -0.00467
       ],
       "skill_vs_baseline": 0.06218,
       "n": 1739352
@@ -58,27 +65,27 @@
       "domain": "variable_ice_zone",
       "season": "nov_mar",
       "model": "gbm_residual",
-      "rmse": 0.12065,
+      "rmse": 0.1131,
       "ci": [
-        -0.00614,
-        0.0042
+        -0.00572,
+        0.00531
       ],
       "skill_vs_baseline": null,
-      "n": 1739352
+      "n": 156272
     },
     {
       "task": "sic",
       "lead_days": 3,
       "domain": "variable_ice_zone",
-      "season": "all",
+      "season": "nov_mar",
       "model": "damped_persistence",
-      "rmse": 0.12865,
+      "rmse": 0.11358,
       "ci": [
         null,
         null
       ],
       "skill_vs_baseline": null,
-      "n": 1739352
+      "n": 156272
     },
     {
       "task": "sic",
@@ -86,7 +93,7 @@
       "domain": "iiee_15pct",
       "season": "all",
       "model": "gbm_residual",
-      "rmse": 5.3343,
+      "rmse": 3.5746,
       "ci": [
         null,
         null
@@ -118,8 +125,8 @@
       "model": "gbm_residual",
       "rmse": 0.15187,
       "ci": [
-        -0.01402,
-        -0.00539
+        -0.0141,
+        -0.00524
       ],
       "skill_vs_baseline": 0.058,
       "n": 1739352
@@ -130,27 +137,27 @@
       "domain": "variable_ice_zone",
       "season": "nov_mar",
       "model": "gbm_residual",
-      "rmse": 0.15187,
+      "rmse": 0.14965,
       "ci": [
-        -0.00433,
-        0.00765
+        -0.004,
+        0.00775
       ],
       "skill_vs_baseline": null,
-      "n": 1739352
+      "n": 151040
     },
     {
       "task": "sic",
       "lead_days": 7,
       "domain": "variable_ice_zone",
-      "season": "all",
+      "season": "nov_mar",
       "model": "damped_persistence",
-      "rmse": 0.16122,
+      "rmse": 0.14948,
       "ci": [
         null,
         null
       ],
       "skill_vs_baseline": null,
-      "n": 1739352
+      "n": 151040
     },
     {
       "task": "sic",
@@ -158,7 +165,7 @@
       "domain": "iiee_15pct",
       "season": "all",
       "model": "gbm_residual",
-      "rmse": 5.3343,
+      "rmse": 3.9093,
       "ci": [
         null,
         null
@@ -190,8 +197,8 @@
       "model": "gbm_residual",
       "rmse": 0.17729,
       "ci": [
-        -0.00693,
-        -0.00055
+        -0.00674,
+        -0.00067
       ],
       "skill_vs_baseline": 0.02196,
       "n": 1739352
@@ -202,27 +209,27 @@
       "domain": "variable_ice_zone",
       "season": "nov_mar",
       "model": "gbm_residual",
-      "rmse": 0.17729,
+      "rmse": 0.18531,
       "ci": [
-        -0.00035,
-        0.0106
+        -0.0002,
+        0.00896
       ],
       "skill_vs_baseline": null,
-      "n": 1739352
+      "n": 142411
     },
     {
       "task": "sic",
       "lead_days": 14,
       "domain": "variable_ice_zone",
-      "season": "all",
+      "season": "nov_mar",
       "model": "damped_persistence",
-      "rmse": 0.18127,
+      "rmse": 0.18283,
       "ci": [
         null,
         null
       ],
       "skill_vs_baseline": null,
-      "n": 1739352
+      "n": 142411
     },
     {
       "task": "sic",
@@ -230,7 +237,7 @@
       "domain": "iiee_15pct",
       "season": "all",
       "model": "gbm_residual",
-      "rmse": 5.3343,
+      "rmse": 3.9648,
       "ci": [
         null,
         null
@@ -260,13 +267,13 @@
       "domain": "sector:Weddell Sea",
       "season": "all",
       "model": "gbm_residual",
-      "rmse": 0.9227,
+      "coverage": 0.9227,
       "ci": [
         null,
         null
       ],
       "skill_vs_baseline": null,
-      "n": 0,
+      "n": 558109,
       "metric": "coverage_90ci"
     },
     {
@@ -275,13 +282,13 @@
       "domain": "sector:Indian Ocean",
       "season": "all",
       "model": "gbm_residual",
-      "rmse": 0.9095,
+      "coverage": 0.9095,
       "ci": [
         null,
         null
       ],
       "skill_vs_baseline": null,
-      "n": 0,
+      "n": 358454,
       "metric": "coverage_90ci"
     },
     {
@@ -290,13 +297,13 @@
       "domain": "sector:Western Pacific",
       "season": "all",
       "model": "gbm_residual",
-      "rmse": 0.8673,
+      "coverage": 0.8673,
       "ci": [
         null,
         null
       ],
       "skill_vs_baseline": null,
-      "n": 0,
+      "n": 200609,
       "metric": "coverage_90ci"
     },
     {
@@ -305,13 +312,13 @@
       "domain": "sector:Ross Sea",
       "season": "all",
       "model": "gbm_residual",
-      "rmse": 0.9103,
+      "coverage": 0.9103,
       "ci": [
         null,
         null
       ],
       "skill_vs_baseline": null,
-      "n": 0,
+      "n": 393353,
       "metric": "coverage_90ci"
     },
     {
@@ -320,13 +327,13 @@
       "domain": "sector:Bellingshausen-Amundsen",
       "season": "all",
       "model": "gbm_residual",
-      "rmse": 0.8757,
+      "coverage": 0.8757,
       "ci": [
         null,
         null
       ],
       "skill_vs_baseline": null,
-      "n": 0,
+      "n": 228827,
       "metric": "coverage_90ci"
     },
     {
@@ -335,13 +342,13 @@
       "domain": "sector:Weddell Sea",
       "season": "all",
       "model": "gbm_residual",
-      "rmse": 0.9176,
+      "coverage": 0.9176,
       "ci": [
         null,
         null
       ],
       "skill_vs_baseline": null,
-      "n": 0,
+      "n": 559075,
       "metric": "coverage_90ci"
     },
     {
@@ -350,13 +357,13 @@
       "domain": "sector:Indian Ocean",
       "season": "all",
       "model": "gbm_residual",
-      "rmse": 0.9122,
+      "coverage": 0.9122,
       "ci": [
         null,
         null
       ],
       "skill_vs_baseline": null,
-      "n": 0,
+      "n": 358871,
       "metric": "coverage_90ci"
     },
     {
@@ -365,13 +372,13 @@
       "domain": "sector:Western Pacific",
       "season": "all",
       "model": "gbm_residual",
-      "rmse": 0.8754,
+      "coverage": 0.8754,
       "ci": [
         null,
         null
       ],
       "skill_vs_baseline": null,
-      "n": 0,
+      "n": 199590,
       "metric": "coverage_90ci"
     },
     {
@@ -380,13 +387,13 @@
       "domain": "sector:Ross Sea",
       "season": "all",
       "model": "gbm_residual",
-      "rmse": 0.9052,
+      "coverage": 0.9052,
       "ci": [
         null,
         null
       ],
       "skill_vs_baseline": null,
-      "n": 0,
+      "n": 392955,
       "metric": "coverage_90ci"
     },
     {
@@ -395,13 +402,13 @@
       "domain": "sector:Bellingshausen-Amundsen",
       "season": "all",
       "model": "gbm_residual",
-      "rmse": 0.8694,
+      "coverage": 0.8694,
       "ci": [
         null,
         null
       ],
       "skill_vs_baseline": null,
-      "n": 0,
+      "n": 228861,
       "metric": "coverage_90ci"
     },
     {
@@ -410,13 +417,13 @@
       "domain": "sector:Weddell Sea",
       "season": "all",
       "model": "gbm_residual",
-      "rmse": 0.9019,
+      "coverage": 0.9019,
       "ci": [
         null,
         null
       ],
       "skill_vs_baseline": null,
-      "n": 0,
+      "n": 558442,
       "metric": "coverage_90ci"
     },
     {
@@ -425,13 +432,13 @@
       "domain": "sector:Indian Ocean",
       "season": "all",
       "model": "gbm_residual",
-      "rmse": 0.9058,
+      "coverage": 0.9058,
       "ci": [
         null,
         null
       ],
       "skill_vs_baseline": null,
-      "n": 0,
+      "n": 358339,
       "metric": "coverage_90ci"
     },
     {
@@ -440,13 +447,13 @@
       "domain": "sector:Western Pacific",
       "season": "all",
       "model": "gbm_residual",
-      "rmse": 0.8744,
+      "coverage": 0.8744,
       "ci": [
         null,
         null
       ],
       "skill_vs_baseline": null,
-      "n": 0,
+      "n": 199811,
       "metric": "coverage_90ci"
     },
     {
@@ -455,13 +462,13 @@
       "domain": "sector:Ross Sea",
       "season": "all",
       "model": "gbm_residual",
-      "rmse": 0.8927,
+      "coverage": 0.8927,
       "ci": [
         null,
         null
       ],
       "skill_vs_baseline": null,
-      "n": 0,
+      "n": 394001,
       "metric": "coverage_90ci"
     },
     {
@@ -470,13 +477,13 @@
       "domain": "sector:Bellingshausen-Amundsen",
       "season": "all",
       "model": "gbm_residual",
-      "rmse": 0.858,
+      "coverage": 0.858,
       "ci": [
         null,
         null
       ],
       "skill_vs_baseline": null,
-      "n": 0,
+      "n": 228759,
       "metric": "coverage_90ci"
     },
     {
@@ -484,13 +491,28 @@
       "lead_days": 3,
       "domain": "variable_ice_zone",
       "season": "all",
-      "model": "gbm_residual_sensor_amr2",
+      "model": "gbm_residual_sensor_amsr2",
       "rmse": 0.14866,
       "ci": [
-        -0.01718,
-        -0.00343
+        -0.01709,
+        -0.00178
       ],
       "skill_vs_baseline": 0.06509,
+      "n": 571320,
+      "caveat": "2025+ AMSR2-era sensor, not in training window"
+    },
+    {
+      "task": "sic",
+      "lead_days": 3,
+      "domain": "variable_ice_zone",
+      "season": "all",
+      "model": "damped_persistence_sensor_amsr2",
+      "rmse": 0.15901,
+      "ci": [
+        null,
+        null
+      ],
+      "skill_vs_baseline": null,
       "n": 571320,
       "caveat": "2025+ AMSR2-era sensor, not in training window"
     },
@@ -499,13 +521,28 @@
       "lead_days": 7,
       "domain": "variable_ice_zone",
       "season": "all",
-      "model": "gbm_residual_sensor_amr2",
+      "model": "gbm_residual_sensor_amsr2",
       "rmse": 0.18325,
       "ci": [
-        -0.01614,
-        -0.00052
+        -0.01742,
+        0.0004
       ],
       "skill_vs_baseline": 0.04968,
+      "n": 564972,
+      "caveat": "2025+ AMSR2-era sensor, not in training window"
+    },
+    {
+      "task": "sic",
+      "lead_days": 7,
+      "domain": "variable_ice_zone",
+      "season": "all",
+      "model": "damped_persistence_sensor_amsr2",
+      "rmse": 0.19283,
+      "ci": [
+        null,
+        null
+      ],
+      "skill_vs_baseline": null,
       "n": 564972,
       "caveat": "2025+ AMSR2-era sensor, not in training window"
     },
@@ -514,13 +551,28 @@
       "lead_days": 14,
       "domain": "variable_ice_zone",
       "season": "all",
-      "model": "gbm_residual_sensor_amr2",
+      "model": "gbm_residual_sensor_amsr2",
       "rmse": 0.20826,
       "ci": [
-        -0.00285,
-        0.00901
+        -0.00462,
+        0.01149
       ],
       "skill_vs_baseline": -0.00696,
+      "n": 553863,
+      "caveat": "2025+ AMSR2-era sensor, not in training window"
+    },
+    {
+      "task": "sic",
+      "lead_days": 14,
+      "domain": "variable_ice_zone",
+      "season": "all",
+      "model": "damped_persistence_sensor_amsr2",
+      "rmse": 0.20682,
+      "ci": [
+        null,
+        null
+      ],
+      "skill_vs_baseline": null,
       "n": 553863,
       "caveat": "2025+ AMSR2-era sensor, not in training window"
     }
@@ -597,14 +649,9 @@
   },
   "caveats": [
     "Trained on NSIDC V6 SSMIS-era (2005-2019). Val 2020-2021, test 2022-2024 untouched.",
-    "Sensor check on 2025+ AMSR2 era is out-of-training-distribution; treat as indicative only.",
+    "Sensor check evaluated on AMSR2-era data (2025-01-01 to 2025-12-29, 363 days); out-of-training-distribution, indicative only.",
     "Promoted leads must beat tuned damped-persistence baseline with 95% CI excluding zero in both all-season and Nov-Mar on VIZ cells.",
     "IIEE at 15% threshold per Goessling et al. 2016, area-weighted.",
     "Sensor check: 1690155 samples across [2025]."
-  ],
-  "lead_days": [
-    3,
-    7,
-    14
   ]
 }

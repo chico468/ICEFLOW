@@ -444,15 +444,35 @@ class RealSICForecaster:
                 np.ones(int(viz_mask.sum()), dtype=bool),
             )
 
-            # IIEE at 15% threshold (Goessling et al. 2016), area-weighted.
-            areas = getattr(ds, "cell_areas", np.ones(len(truth)))
-            iiee_all = _compute_iiee(full_pred, truth, areas) if len(areas) == len(truth) else float("nan")
+            # Nov-Mar VIZ model RMSE and baseline RMSE.
             if np.any(novmar_viz_mask):
+                model_rmse_viz_nm = _rmse(
+                    full_pred[novmar_viz_mask], truth[novmar_viz_mask],
+                    np.ones(int(novmar_viz_mask.sum()), dtype=bool),
+                )
+                baseline_rmse_viz_nm = _rmse(
+                    ds.baseline[novmar_viz_mask], truth[novmar_viz_mask],
+                    np.ones(int(novmar_viz_mask.sum()), dtype=bool),
+                )
+                viz_nov_mar_n = int(novmar_viz_mask.sum())
+            else:
+                model_rmse_viz_nm = float("nan")
+                baseline_rmse_viz_nm = float("nan")
+                viz_nov_mar_n = 0
+
+            # IIEE at 15% threshold (Goessling et al. 2016), area-weighted, per lead on VIZ cells.
+            areas = getattr(ds, "cell_areas", np.ones(len(truth)))
+            viz_iiee_mask = mask & (truth >= 0.05) & (truth <= 0.95)
+            if np.any(viz_iiee_mask) and len(areas) == len(truth):
+                iiee_all = _compute_iiee(
+                    full_pred[viz_iiee_mask], truth[viz_iiee_mask], areas[viz_iiee_mask],
+                )
                 iiee_nm = _compute_iiee(
                     full_pred[novmar_viz_mask], truth[novmar_viz_mask],
                     areas[novmar_viz_mask],
                 ) if np.any(novmar_viz_mask) else float("nan")
             else:
+                iiee_all = float("nan")
                 iiee_nm = float("nan")
 
             promoted = bool(
@@ -464,6 +484,9 @@ class RealSICForecaster:
             block["lead_days"] = lead
             block["viz_model_rmse"] = round(model_rmse_viz, 5)
             block["viz_baseline_rmse"] = round(baseline_rmse_viz, 5)
+            block["viz_nov_mar_model_rmse"] = round(model_rmse_viz_nm, 5) if np.isfinite(model_rmse_viz_nm) else float("nan")
+            block["viz_nov_mar_baseline_rmse"] = round(baseline_rmse_viz_nm, 5) if np.isfinite(baseline_rmse_viz_nm) else float("nan")
+            block["viz_nov_mar_n_samples"] = viz_nov_mar_n
             block["viz_rmse_diff_ci"] = [round(ci_lo_viz, 5), round(ci_hi_viz, 5)]
             block["viz_nov_mar_rmse_diff_ci"] = [
                 round(ci_lo_nm, 5) if np.isfinite(ci_lo_nm) else float("nan"),
@@ -488,6 +511,7 @@ class RealSICForecaster:
             "per_lead": {},
             "per_lead_per_season": {},
             "per_lead_per_sector": {},
+            "per_lead_per_sector_n": {},
         }
         for lead in self.leads:
             lead_mask = ds.lead_days == float(lead)
@@ -511,13 +535,16 @@ class RealSICForecaster:
             # Per sector.
             sectors = ds.sector_id[lead_mask]
             cov_by_sector: Dict[str, float] = {}
+            n_by_sector: Dict[str, int] = {}
             for s_idx, s_name in enumerate(sector_names):
                 s_mask = sectors == float(s_idx)
                 if np.any(s_mask):
                     cov_by_sector[s_name] = round(
                         float(np.mean(inside_l[s_mask])), 4
                     )
+                    n_by_sector[s_name] = int(s_mask.sum())
             coverage["per_lead_per_sector"][str(lead)] = cov_by_sector
+            coverage["per_lead_per_sector_n"][str(lead)] = n_by_sector
 
         return {
             "n_samples": int(len(ds)),
