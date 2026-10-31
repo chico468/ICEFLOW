@@ -130,13 +130,6 @@ class Waypoint(BaseModel):
     attainable_speed_knots: float = 0.0
 
 
-class WaypointEta(BaseModel):
-    """Clock time at which the ship reaches one waypoint."""
-
-    index: int
-    eta_iso: str
-
-
 class RouteEvaluation(BaseModel):
     """The result of sailing one track through the physics."""
 
@@ -203,8 +196,7 @@ class OptimizationSummary(BaseModel):
         "the difference. No fixed multiplier is applied."
     )
     is_synthetic_environment: bool = True
-    # v1.1 additions: wall-clock departure and the environment that produced the data.
-    environment_mode: Optional[str] = None
+    environment_mode: str = "simulated"
     departure_iso: Optional[str] = None
     arrival_iso: Optional[str] = None
     waypoint_etas: List[WaypointEta] = Field(default_factory=list)
