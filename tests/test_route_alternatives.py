@@ -45,7 +45,7 @@ def test_alternatives_share_cache_and_evaluate_distinct_weighted_routes(monkeypa
     cache = _SharedCache()
     exclusions = [object()]
     searches = []
-    monkeypatch.setattr(optimizer, "_build_cache", lambda *_args: (cache, 72.0))
+    monkeypatch.setattr(optimizer, "_build_cache", lambda *args, **kwargs: (cache, 72.0))
     monkeypatch.setattr(optimizer, "_node_of", lambda *_args: (0, 0))
     monkeypatch.setattr(optimizer, "_build_exclusions", lambda *_args: exclusions)
 
@@ -109,7 +109,7 @@ def test_alternatives_share_cache_and_evaluate_distinct_weighted_routes(monkeypa
 def test_duplicate_route_geometry_is_reported_as_omitted(monkeypatch):
     optimizer = PolarRouteOptimizer(ice_class=IceClass.PC5)
     cache = _SharedCache()
-    monkeypatch.setattr(optimizer, "_build_cache", lambda *_args: (cache, 72.0))
+    monkeypatch.setattr(optimizer, "_build_cache", lambda *args, **kwargs: (cache, 72.0))
     monkeypatch.setattr(optimizer, "_node_of", lambda *_args: (0, 0))
     monkeypatch.setattr(optimizer, "_build_exclusions", lambda *_args: [])
     diagnostics = SearchDiagnostics(
@@ -141,7 +141,7 @@ def test_duplicate_route_geometry_is_reported_as_omitted(monkeypatch):
 def test_partial_search_is_explicitly_infeasible_and_not_counted_as_selectable(monkeypatch):
     optimizer = PolarRouteOptimizer(ice_class=IceClass.PC5)
     cache = _SharedCache()
-    monkeypatch.setattr(optimizer, "_build_cache", lambda *_args: (cache, 72.0))
+    monkeypatch.setattr(optimizer, "_build_cache", lambda *args, **kwargs: (cache, 72.0))
     monkeypatch.setattr(optimizer, "_node_of", lambda *_args: (0, 0))
     monkeypatch.setattr(optimizer, "_build_exclusions", lambda *_args: [])
     diagnostics = SearchDiagnostics(

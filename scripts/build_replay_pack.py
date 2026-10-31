@@ -116,6 +116,74 @@ R0_COVERAGE_MATRIX: dict[str, dict[str, Any]] = {
             "served via Google Cloud public bucket gs://gcp-public-data-arco-era5"
         ),
     },
+    "era5_snowfall": {
+        "source": "arco-era5",
+        "store": ARCO_STORE,
+        "token": ARCO_TOKEN,
+        "product": ARCO_PROVENANCE,
+        "version": "v1",
+        "grib_variables": ["snowfall"],
+        "netcdf_vars": ["snowfall"],
+        "native_grid": "0.25 deg lat/lon (reduced Gaussian)",
+        "provenance_kind": "reanalysis",
+        "citation": (
+            "Hersbach et al. (2023), ERA5 fifth generation of reanalysis, "
+            "Copernicus Climate Change Service (C3S) Climate Data Store, "
+            "https://doi.org/10.24381/cds.bd0915c6 ; "
+            "served via Google Cloud public bucket gs://gcp-public-data-arco-era5"
+        ),
+    },
+    "era5_total_cloud_cover": {
+        "source": "arco-era5",
+        "store": ARCO_STORE,
+        "token": ARCO_TOKEN,
+        "product": ARCO_PROVENANCE,
+        "version": "v1",
+        "grib_variables": ["total_cloud_cover"],
+        "netcdf_vars": ["tcc"],
+        "native_grid": "0.25 deg lat/lon (reduced Gaussian)",
+        "provenance_kind": "reanalysis",
+        "citation": (
+            "Hersbach et al. (2023), ERA5 fifth generation of reanalysis, "
+            "Copernicus Climate Change Service (C3S) Climate Data Store, "
+            "https://doi.org/10.24381/cds.bd0915c6 ; "
+            "served via Google Cloud public bucket gs://gcp-public-data-arco-era5"
+        ),
+    },
+    "era5_2m_temperature": {
+        "source": "arco-era5",
+        "store": ARCO_STORE,
+        "token": ARCO_TOKEN,
+        "product": ARCO_PROVENANCE,
+        "version": "v1",
+        "grib_variables": ["2m_temperature"],
+        "netcdf_vars": ["t2m"],
+        "native_grid": "0.25 deg lat/lon (reduced Gaussian)",
+        "provenance_kind": "reanalysis",
+        "citation": (
+            "Hersbach et al. (2023), ERA5 fifth generation of reanalysis, "
+            "Copernicus Climate Change Service (C3S) Climate Data Store, "
+            "https://doi.org/10.24381/cds.bd0915c6 ; "
+            "served via Google Cloud public bucket gs://gcp-public-data-arco-era5"
+        ),
+    },
+    "era5_mean_sea_level_pressure": {
+        "source": "arco-era5",
+        "store": ARCO_STORE,
+        "token": ARCO_TOKEN,
+        "product": ARCO_PROVENANCE,
+        "version": "v1",
+        "grib_variables": ["mean_sea_level_pressure"],
+        "netcdf_vars": ["msl"],
+        "native_grid": "0.25 deg lat/lon (reduced Gaussian)",
+        "provenance_kind": "reanalysis",
+        "citation": (
+            "Hersbach et al. (2023), ERA5 fifth generation of reanalysis, "
+            "Copernicus Climate Change Service (C3S) Climate Data Store, "
+            "https://doi.org/10.24381/cds.bd0915c6 ; "
+            "served via Google Cloud public bucket gs://gcp-public-data-arco-era5"
+        ),
+    },
     "cmems_current": {
         "source": "copernicus-marine",
         "dataset_id": CMEMS_PHY_MY,
@@ -256,7 +324,7 @@ def parse_date(value: str) -> date:
 def _estimate_total_bytes(start: date, days: int, bbox: tuple[float, float, float, float]) -> int:
     """Rough size estimate (bytes) before downloading, for the >5 GB gate.
 
-    ARCO-ERA5 surface.nc files are ~50 MB per variable-day (global 0.25 deg).
+    ARCO-ERA5 surface.nc files are ~5-10 MB per variable-day (global 0.25 deg).
     CMEMS subsets scale with box area; measured ~54 MB/day for a 90x20 deg box
     with six variables. G02202 files are ~0.34 MB/day.
     """
@@ -264,10 +332,11 @@ def _estimate_total_bytes(start: date, days: int, bbox: tuple[float, float, floa
     box_area_deg = (east - west) * (north - south)
     # Reference CMEMS box: 90 x 20 deg = 1800 deg^2 -> ~36 MB/day for uo,vo,usi,vsi.
     cmems_mb_per_day = 36.0 * (box_area_deg / 1800.0)
-    arco_mb_per_var_day = 50.0
-    n_arco_var_days = (
-        len(R0_COVERAGE_MATRIX["era5_wind_10m"]["grib_variables"])
-        + len(R0_COVERAGE_MATRIX["era5_waves"]["grib_variables"])
+    arco_mb_per_var_day = 10.0  # conservative; measured ~4-6 MB/var-day
+    n_arco_var_days = sum(
+        len(spec["grib_variables"])
+        for name, spec in R0_COVERAGE_MATRIX.items()
+        if name.startswith("era5_")
     ) * days
     g02202_mb = 0.34 * days
     total_mb = n_arco_var_days * arco_mb_per_var_day + cmems_mb_per_day * days + g02202_mb

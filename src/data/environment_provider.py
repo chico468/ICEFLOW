@@ -149,6 +149,23 @@ class EnvironmentProvider(Protocol):
         """
         ...
 
+    def sample_grid(
+        self,
+        lats: np.ndarray,
+        lons: np.ndarray,
+        t_hours: float,
+    ) -> dict[str, np.ndarray]:
+        """Sample all variables on a regular lat/lon grid.
+
+        ``t_hours`` is hours since the reference epoch (for replay, hours since
+        the first valid time in the pack; for simulated, hours since the model
+        reference day). Returns a dict mapping variable name to a 2D
+        ``(len(lats), len(lons))`` float64 array. Variables unavailable at the
+        requested time or location are returned as all-NaN arrays. Never falls
+        back silently to simulated data.
+        """
+        ...
+
 
 # ---------------------------------------------------------------------------
 # Interpolation primitives (shared by all providers)
@@ -365,6 +382,116 @@ class ReplayProvider:
             provenance_by_variable=provenance,
         )
 
+    def sample_grid(
+        self,
+        lats: np.ndarray,
+        lons: np.ndarray,
+        t_hours: float,
+    ) -> dict[str, np.ndarray]:
+        """Sample all variables on a regular lat/lon grid.
+
+        Returns a dict mapping variable name to a 2D ``(len(lats), len(lons))``
+        float64 array. Variables unavailable at the time/location are NaN.
+        Uses bilinear spatial interpolation and linear temporal interpolation
+        between the two bracketing valid times (max 12 h skew).
+        ``t_hours`` is hours since the Unix epoch (1970-01-01T00:00:00Z).
+        """
+
+        lats = np.asarray(lats, dtype=np.float64)
+        lons = np.asarray(lons, dtype=np.float64)
+        lat_g, lon_g = np.meshgrid(lons, lats)
+        lat_flat = lat_g.ravel()
+        lon_flat = lon_g.ravel()
+        shape = lat_g.shape
+
+        wind_ds = self._dataset_for("era5_wind_10m")
+        wave_ds = self._dataset_for("era5_waves")
+        cur_ds = self._dataset_for("cmems_current")
+        ice_ds = self._dataset_for("nrt_ice_concentration")
+
+        t_ns = np.datetime64(int(round(t_hours * 3600 * 1e9)), "ns")
+
+        def _grid_interp(
+            ds: xr.Dataset | None,
+            var_name: str,
+        ) -> np.ndarray:
+            """Bilinear + linear-in-time interpolation on the full grid."""
+            if ds is None or var_name not in ds.data_vars:
+                return np.full(shape, np.nan, dtype=np.float64)
+            try:
+                values = ds[var_name]
+                da_lats = np.asarray(ds["latitude"].values)
+                da_lons = np.asarray(ds["longitude"].values)
+                times = np.asarray(ds["time"].values)
+            except Exception:
+                return np.full(shape, np.nan, dtype=np.float64)
+
+            if t_ns < times[0] or t_ns > times[-1]:
+                return np.full(shape, np.nan, dtype=np.float64)
+
+            idx = int(np.searchsorted(times, t_ns, side="right") - 1)
+            idx = max(0, min(idx, times.size - 2))
+            t0 = times[idx]
+            t1 = times[idx + 1]
+
+            # Skew check: max 12 h.
+            skew_hours = max(
+                abs((t_ns - t0).astype("timedelta64[ns]").astype(float) / 3.6e12),
+                abs((t1 - t_ns).astype("timedelta64[ns]").astype(float) / 3.6e12),
+            )
+            if skew_hours > self.MAX_SKEW_HOURS:
+                return np.full(shape, np.nan, dtype=np.float64)
+
+            # Spatial bilinear at each bracketing time, vectorised.
+            def _spatial(da_values: np.ndarray) -> np.ndarray:
+                # Interpolate each source point to the target grid using
+                # RegularGridInterpolator (nearest fallback handled by NaN fill).
+                from scipy.interpolate import RegularGridInterpolator
+
+                # Sort lats/lons ascending for RegularGridInterpolator.
+                sort_lat = np.argsort(da_lats)
+                sort_lon = np.argsort(da_lons)
+                slats = da_lats[sort_lat]
+                slons = da_lons[sort_lons]
+                svals = np.asarray(da_values, dtype=np.float64)[sort_lat][:, sort_lons]
+
+                interp = RegularGridInterpolator(
+                    (slats, slons), svals,
+                    method="linear", bounds_error=False, fill_value=np.nan,
+                )
+                pts = np.column_stack([lat_flat, lon_flat])
+                return interp(pts).reshape(shape)
+
+            v0 = _spatial(values.sel(time=t0).values)
+            v1 = _spatial(values.sel(time=t1).values)
+
+            # Linear in time.
+            t0_h = float((np.datetime64(t0) - np.datetime64("1970-01-01")) / np.timedelta64(1, "h"))
+            t1_h = float((np.datetime64(t1) - np.datetime64("1970-01-01")) / np.timedelta64(1, "h"))
+            if t1_h == t0_h:
+                return v0
+            frac = (t_hours - t0_h) / (t1_h - t0_h)
+            return v0 * (1.0 - frac) + v1 * frac
+
+        result: dict[str, np.ndarray] = {}
+        result["u10"] = _grid_interp(wind_ds, "u10")
+        result["v10"] = _grid_interp(wind_ds, "v10")
+        result["uo"] = _grid_interp(cur_ds, "uo")
+        result["vo"] = _grid_interp(cur_ds, "vo")
+        result["swh"] = _grid_interp(wave_ds, "swh")
+        result["ice_conc"] = _grid_interp(ice_ds, "ice_conc")
+
+        # Derived scalars.
+        result["wind_speed_ms"] = np.hypot(result["u10"], result["v10"])
+        result["current_speed_ms"] = np.hypot(result["uo"], result["vo"])
+
+        # Wave masking under ice.
+        ice_val = result["ice_conc"]
+        wave_valid = np.isfinite(ice_val) & (ice_val <= 0.15)
+        result["swh"] = np.where(wave_valid, result["swh"], np.nan)
+
+        return result
+
     def _interp_var(
         self,
         ds: xr.Dataset | None,
@@ -464,6 +591,23 @@ class LiveProvider:
             "live acquisition is not wired in this build; configure GFS/CMEMS credentials",
         )
 
+    def sample_grid(
+        self,
+        lats: np.ndarray,
+        lons: np.ndarray,
+        t_hours: float,
+    ) -> dict[str, np.ndarray]:
+        # Live provider raises rather than returning synthetic data.
+        now = datetime.now(timezone.utc)
+        walk_back_limit = now - timedelta(days=self.WALK_BACK_DAYS)
+        if t_utc < walk_back_limit:
+            raise OutOfCoverage("all", t_utc.isoformat(), "beyond 14-day walk-back limit")
+        raise OutOfCoverage(
+            "live_provider",
+            t_utc.isoformat(),
+            "live acquisition is not wired in this build; configure GFS/CMEMS credentials",
+        )
+
 
 # ---------------------------------------------------------------------------
 # SimulatedProvider
@@ -517,5 +661,40 @@ class SimulatedProvider:
             provenance_by_variable=provenance,
         )
 
+    def sample_grid(
+        self,
+        lats: np.ndarray,
+        lons: np.ndarray,
+        t_hours: float,
+    ) -> dict[str, np.ndarray]:
+        """Sample all variables on a regular lat/lon grid (vectorised)."""
+        lat_g = np.asarray(lats, dtype=np.float64)
+        lon_g = np.asarray(lons, dtype=np.float64)
+        lon_g = np.where(lon_g > 180.0, lon_g - 360.0, lon_g)
 
+        u, v, kata = self._model.wind_uv(lat_g, lon_g, t_hours)
+        uo, vo = self._model.current_uv(lat_g, lon_g, t_hours)
+        ws = np.hypot(u, v)
+        sc = self._model.scalars(lat_g, lon_g, t_hours, ws, np.zeros_like(lat_g))
+
+        return {
+            "u10": u,
+            "v10": v,
+            "uo": uo,
+            "vo": vo,
+            "swh": sc["sig_wave_height_m"],
+            "ice_conc": np.zeros_like(lat_g),
+            "wind_speed_ms": ws,
+            "current_speed_ms": np.hypot(uo, vo),
+            "t2m_c": sc["t2m_c"],
+            "msl_hpa": sc["msl_hpa"],
+            "sst_c": sc["sst_c"],
+            "visibility_km": sc["visibility_km"],
+            "katabatic_component_ms": kata,
+        }
+
+
+# ---------------------------------------------------------------------------
+# LiveProvider
+# ---------------------------------------------------------------------------
 

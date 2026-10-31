@@ -52,6 +52,7 @@ from src.core.constants import (
 )
 from src.core.environment import EnvironmentModel, get_environment
 from src.core.geo import coriolis_parameter, haversine_km, haversine_nm, meters_to_degrees
+from src.data.environment_provider import EnvironmentProvider
 
 # A giant tabular berg has a drag response timescale of many hours, so a half-hour step is
 # comfortably stable. A growler responds in minutes, and integrating it at the same step blows
@@ -195,12 +196,17 @@ def _uniform_forcing(
     }
 
 
-def _field_forcing(env: EnvironmentModel, lat: np.ndarray, lon: np.ndarray, t_hours: float) -> Dict[str, np.ndarray]:
+def _field_forcing(env: EnvironmentProvider, lat: np.ndarray, lon: np.ndarray, t_hours: float) -> Dict[str, np.ndarray]:
     """Forcing sampled from the environment fields at these positions and this time."""
-    ua, va, _ = env.wind_uv(lat, lon, t_hours)
-    uo, vo = env.current_uv(lat, lon, t_hours)
-    scal = env.scalars(lat, lon, t_hours, np.hypot(ua, va), 0.0)
-    return {"ua": ua, "va": va, "uo": uo, "vo": vo, "hs": scal["sig_wave_height_m"], "sst": scal["sst_c"]}
+    grid = env.sample_grid(lat, lon, t_hours)
+    return {
+        "ua": grid["u10"],
+        "va": grid["v10"],
+        "uo": grid["uo"],
+        "vo": grid["vo"],
+        "hs": grid["swh"],
+        "sst": grid["sst_c"],
+    }
 
 
 # --------------------------------------------------------------------------------------
@@ -463,7 +469,7 @@ def predict_iceberg_drift(
     t0_hours: float = 0.0,
     ice_concentration: float = 0.0,
     apply_melt: bool = True,
-    environment: Optional[EnvironmentModel] = None,
+    environment: Optional[EnvironmentProvider] = None,
     seed: int = ENSEMBLE_SEED,
 ) -> IcebergForecastResult:
     """

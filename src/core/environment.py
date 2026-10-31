@@ -321,6 +321,38 @@ class EnvironmentModel:
             katabatic_component_ms=round(float(kata[0]), 2),
         )
 
+    def sample_grid(
+        self,
+        lats: np.ndarray,
+        lons: np.ndarray,
+        t_hours: float,
+    ) -> dict[str, np.ndarray]:
+        """Gridded sample returning a dict of variable -> 2D array."""
+        lat_g = np.asarray(lats, dtype=np.float64)
+        lon_g = np.asarray(lons, dtype=np.float64)
+        lon_g = np.where(lon_g > 180.0, lon_g - 360.0, lon_g)
+
+        u, v, kata = self.wind_uv(lat_g, lon_g, t_hours)
+        uo, vo = self.current_uv(lat_g, lon_g, t_hours)
+        ws = np.hypot(u, v)
+        sc = self.scalars(lat_g, lon_g, t_hours, ws, np.zeros_like(lat_g))
+
+        return {
+            "u10": u,
+            "v10": v,
+            "uo": uo,
+            "vo": vo,
+            "swh": sc["sig_wave_height_m"],
+            "ice_conc": np.zeros_like(lat_g),
+            "wind_speed_ms": ws,
+            "current_speed_ms": np.hypot(uo, vo),
+            "t2m_c": sc["t2m_c"],
+            "msl_hpa": sc["msl_hpa"],
+            "sst_c": sc["sst_c"],
+            "visibility_km": sc["visibility_km"],
+            "katabatic_component_ms": kata,
+        }
+
     def field(
         self,
         lat_min: float,
