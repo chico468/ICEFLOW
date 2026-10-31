@@ -47,6 +47,22 @@ def _load_reports() -> List[Dict[str, Any]]:
 
 
 def _to_rows(report: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Convert a real-data report to scorecard rows.
+
+    Handles two report shapes:
+      * Stage-2 evaluation reports with a ``results`` list (baseline-keyed).
+      * BE-2/BE-3 ML reports with a ``rows`` list (already condensed).
+    """
+    results = report.get("results", [])
+    if results:
+        return _to_rows_from_results(report)
+    rows = report.get("rows", [])
+    if rows:
+        return _to_rows_from_ml_rows(rows)
+    return []
+
+
+def _to_rows_from_results(report: Dict[str, Any]) -> List[Dict[str, Any]]:
     results = report.get("results", [])
     task = "sic"
     persistence = {}
@@ -76,12 +92,39 @@ def _to_rows(report: Dict[str, Any]) -> List[Dict[str, Any]]:
     return rows
 
 
+def _to_rows_from_ml_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    for r in rows:
+        out.append({
+            "task": r.get("task"),
+            "lead_days": r.get("lead_days"),
+            "domain": r.get("domain"),
+            "season": r.get("season"),
+            "sector": r.get("sector"),
+            "model": r.get("model"),
+            "rmse": round(r.get("rmse", 0.0), 4) if r.get("rmse") is not None else None,
+            "ci": [round(v, 4) if v is not None else None for v in (r.get("ci") or [None, None])],
+            "skill_vs_baseline": r.get("skill_vs_baseline"),
+            "n": r.get("n"),
+        })
+    return out
+
+
 def _compute_promoted(reports: List[Dict[str, Any]]) -> Dict[str, Dict[str, bool]]:
     promoted: Dict[str, Dict[str, bool]] = {"sic": {}, "iceberg": {}}
     for report in reports:
-        task = "sic"
+        # ML reports carry their own promoted_leads.
+        ml_promoted = report.get("promoted", {})
+        if isinstance(ml_promoted, dict):
+            for task, leads in ml_promoted.items():
+                if isinstance(leads, dict):
+                    promoted.setdefault(task, {})
+                    for lead, val in leads.items():
+                        promoted[task][str(lead)] = bool(val)
         results = report.get("results", [])
-        # Index damped results by (lead, domain, season, sector)
+        if not results:
+            continue
+        task = "sic"
         damped = {}
         persistence = {}
         for r in results:
@@ -107,8 +150,6 @@ def _compute_promoted(reports: List[Dict[str, Any]]) -> Dict[str, Dict[str, bool
                         continue
                     d_ci = d.get("rmse_ci", [0, 0])
                     p_rmse = p.get("rmse", 0)
-                    # CI of the difference excludes zero when damped's worst case (upper CI)
-                    # is still below the persistence RMSE.
                     if not (d_ci[1] < p_rmse):
                         season_pass = False
                 if not season_pass:
@@ -136,6 +177,8 @@ def _collect_caveats(reports: List[Dict[str, Any]]) -> List[str]:
             caveats.append(report["disclaimer"])
         if report.get("sensor_caveat"):
             caveats.append(report["sensor_caveat"])
+        for c in report.get("caveats", []) or []:
+            caveats.append(c)
     return caveats
 
 
