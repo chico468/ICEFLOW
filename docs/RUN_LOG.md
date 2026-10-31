@@ -30,3 +30,10 @@
   5. 60s test: passes within limit (no optimization needed)
 - Full pytest: 340 passed, 1 warning in 254.89s
 - BE-2 closeout: IIEE table exists (models/eval/real_sic_report.md), lead-3 sanity check exists, Nov-Mar/austral_departure season exists, V6 product confirmed
+
+## 2026-10-31: Pushed to origin/real-voyage (SHA 5a14509)
+- Pushed 3 commits: 7e1b7ee (docs), 8e9e941 (BE-5 implementation), 5a14509 (RUN_LOG)
+- real-voyage is now at 5a14509 on origin
+- be2-sic-ml reset to origin/be2-sic-ml (a4395d4); unpushed be2-sic-ml commits NOT cherry-picked (real-voyage already has build_replay_pack R0 matrix at 906eb86)
+- Full pytest: 340 passed, 1 warning in 254.89s (0:04:14)
+- No items BLOCKED
