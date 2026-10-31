@@ -311,50 +311,47 @@ def _era5_three_hourly(
     warnings.filterwarnings("ignore", category=FutureWarning)
 
     product_start = time.perf_counter()
-    # Open WITHOUT dask for fast metadata read; data is fetched lazily per day.
     ds = xr.open_dataset(ARCO_ERA5_URL, engine="zarr", consolidated=True)
 
-    # Build per-day time index arrays.
+    # Build one contiguous time slice covering all requested days (00:00–21:00 hourly),
+    # then subsample to 3-hourly steps.  A single slice lets the zarr store serve
+    # contiguous chunks efficiently instead of per-day round trips.
     base_dt = datetime(start.year, start.month, start.day, tzinfo=timezone.utc)
-    day_time_indices: list[np.ndarray] = []
-    for d in range(days):
-        day_ts = []
-        for h in THREE_HOURLY_OFFSETS:
-            ts = base_dt + timedelta(days=d, hours=h)
-            day_ts.append(np.datetime64(ts.replace(tzinfo=None), "ns"))
-        day_time_indices.append(np.array(day_ts))
+    start_ts = np.datetime64(base_dt.replace(tzinfo=None), "ns")
+    end_dt = base_dt + timedelta(days=days - 1, hours=21)
+    end_ts = np.datetime64(end_dt.replace(tzinfo=None), "ns")
+
+    hourly = ds.sel(
+        latitude=lat_slice,
+        longitude=lon_slice,
+        time=slice(start_ts, end_ts),
+    )
+    subsampled = hourly.isel(time=slice(0, None, 3))
 
     all_vars = wind_vars + wave_vars + extra_vars
-    selected: dict[str, list[np.ndarray]] = {k: [] for k in all_vars}
-
-    for day_idx in range(days):
-        day_ts = day_time_indices[day_idx]
-        for short_name in all_vars:
-            arco_var = ERA5_VAR_MAP[short_name]
-            if arco_var not in ds.variables:
-                raise RuntimeError(f"ARCO-ERA5 does not have variable {arco_var}")
-            data = ds[arco_var].sel(
-                latitude=lat_slice,
-                longitude=lon_slice,
-                time=day_ts,
-            ).values.astype(np.float32)
-            selected[short_name].append(data)
+    final_selected: dict[str, np.ndarray] = {}
+    for short_name in all_vars:
+        arco_var = ERA5_VAR_MAP[short_name]
+        if arco_var not in subsampled.variables:
+            raise RuntimeError(f"ARCO-ERA5 does not have variable {arco_var}")
+        final_selected[short_name] = subsampled[arco_var].values.astype(np.float32)
 
     lats = np.asarray(ds["latitude"].sel(latitude=lat_slice).values, dtype=np.float64)
     lons = np.asarray(ds["longitude"].sel(longitude=lon_slice).values, dtype=np.float64)
 
-    # Concatenate daily data and flip latitude to ascending.
+    # Flip latitude to ascending order for consumers.
     lat_order = np.argsort(lats)
     lats = lats[lat_order]
-    final_selected: dict[str, np.ndarray] = {}
     for short_name in all_vars:
-        arr = np.stack(selected[short_name], axis=0)  # (days, 8, lat, lon)
-        arr = arr.reshape(-1, arr.shape[2], arr.shape[3])  # (days*8, lat, lon)
-        arr = arr[:, lat_order, :]  # flip latitude to ascending
-        final_selected[short_name] = arr
+        final_selected[short_name] = final_selected[short_name][:, lat_order, :]
 
-    # Build full time coordinate.
-    all_time_indices = np.concatenate(day_time_indices)
+    # Build full time coordinate (3-hourly steps).
+    all_times = []
+    for d in range(days):
+        day_dt = base_dt + timedelta(days=d)
+        for h in THREE_HOURLY_OFFSETS:
+            all_times.append(np.datetime64(day_dt.replace(tzinfo=None) + timedelta(hours=h), "ns"))
+    all_time_indices = np.array(all_times)
 
     def _write_vars(vars_to_write: list[str], filename: str) -> Path:
         target = out / filename
