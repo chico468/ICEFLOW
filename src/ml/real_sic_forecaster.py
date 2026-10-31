@@ -96,6 +96,174 @@ def _compute_iiee_per_day(
     return float(np.mean(daily_iiee))
 
 
+Mkm2 = 1e12  # 1 million km² in m²
+
+
+def _compute_iiee_area_per_day(
+    pred: np.ndarray,
+    truth: np.ndarray,
+    areas: np.ndarray,
+    date_ordinals: np.ndarray,
+    threshold: float = 0.15,
+) -> Dict[str, float]:
+    """IIEE per forecast day with absolute area, then averaged over days.
+
+    Returns a dict with:
+        iiee_pct: area-weighted IIEE percentage, per day then averaged
+        mismatched_area_mkm2_per_day: mean mismatched area (million km² / day)
+        viz_area_mkm2_per_day: mean total VIZ area per day (million km²)
+        mean_mismatched_cells: mean number of mismatched cells per day
+        mean_viz_cells: mean number of VIZ cells per day
+        mean_cell_area_km2: mean cell area in km²
+    """
+    result: Dict[str, float] = {
+        "iiee_pct": float("nan"),
+        "mismatched_area_mkm2_per_day": float("nan"),
+        "viz_area_mkm2_per_day": float("nan"),
+        "mean_mismatched_cells": float("nan"),
+        "mean_viz_cells": float("nan"),
+        "mean_cell_area_km2": float("nan"),
+    }
+    if len(pred) == 0:
+        return result
+
+    areas = np.asarray(areas, dtype=np.float64)
+    date_ordinals = np.asarray(date_ordinals)
+
+    unique_dates = np.unique(date_ordinals)
+    if len(unique_dates) == 0:
+        return result
+
+    daily_pct: List[float] = []
+    daily_mismatch_area_mkm2: List[float] = []
+    daily_viz_area_mkm2: List[float] = []
+    daily_mismatch_cells: List[float] = []
+    daily_viz_cells: List[float] = []
+
+    for d in unique_dates:
+        d_mask = date_ordinals == d
+        p = pred[d_mask]
+        t = truth[d_mask]
+        a = areas[d_mask]
+        valid = np.isfinite(p) & np.isfinite(t) & (a > 0)
+        if valid.sum() == 0:
+            continue
+
+        pv = p[valid]
+        tv = t[valid]
+        av = a[valid]
+
+        # Mismatched: overestimated (pred > thr, truth <= thr) or underestimated
+        over = (pv > threshold) & (tv <= threshold)
+        under = (pv <= threshold) & (tv > threshold)
+        mismatch = over | under
+        mismatch_area = float(av[mismatch].sum())
+        total_area = float(av.sum())
+
+        if total_area > 0:
+            daily_pct.append(mismatch_area / total_area * 100.0)
+            daily_mismatch_area_mkm2.append(mismatch_area / Mkm2)
+            daily_viz_area_mkm2.append(total_area / Mkm2)
+            daily_mismatch_cells.append(float(mismatch.sum()))
+            daily_viz_cells.append(float(len(pv)))
+
+    if not daily_pct:
+        return result
+
+    result["iiee_pct"] = float(np.mean(daily_pct))
+    result["mismatched_area_mkm2_per_day"] = float(np.mean(daily_mismatch_area_mkm2))
+    result["viz_area_mkm2_per_day"] = float(np.mean(daily_viz_area_mkm2))
+    result["mean_mismatched_cells"] = float(np.mean(daily_mismatch_cells))
+    result["mean_viz_cells"] = float(np.mean(daily_viz_cells))
+    result["mean_cell_area_km2"] = float(np.mean(areas) / 1e6) if len(areas) > 0 else float("nan")
+
+    return result
+
+
+def _iiee_sanity_check(
+    pred: np.ndarray,
+    truth: np.ndarray,
+    areas: np.ndarray,
+    date_ordinals: np.ndarray,
+    threshold: float = 0.15,
+) -> Dict[str, Any]:
+    """Physical sanity check for IIEE area at a given lead.
+
+    Verifies:
+      - Mean cell area is near the nominal 25 km NSIDC grid (~625 km², within 40%).
+      - Mean mismatched cells per day > 0 (there are actually mismatches).
+      - Mean mismatched area < mean daily VIZ extent (subset can't exceed whole).
+      - Mean daily VIZ extent is in a physically plausible range (0.1–100 Mkm²).
+
+    Returns a dict with the metrics above plus ``passed`` (bool).
+    """
+    m = _compute_iiee_area_per_day(pred, truth, areas, date_ordinals, threshold)
+
+    nominal_cell_area_km2 = 625.0  # 25 km × 25 km at standard parallel
+    cell_area = m["mean_cell_area_km2"]
+    mismatch_cells = m["mean_mismatched_cells"]
+    mismatch_area = m["mismatched_area_mkm2_per_day"]
+    viz_area = m["viz_area_mkm2_per_day"]
+
+    checks: Dict[str, bool] = {}
+    checks["cell_area_plausible"] = (
+        np.isfinite(cell_area) and 0.4 * nominal_cell_area_km2 <= cell_area <= 1.5 * nominal_cell_area_km2
+    )
+    checks["has_mismatches"] = np.isfinite(mismatch_cells) and mismatch_cells > 0
+    checks["mismatch_subset_of_viz"] = (
+        np.isfinite(mismatch_area) and np.isfinite(viz_area) and mismatch_area < viz_area
+    )
+    checks["extent_plausible"] = (
+        np.isfinite(viz_area) and 0.1 <= viz_area <= 100.0
+    )
+
+    all_passed = all(checks.values()) and np.isfinite(m["iiee_pct"])
+
+    return {
+        "passed": bool(all_passed),
+        "checks": checks,
+        "mean_mismatched_cells": round(m["mean_mismatched_cells"], 2),
+        "mean_cell_area_km2": round(m["mean_cell_area_km2"], 1),
+        "mean_viz_area_mkm2": round(m["viz_area_mkm2_per_day"], 4),
+        "mean_mismatch_area_mkm2": round(m["mismatched_area_mkm2_per_day"], 4),
+        "mean_iiee_pct": round(m["iiee_pct"], 4),
+        "nominal_cell_area_km2": nominal_cell_area_km2,
+    }
+
+
+def _compute_iiee_pooled(
+    pred: np.ndarray,
+    truth: np.ndarray,
+    areas: np.ndarray,
+    threshold: float = 0.15,
+) -> Tuple[float, float]:
+    """Legacy pooled IIEE: single percentage over all VIZ cells, plus area.
+
+    Used for old-vs-new comparison.  Returns (iiee_pct, mismatched_area_mkm2_per_day)
+    where the area is the total mismatched area (not per-day averaged) divided by
+    the number of unique days, to give a per-day rate.
+    """
+    valid = np.isfinite(pred) & np.isfinite(truth) & (areas > 0)
+    if valid.sum() == 0:
+        return float("nan"), float("nan")
+
+    p = pred[valid]
+    t = truth[valid]
+    a = areas[valid]
+
+    over = (p > threshold) & (t <= threshold)
+    under = (p <= threshold) & (t > threshold)
+    mismatch = over | under
+    mismatch_area = float(a[mismatch].sum())
+    total_area = float(a.sum())
+
+    if total_area <= 0:
+        return float("nan"), float("nan")
+
+    pct = mismatch_area / total_area * 100.0
+    return pct, mismatch_area / Mkm2
+
+
 CANDIDATE_HYPERPARAMETERS: Tuple[Dict[str, Any], ...] = (
     {
         "learning_rate": 0.05,
@@ -496,30 +664,57 @@ class RealSICForecaster:
             # climatology only. Computed for both model and damped-baseline.
             areas = getattr(ds, "cell_areas", np.ones(len(truth)))
             viz_areas = areas[viz_mask]
+            date_ord = getattr(ds, "target_date_ordinal", None)
+            if date_ord is None:
+                date_ord = np.arange(len(truth), dtype=np.int64)
             if np.any(viz_mask) and len(viz_areas) == int(viz_mask.sum()):
-                iiee_all = _compute_iiee_per_day(
+                model_detail = _compute_iiee_area_per_day(
                     full_pred[viz_mask], truth[viz_mask], viz_areas,
-                    ds.target_date_ordinal[viz_mask],
+                    date_ord[viz_mask],
                 )
-                iiee_all_base = _compute_iiee_per_day(
+                base_detail = _compute_iiee_area_per_day(
                     ds.baseline[viz_mask], truth[viz_mask], viz_areas,
-                    ds.target_date_ordinal[viz_mask],
+                    date_ord[viz_mask],
                 )
-                iiee_nm = _compute_iiee_per_day(
+                nm_model_detail = _compute_iiee_area_per_day(
                     full_pred[novmar_viz_mask], truth[novmar_viz_mask],
                     areas[novmar_viz_mask],
-                    ds.target_date_ordinal[novmar_viz_mask],
-                ) if np.any(novmar_viz_mask) else float("nan")
-                iiee_nm_base = _compute_iiee_per_day(
+                    date_ord[novmar_viz_mask],
+                ) if np.any(novmar_viz_mask) else None
+                nm_base_detail = _compute_iiee_area_per_day(
                     ds.baseline[novmar_viz_mask], truth[novmar_viz_mask],
                     areas[novmar_viz_mask],
-                    ds.target_date_ordinal[novmar_viz_mask],
-                ) if np.any(novmar_viz_mask) else float("nan")
+                    date_ord[novmar_viz_mask],
+                ) if np.any(novmar_viz_mask) else None
+
+                iiee_all = model_detail["iiee_pct"]
+                iiee_all_base = base_detail["iiee_pct"]
+                iiee_nm = nm_model_detail["iiee_pct"] if nm_model_detail else float("nan")
+                iiee_nm_base = nm_base_detail["iiee_pct"] if nm_base_detail else float("nan")
+
+                # Area-based IIEE (million km² per day) for model and baseline.
+                iiee_all_area = model_detail["mismatched_area_mkm2_per_day"]
+                iiee_all_area_base = base_detail["mismatched_area_mkm2_per_day"]
+                iiee_nm_area = nm_model_detail["mismatched_area_mkm2_per_day"] if nm_model_detail else float("nan")
+                iiee_nm_area_base = nm_base_detail["mismatched_area_mkm2_per_day"] if nm_base_detail else float("nan")
+
+                # Sanity check at this lead (computed on model IIEE over all VIZ cells).
+                sanity = _iiee_sanity_check(
+                    full_pred[viz_mask], truth[viz_mask], viz_areas,
+                    date_ord[viz_mask],
+                )
             else:
                 iiee_all = float("nan")
                 iiee_all_base = float("nan")
                 iiee_nm = float("nan")
                 iiee_nm_base = float("nan")
+                iiee_all_area = float("nan")
+                iiee_all_area_base = float("nan")
+                iiee_nm_area = float("nan")
+                iiee_nm_area_base = float("nan")
+                sanity = _iiee_sanity_check(
+                    np.array([]), np.array([]), np.array([]), np.array([]),
+                )
 
             promoted = bool(
                 all_season_excludes and novmar_excludes
@@ -544,6 +739,12 @@ class RealSICForecaster:
             block["iiee_15_pct_nov_mar"] = round(iiee_nm, 4) if np.isfinite(iiee_nm) else float("nan")
             block["iiee_15_pct_baseline"] = round(iiee_all_base, 4) if np.isfinite(iiee_all_base) else float("nan")
             block["iiee_15_pct_nov_mar_baseline"] = round(iiee_nm_base, 4) if np.isfinite(iiee_nm_base) else float("nan")
+            block["iiee_15_pct_area_mkm2_per_day"] = round(iiee_all_area, 4) if np.isfinite(iiee_all_area) else float("nan")
+            block["iiee_15_pct_area_mkm2_per_day_baseline"] = round(iiee_all_area_base, 4) if np.isfinite(iiee_all_area_base) else float("nan")
+            block["iiee_15_pct_nov_mar_area_mkm2_per_day"] = round(iiee_nm_area, 4) if np.isfinite(iiee_nm_area) else float("nan")
+            block["iiee_15_pct_nov_mar_area_mkm2_per_day_baseline"] = round(iiee_nm_area_base, 4) if np.isfinite(iiee_nm_area_base) else float("nan")
+            block["iiee_sanity"] = sanity
+            block["iiee_sanity_passed"] = sanity["passed"]
             block["promoted"] = promoted
             per_lead.append(block)
 

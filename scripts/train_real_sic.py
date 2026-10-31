@@ -438,59 +438,122 @@ def _build_scorecard_report(
             "skill_vs_baseline": None,
             "n": viz_nm_n,
         })
-        # IIEE rows (model and damped-persistence baseline).
+        # IIEE rows (model and damped-persistence baseline), gated on sanity.
+        iiee_sanity_passed = bool(pl.get("iiee_sanity_passed", False))
         iiee_all = pl.get("iiee_15_pct")
         iiee_all_base = pl.get("iiee_15_pct_baseline")
         iiee_nov_mar = pl.get("iiee_15_pct_nov_mar")
         iiee_nov_mar_base = pl.get("iiee_15_pct_nov_mar_baseline")
-        rows.append({
-            "task": "sic",
-            "lead_days": lead,
-            "domain": "iiee_15pct",
-            "season": "all",
-            "model": "gbm_residual",
-            "rmse": iiee_all,
-            "ci": [None, None],
-            "skill_vs_baseline": None,
-            "n": pl["n_samples"],
-            "metric": "iiee_pct",
-        })
-        rows.append({
-            "task": "sic",
-            "lead_days": lead,
-            "domain": "iiee_15pct",
-            "season": "all",
-            "model": "damped_persistence",
-            "rmse": iiee_all_base,
-            "ci": [None, None],
-            "skill_vs_baseline": None,
-            "n": pl["n_samples"],
-            "metric": "iiee_pct",
-        })
-        rows.append({
-            "task": "sic",
-            "lead_days": lead,
-            "domain": "iiee_15pct",
-            "season": "nov_mar",
-            "model": "gbm_residual",
-            "rmse": iiee_nov_mar,
-            "ci": [None, None],
-            "skill_vs_baseline": None,
-            "n": pl["n_samples"],
-            "metric": "iiee_pct",
-        })
-        rows.append({
-            "task": "sic",
-            "lead_days": lead,
-            "domain": "iiee_15pct",
-            "season": "nov_mar",
-            "model": "damped_persistence",
-            "rmse": iiee_nov_mar_base,
-            "ci": [None, None],
-            "skill_vs_baseline": None,
-            "n": pl["n_samples"],
-            "metric": "iiee_pct",
-        })
+        iiee_all_area = pl.get("iiee_15_pct_area_mkm2_per_day")
+        iiee_all_area_base = pl.get("iiee_15_pct_area_mkm2_per_day_baseline")
+        iiee_nov_mar_area = pl.get("iiee_15_pct_nov_mar_area_mkm2_per_day")
+        iiee_nov_mar_area_base = pl.get("iiee_15_pct_nov_mar_area_mkm2_per_day_baseline")
+
+        if iiee_sanity_passed:
+            # Percentage rows.
+            rows.append({
+                "task": "sic",
+                "lead_days": lead,
+                "domain": "iiee_15pct",
+                "season": "all",
+                "model": "gbm_residual",
+                "rmse": iiee_all,
+                "ci": [None, None],
+                "skill_vs_baseline": None,
+                "n": pl["n_samples"],
+                "metric": "iiee_pct",
+            })
+            rows.append({
+                "task": "sic",
+                "lead_days": lead,
+                "domain": "iiee_15pct",
+                "season": "all",
+                "model": "damped_persistence",
+                "rmse": iiee_all_base,
+                "ci": [None, None],
+                "skill_vs_baseline": None,
+                "n": pl["n_samples"],
+                "metric": "iiee_pct",
+            })
+            rows.append({
+                "task": "sic",
+                "lead_days": lead,
+                "domain": "iiee_15pct",
+                "season": "nov_mar",
+                "model": "gbm_residual",
+                "rmse": iiee_nov_mar,
+                "ci": [None, None],
+                "skill_vs_baseline": None,
+                "n": pl["n_samples"],
+                "metric": "iiee_pct",
+            })
+            rows.append({
+                "task": "sic",
+                "lead_days": lead,
+                "domain": "iiee_15pct",
+                "season": "nov_mar",
+                "model": "damped_persistence",
+                "rmse": iiee_nov_mar_base,
+                "ci": [None, None],
+                "skill_vs_baseline": None,
+                "n": pl["n_samples"],
+                "metric": "iiee_pct",
+            })
+
+            # Area-based rows (million km² per day).
+            rows.append({
+                "task": "sic",
+                "lead_days": lead,
+                "domain": "iiee_15pct",
+                "season": "all",
+                "model": "gbm_residual",
+                "rmse": iiee_all_area,
+                "ci": [None, None],
+                "skill_vs_baseline": None,
+                "n": pl["n_samples"],
+                "metric": "iiee_area_mkm2_per_day",
+            })
+            rows.append({
+                "task": "sic",
+                "lead_days": lead,
+                "domain": "iiee_15pct",
+                "season": "all",
+                "model": "damped_persistence",
+                "rmse": iiee_all_area_base,
+                "ci": [None, None],
+                "skill_vs_baseline": None,
+                "n": pl["n_samples"],
+                "metric": "iiee_area_mkm2_per_day",
+            })
+            rows.append({
+                "task": "sic",
+                "lead_days": lead,
+                "domain": "iiee_15pct",
+                "season": "nov_mar",
+                "model": "gbm_residual",
+                "rmse": iiee_nov_mar_area,
+                "ci": [None, None],
+                "skill_vs_baseline": None,
+                "n": pl["n_samples"],
+                "metric": "iiee_area_mkm2_per_day",
+            })
+            rows.append({
+                "task": "sic",
+                "lead_days": lead,
+                "domain": "iiee_15pct",
+                "season": "nov_mar",
+                "model": "damped_persistence",
+                "rmse": iiee_nov_mar_area_base,
+                "ci": [None, None],
+                "skill_vs_baseline": None,
+                "n": pl["n_samples"],
+                "metric": "iiee_area_mkm2_per_day",
+            })
+        else:
+            caveats.append(
+                f"IIEE rows suppressed for lead {lead}: sanity check failed "
+                f"({pl.get('iiee_sanity', {})})."
+            )
 
     # Per-lead, per-sector coverage rows (dedicated coverage field, not rmse).
     for lead, sec_cov in cov.get("per_lead_per_sector", {}).items():
@@ -554,7 +617,9 @@ def _build_scorecard_report(
         "Trained on NSIDC V6 SSMIS-era (2005-2019). Val 2020-2021, test 2022-2024 untouched.",
         f"Sensor check evaluated on AMSR2-era data ({sensor_date_range or 'no 2025+ data'}, {sensor_n_days} days); out-of-training-distribution, indicative only.",
         "Promoted leads must beat tuned damped-persistence baseline with 95% CI excluding zero in both all-season and Nov-Mar on VIZ cells.",
-        "IIEE at 15% threshold per Goessling et al. 2016, area-weighted.",
+        "IIEE at 15% threshold per Goessling et al. 2016, area-weighted, per-day averaged.",
+        "IIEE rows published only when the per-lead physical sanity check passes "
+        "(cell area near nominal 625 km^2, mismatches > 0, mismatch area < daily extent).",
     ]
     if sensor_metrics is None:
         caveats.append("No 2025+ data available in cache for sensor check.")

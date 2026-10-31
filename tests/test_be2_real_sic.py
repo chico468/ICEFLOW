@@ -292,3 +292,65 @@ def test_compute_iiee_per_day_nan_excluded():
     # Only cell 0 is valid: pred=0.20>0.15, truth=0.10<=0.15 -> overestimated
     # mismatching area = 100, total = 100 -> 100%
     assert abs(iiee - 100.0) < 1e-9, f"expected 100.0, got {iiee}"
+
+
+def test_compute_iiee_area_per_day():
+    """Area-based IIEE: mismatched area in million km2, per day then averaged.
+
+    4 cells, areas [100, 200, 300, 400] km2, all one day.
+    Cells 0,1 mismatch: over (100) + under (200) = 300 km2 mismatched.
+    Total VIZ area = 1000 km2. IIEE pct = 30%.
+    Mismatched area = 300 km2 = 300 / 1e6 million km2 = 0.0003 Mkm2.
+    """
+    from src.ml.real_sic_forecaster import _compute_iiee_area_per_day
+
+    pred = np.array([0.20, 0.10, 0.20, 0.10])
+    truth = np.array([0.10, 0.20, 0.20, 0.10])
+    areas = np.array([100.0, 200.0, 300.0, 400.0])  # km2
+    areas_m2 = areas * 1e6  # convert to m2
+    dates = np.array([1000, 1000, 1000, 1000])
+
+    result = _compute_iiee_area_per_day(pred, truth, areas_m2, dates)
+    assert abs(result["iiee_pct"] - 30.0) < 1e-9
+    assert abs(result["mismatched_area_mkm2_per_day"] - 0.0003) < 1e-9
+    assert abs(result["viz_area_mkm2_per_day"] - 0.001) < 1e-9
+    assert int(result["mean_mismatched_cells"]) == 2
+    assert int(result["mean_viz_cells"]) == 4
+    assert abs(result["mean_cell_area_km2"] - 250.0) < 1e-9
+
+
+def test_iiee_sanity_check_passes():
+    """Sanity check passes for physically plausible inputs.
+
+    Uses 1000 cells (each 625 km2 = 25x25 km) so the daily VIZ extent
+    (~0.625 Mkm2) is above the 0.1 Mkm2 plausibility floor.
+    """
+    from src.ml.real_sic_forecaster import _iiee_sanity_check
+
+    n = 1000
+    cell_area_km2 = 625.0
+    areas_m2 = np.full(n, cell_area_km2 * 1e6)
+    rng = np.random.default_rng(42)
+    pred = np.clip(rng.uniform(0, 1, n), 0.01, 0.99)
+    truth = np.clip(rng.uniform(0, 1, n), 0.01, 0.99)
+    dates = np.array([1000] * n)
+
+    result = _iiee_sanity_check(pred, truth, areas_m2, dates)
+    assert result["passed"] is True
+    assert result["mean_cell_area_km2"] == 625.0
+    assert result["mean_mismatched_cells"] > 0
+
+
+def test_iiee_sanity_check_fails_bad_cell_area():
+    """Sanity check fails when cell area is far from nominal."""
+    from src.ml.real_sic_forecaster import _iiee_sanity_check
+
+    # Cell area of 10000 km2 is not plausible for 25km NSIDC grid
+    areas_m2 = np.full(5, 10000.0 * 1e6)
+    pred = np.array([0.20, 0.10, 0.30, 0.05, 0.15])
+    truth = np.array([0.10, 0.20, 0.30, 0.05, 0.20])
+    dates = np.array([1000] * 5)
+
+    result = _iiee_sanity_check(pred, truth, areas_m2, dates)
+    assert result["passed"] is False
+    assert result["checks"]["cell_area_plausible"] is False
