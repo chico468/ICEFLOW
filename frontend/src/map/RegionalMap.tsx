@@ -1701,12 +1701,12 @@ data-wind-source-status={windSourceStatus}
             >
               <Wind size={15} />
             </ToolButton>
-            <ProvenanceBadge
-              provenance={{ kind: 'real_forecast', source: 'Mapbox GFS demo tileset' }}
-              size="sm"
-              showIcon={false}
-              title="Context · Mapbox GFS demo tileset, not used in routing"
-            />
+              <ProvenanceBadge
+                provenance={{ status: 'forecast', source: 'Mapbox GFS demo tileset', note: 'context tiles, not used in routing' }}
+                size="sm"
+                showIcon={false}
+                title="Context · Mapbox GFS demo tileset, not used in routing"
+              />
           </>,
         ]}
       />
@@ -1780,7 +1780,7 @@ data-wind-source-status={windSourceStatus}
       >
         <strong className="text-xs text-ink">Observed sea-ice edge</strong>
         <ProvenanceBadge
-          provenance={{ kind: 'observed', source: 'Copernicus sea-ice edge' }}
+          provenance={{ status: 'real-observation', source: 'Copernicus sea-ice edge', note: 'OSI-SAF NRT product' }}
           size="sm"
           showIcon={false}
           className="ml-1"

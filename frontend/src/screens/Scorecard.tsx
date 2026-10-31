@@ -16,29 +16,29 @@ import { scorecardFixture, scorecardIsSampleData } from '../lib/scorecard';
 
 const MODEL_PROVENANCE: Record<string, Provenance> = {
   damped_persistence: {
-    kind: 'real_forecast',
+    status: 'forecast',
     source: 'damped-persistence baseline',
-    product: 'sea-ice concentration hindcast',
+    note: 'sea-ice concentration hindcast',
   },
   gbm_residual: {
-    kind: 'experimental_ml',
+    status: 'experimental_ml',
     source: 'gradient-boosted residual model',
-    product: 'sea-ice concentration hindcast',
+    note: 'sea-ice concentration hindcast',
   },
   constant_velocity_damped: {
-    kind: 'real_forecast',
+    status: 'forecast',
     source: 'constant-velocity drift',
-    product: 'iceberg drift hindcast',
+    note: 'iceberg drift hindcast',
   },
   'ml_residual_on_velocity': {
-    kind: 'experimental_ml',
+    status: 'experimental_ml',
     source: 'ML residual on velocity',
-    product: 'iceberg drift hindcast',
+    note: 'iceberg drift hindcast',
   },
 };
 
 function modelProvenance(model: string): Provenance {
-  return MODEL_PROVENANCE[model] ?? { kind: 'simulated', source: 'unspecified model', product: model };
+  return MODEL_PROVENANCE[model] ?? { status: 'synthetic', source: 'unspecified model', note: model };
 }
 
 export function Scorecard(): JSX.Element {
@@ -103,8 +103,8 @@ export function Scorecard(): JSX.Element {
             <Stat label="Product" value={s.product ?? '—'} size="sm" />
             <Stat label="Version" value={s.version ?? '—'} size="sm" />
             <Stat label="Git SHA" value={s.git_sha ?? '—'} size="sm" />
-            <Stat label="Train years" value={s.train_years ?? '—'} size="sm" />
-            <Stat label="Test years" value={s.test_years ?? '—'} size="sm" />
+            <Stat label="Train years" value={trainYearsText(s.train_years)} size="sm" />
+            <Stat label="Test years" value={trainYearsText(s.test_years)} size="sm" />
           </div>
           {s.caveats.length > 0 && (
             <div className="mt-2 border-t border-hair/60 pt-2 space-y-1">
@@ -191,10 +191,10 @@ export function Scorecard(): JSX.Element {
                   <tr key={leadDays} className="border-b border-hair/60 last:border-0">
                     <td className="py-1.5 text-ink">{leadDays}</td>
                     <td className="py-1.5 text-ink-2">{pct(cov.target)}</td>
-                    <td className="py-1.5 text-ink-2">{pct(cov.empirical)}</td>
+                    <td className="py-1.5 text-ink-2">{cov.empirical == null ? '—' : pct(cov.empirical)}</td>
                     <td className="py-1.5">
                       <ProvenanceBadge
-                        provenance={{ kind: 'real_forecast', source: 'conformal calibration', product: 'validation residuals' }}
+                        provenance={{ status: 'forecast', source: 'conformal calibration', note: 'validation residuals' }}
                         size="sm"
                         showAge={false}
                       />
@@ -212,6 +212,10 @@ export function Scorecard(): JSX.Element {
 
 function pct(f: number): string {
   return `${(f * 100).toFixed(0)}%`;
+}
+
+function trainYearsText(years: number[] | null | undefined): string {
+  return years?.length ? years.join('–') : '—';
 }
 
 function signed(v: number, digits = 2): string {

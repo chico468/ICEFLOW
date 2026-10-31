@@ -10,57 +10,18 @@
 
 /** Every response that carries modelled environmental data labels itself. Principle P2. */
 export interface Provenance {
-  kind: 'observed' | 'real_forecast' | 'simulated' | 'experimental_ml' | 'real-seed';
+  status: 'real' | 'real-seed' | 'real-observation' | 'reanalysis' | 'derived' | 'synthetic' | string;
   source: string;
-  product?: string;
-  /** UTC ISO-8601 timestamp the data is valid at. */
-  valid_time?: string;
-  /** Hours since valid_time; null when not applicable or unknown. */
-  age_hours?: number | null;
+  note: string;
+  /** Present when the backend reports a dated observation (for example real iceberg positions). */
+  observed_date?: string;
+  age_days?: number;
 }
 
 export interface SyntheticFlagged {
   is_synthetic?: boolean;
   source?: string;
   provenance?: Provenance;
-}
-
-// ---------------------------------------------------------------------------- evidence scorecard
-
-export interface ScorecardRow {
-  task: 'sic' | 'iceberg';
-  lead_days: number;
-  domain: string;
-  season: string;
-  model: string;
-  rmse?: number | null;
-  error_km?: number | null;
-  ci: [number, number];
-  skill_vs_baseline: number | null;
-  n: number;
-}
-
-export interface ScorecardPromoted {
-  sic: Record<string, boolean>;
-  iceberg: Record<string, boolean>;
-}
-
-export interface ScorecardCoverage {
-  [leadDays: string]: { target: number; empirical: number };
-}
-
-export interface ScorecardResponse {
-  generated_at: string;
-  git_sha: string | null;
-  data_source: 'real' | 'none';
-  product: string | null;
-  version: string | null;
-  train_years: string | null;
-  test_years: string | null;
-  rows: ScorecardRow[];
-  promoted: ScorecardPromoted;
-  coverage: ScorecardCoverage;
-  caveats: string[];
 }
 
 /** Resolved calendar time plus independent simulation/model-relative offsets. */
@@ -354,6 +315,45 @@ export interface ForecastSkillResponse {
   metrics_note: string;
 }
 
+// ---------------------------------------------------------------------------------- evidence
+
+export interface ScorecardRow {
+  task: 'sic' | 'iceberg';
+  lead_days: number;
+  domain: string;
+  season: string;
+  sector?: string;
+  model: string;
+  rmse?: number;
+  error_km?: number;
+  ci: [number, number];
+  skill_vs_baseline: number | null;
+  n: number;
+}
+
+export interface PromotionStatus {
+  sic: Record<string, boolean>;
+  iceberg: Record<string, boolean>;
+}
+
+export interface ScorecardCoverage {
+  [lead_days: string]: { target: number; empirical: number | null };
+}
+
+export interface ScorecardResponse {
+  generated_at: string;
+  git_sha: string | null;
+  data_source: 'real' | 'none';
+  product: string | null;
+  version: string | null;
+  train_years: number[];
+  test_years: number[];
+  rows: ScorecardRow[];
+  promoted: PromotionStatus;
+  coverage: ScorecardCoverage;
+  caveats: string[];
+}
+
 // -------------------------------------------------------------------------------- POLARIS
 
 export type IceClassKey =
@@ -632,11 +632,6 @@ export interface Waypoint {
   attainable_speed_knots: number;
 }
 
-export interface WaypointEta {
-  index: number;
-  eta_iso: string;
-}
-
 export interface RouteEvaluation {
   label: string;
   waypoints: Waypoint[];
@@ -651,9 +646,6 @@ export interface RouteEvaluation {
   is_feasible: boolean;
   infeasible_reason: string;
   prohibited_waypoints: number;
-  // v1.1: clock times derived from the voyage departure.
-  arrival_iso?: string;
-  waypoint_etas?: WaypointEta[];
 }
 
 export interface SearchDiagnostics {
@@ -695,11 +687,11 @@ export interface OptimizationSummary {
   warnings: string[];
   savings_method: string;
   is_synthetic_environment: boolean;
-  // v1.1: wall-clock departure and the environment that produced the data.
+  environment_mode?: 'simulated' | 'real_ice' | 'replay';
   departure_iso?: string;
   arrival_iso?: string;
-  environment_mode?: string;
-  provenance?: Record<string, string>;
+  waypoint_etas?: { index: number; eta_iso: string }[];
+  provenance?: Provenance[];
 }
 
 export type RouteProfileId = 'safety-first' | 'balanced' | 'fuel-efficient' | 'fastest';
@@ -715,6 +707,7 @@ export interface RouteAlternative {
   warnings: string[];
   search: SearchDiagnostics;
   is_synthetic_environment: boolean;
+  environment_mode?: 'simulated' | 'real_ice' | 'replay';
 }
 
 export interface RouteAlternativesResponse {
@@ -725,7 +718,9 @@ export interface RouteAlternativesResponse {
   distinct_alternatives_found: number;
   planning_ms: number;
   is_synthetic_environment: boolean;
+  environment_mode?: 'simulated' | 'real_ice' | 'replay';
   environment_provenance: Record<string, Provenance>;
+  provenance?: Provenance[];
 }
 
 export interface RouteRequest {
@@ -743,7 +738,6 @@ export interface RouteRequest {
   lead_hours?: number;
   grid_resolution_deg?: number;
   avoid_icebergs?: boolean;
-  // v1.1: wall-clock departure and the environment mode that produced the data.
   departure_iso?: string;
   environment_mode?: 'simulated' | 'real_ice' | 'replay';
   replay_date?: string;
@@ -836,6 +830,10 @@ export interface VoyageState {
   reroute_count: number;
   plan_summary: OptimizationSummary | null;
   is_synthetic_environment: boolean;
+  environment_mode: 'simulated' | 'real_ice' | 'replay';
+  arrival_iso: string | null;
+  waypoint_etas: { index: number; eta_iso: string }[];
+  provenance: Provenance[];
 }
 
 export interface CreateVoyageRequest {
@@ -851,6 +849,8 @@ export interface CreateVoyageRequest {
   grid_resolution_deg?: number;
   avoid_icebergs?: boolean;
   departure_iso?: string;
+  environment_mode?: 'simulated' | 'real_ice' | 'replay';
+  replay_date?: string;
 }
 
 // ---------------------------------------------------------------------- websocket frames

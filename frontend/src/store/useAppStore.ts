@@ -35,6 +35,7 @@ export interface PlannerConfig {
   avoidIcebergs: boolean;
   departureTimeHours: number;
   departureIso: string;
+  replayDate: string;
   environmentMode: 'simulated' | 'real_ice' | 'replay';
 }
 
@@ -148,7 +149,8 @@ export const useAppStore = create<AppState>((set) => ({
     avoidIcebergs: true,
     departureTimeHours: 0,
     departureIso: new Date().toISOString(),
-    environmentMode: 'simulated',
+    replayDate: '',
+    environmentMode: 'real_ice',
   },
   setPlanner: (patch) => set((s) => ({
     planner: { ...s.planner, ...patch },

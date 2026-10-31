@@ -99,6 +99,12 @@ export function IceForecast(): JSX.Element {
               Loading ice field…
             </div>
           )}
+          {scene.status.iceError && (
+            <div className="sheet absolute left-1/2 top-3 -translate-x-1/2 rounded-md border border-danger/40 bg-danger/10 p-2 text-xs text-danger">
+              <div className="font-semibold">No data for this date</div>
+              <div className="mt-0.5 leading-relaxed">{scene.status.iceError}</div>
+            </div>
+          )}
         </>
       }
       shelf={

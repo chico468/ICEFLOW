@@ -2,15 +2,17 @@
  * A compact inline badge that says where a piece of data came from.
  *
  * Principle P2: nothing here is hardcoded. The badge renders from a typed
- * Provenance record (kind, source, product, valid_time, age_hours) and derives
- * its label, tone and icon from `kind` alone, so no per-layer text is baked in.
+ * Provenance record (status, source, note, observed_date, age_days) and derives
+ * its label, tone and icon from `status` alone, so no per-layer text is baked in.
  *
- * Kinds: observed | real_forecast | simulated | experimental_ml | real-seed
+ * Statuses: observed (real / real-observation), reanalysis, forecast, derived,
+ * simulated (synthetic), real-seed, plus any unknown string passed through as-is.
  *   observed        -> Observed
- *   real_forecast   -> Forecast (real data)
+ *   reanalysis      -> Reanalysis
+ *   forecast        -> Forecast
+ *   derived         -> Derived
  *   simulated       -> Simulated
- *   experimental_ml -> Experimental ML
- *   real-seed       -> Real catalogue (drift simulated)
+ *   real-seed       -> Real catalogue (drift modelled)
  *
  * Used inline with layer labels and controls, where a full ProvenanceBar
  * popover would be too heavy.
@@ -18,29 +20,40 @@
 import { Cloud, Database, FlaskConical, Globe, Satellite } from 'lucide-react';
 import type { Provenance } from '../api/types';
 
-export type ProvenanceKind = Provenance['kind'];
+export type ProvenanceStatus = Provenance['status'];
 
-const KIND_LABELS: Record<ProvenanceKind, string> = {
-  observed: 'Observed',
-  real_forecast: 'Forecast (real data)',
-  simulated: 'Simulated',
-  experimental_ml: 'Experimental ML',
-  'real-seed': 'Real catalogue (drift simulated)',
+const KIND_LABELS: Record<string, string> = {
+  real: 'Observed',
+  'real-observation': 'Observed',
+  reanalysis: 'Reanalysis',
+  forecast: 'Forecast',
+  derived: 'Derived',
+  synthetic: 'Simulated',
+  'real-seed': 'Real catalogue (drift modelled)',
+  'experimental_ml': 'Experimental ML',
 };
 
-const KIND_TONES: Record<ProvenanceKind, 'ok' | 'caution' | 'accent' | 'neutral'> = {
-  observed: 'ok',
-  real_forecast: 'accent',
-  simulated: 'caution',
-  experimental_ml: 'caution',
+function provenanceLabel(status: ProvenanceStatus): string {
+  return KIND_LABELS[status] ?? status.split(/[_-]+/).map((part) => part.slice(0, 1).toUpperCase() + part.slice(1)).join(' ');
+}
+
+const KIND_TONES: Record<string, 'ok' | 'caution' | 'accent' | 'neutral'> = {
+  real: 'ok',
+  'real-observation': 'ok',
+  reanalysis: 'accent',
+  forecast: 'accent',
+  derived: 'accent',
+  synthetic: 'caution',
   'real-seed': 'neutral',
 };
 
-const KIND_ICONS: Record<ProvenanceKind, React.ElementType> = {
-  observed: Satellite,
-  real_forecast: Globe,
-  simulated: FlaskConical,
-  experimental_ml: Cloud,
+const KIND_ICONS: Record<string, React.ElementType> = {
+  real: Satellite,
+  'real-observation': Satellite,
+  reanalysis: Globe,
+  forecast: Globe,
+  derived: Cloud,
+  synthetic: FlaskConical,
   'real-seed': Database,
 };
 
@@ -57,8 +70,8 @@ const TONE_CLASSES = {
   neutral: 'border-hair-2 text-ink-2 bg-panel-2',
 };
 
-export function provenanceKindLabel(provenance: Provenance): string {
-  return KIND_LABELS[provenance.kind];
+export function provenanceStatusLabel(provenance: Provenance): string {
+  return provenanceLabel(provenance.status);
 }
 
 export function ProvenanceBadge({
@@ -69,27 +82,27 @@ export function ProvenanceBadge({
   showIcon = true,
   size = 'md',
 }: {
-  /** Full Provenance record; the label, tone and icon come from its kind. */
+  /** Full Provenance record; the label, tone and icon come from its status. */
   provenance: Provenance;
   className?: string;
   /** Optional tooltip override; defaults to provenance-derived title. */
   title?: string;
-  /** Append the age (hours) to the visible label. */
+  /** Append the age (days) to the visible label. */
   showAge?: boolean;
   showIcon?: boolean;
   size?: 'sm' | 'md' | 'lg';
 }): JSX.Element {
-  const label = KIND_LABELS[provenance.kind];
-  const tone = KIND_TONES[provenance.kind];
-  const Icon = KIND_ICONS[provenance.kind];
+  const label = provenanceLabel(provenance.status);
+  const tone = KIND_TONES[provenance.status] ?? 'neutral';
+  const Icon = KIND_ICONS[provenance.status] ?? Globe;
   const sizeClass = SIZE_CLASSES[size];
   const toneClass = TONE_CLASSES[tone];
 
   const parts: string[] = [provenance.source];
-  if (provenance.product) parts.push(provenance.product);
-  if (provenance.valid_time) parts.push(`valid ${provenance.valid_time}`);
-  if (showAge && provenance.age_hours !== null && provenance.age_hours !== undefined) {
-    parts.push(`${Number(provenance.age_hours).toFixed(0)} h old`);
+  if (provenance.note) parts.push(provenance.note);
+  if (provenance.observed_date) parts.push(`observed ${provenance.observed_date}`);
+  if (showAge && provenance.age_days !== null && provenance.age_days !== undefined) {
+    parts.push(`${Number(provenance.age_days).toFixed(0)} d old`);
   }
   const badgeTitle = title ?? parts.join(' · ');
 
@@ -105,8 +118,8 @@ export function ProvenanceBadge({
         />
       )}
       {label}
-      {showAge && provenance.age_hours !== null && provenance.age_hours !== undefined && (
-        <span className="text-[8px] opacity-60">· {Number(provenance.age_hours).toFixed(0)} h</span>
+      {showAge && provenance.age_days !== null && provenance.age_days !== undefined && (
+        <span className="text-[8px] opacity-60">· {Number(provenance.age_days).toFixed(0)} d</span>
       )}
     </span>
   );

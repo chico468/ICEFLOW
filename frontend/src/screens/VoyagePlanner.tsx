@@ -102,6 +102,8 @@ export function VoyagePlanner(): JSX.Element {
   const layers = useAppStore((s) => s.layers);
   const toggleLayer = useAppStore((s) => s.toggleLayer);
 
+  const simulatedLayerOn = Boolean(layers.windFlow || layers.currentFlow || planner.environmentMode === 'simulated');
+
   const [elapsed, setElapsed] = useState(0);
   const [trayOpen, setTrayOpen] = useState(true);
   const [expandedCandidateId, setExpandedCandidateId] = useState<RouteProfileId | null>(null);
@@ -149,6 +151,7 @@ export function VoyagePlanner(): JSX.Element {
         departure_time_hours: planner.departureTimeHours,
         departure_iso: planner.departureIso,
         environment_mode: beyondHorizon ? 'replay' : planner.environmentMode,
+        replay_date: planner.environmentMode === 'replay' ? planner.replayDate : undefined,
       });
       if (JSON.stringify(useAppStore.getState().planner) !== requestedPlanner) return;
       setPlan(result.balanced_summary);
@@ -245,6 +248,42 @@ export function VoyagePlanner(): JSX.Element {
               Beyond the 168 h forecast horizon — replay mode only.
             </p>
           )}
+        </Group>
+
+        <Group title="Environment" subtitle="Ice and weather source for this plan">
+          <div className="flex flex-col gap-2 w-full">
+            <div className="w-full">
+              <Select
+                label="Mode"
+                value={planner.environmentMode}
+                options={[
+                  { value: 'simulated', label: 'Simulated' },
+                  { value: 'real_ice', label: 'Real ice' },
+                  { value: 'replay', label: 'Replay' },
+                ]}
+                onChange={(v) => setPlanner({ environmentMode: v })}
+              />
+            </div>
+            {planner.environmentMode === 'replay' && (
+              <div className="w-full">
+                <label className="block mb-1 text-2xs text-ink-2">Replay date (UTC)</label>
+                <input
+                  type="date"
+                  className="field w-full"
+                  value={planner.replayDate}
+                  onChange={(e) => setPlanner({ replayDate: e.target.value })}
+                />
+                <p className="mt-0.5 text-2xs text-ink-3">
+                  Replays the observed ice field for that date; wind and waves stay simulated.
+                </p>
+              </div>
+            )}
+            {planner.environmentMode === 'simulated' && (
+              <p role="status" className="mt-1 text-2xs text-caution">
+                Simulated ice and weather. Not for navigation.
+              </p>
+            )}
+          </div>
         </Group>
 
         <div className="flex flex-col gap-1 whitespace-nowrap pb-1 text-2xs text-ink-3">
@@ -412,19 +451,20 @@ export function VoyagePlanner(): JSX.Element {
             <Notice tone="danger">No distinct route candidates were returned. Recheck the voyage conditions and try planning again.</Notice>
           ) : (
             <div data-testid="route-widget-row" className="flex snap-x gap-2.5 overflow-x-auto pb-1">
-              {routeAlternatives.map((candidate) => (
-                <RouteCandidateCard
-                  key={candidate.id}
-                  candidate={candidate}
-                  reference={balancedReference}
-                  selected={candidate.id === selectedCandidateId}
-                  onSelect={() => setSelectedCandidateId(candidate.id)}
-                  expanded={expandedCandidateId === candidate.id}
-                  onToggleExpanded={() => setExpandedCandidateId((current) => (
-                    current === candidate.id ? null : candidate.id
+                  {routeAlternatives.map((candidate) => (
+                    <RouteCandidateCard
+                      key={candidate.id}
+                      candidate={candidate}
+                      reference={balancedReference}
+                      selected={candidate.id === selectedCandidateId}
+                      expanded={expandedCandidateId === candidate.id}
+                      onSelect={() => setSelectedCandidateId(candidate.id)}
+                      onToggleExpanded={() => setExpandedCandidateId((current) => (
+                        current === candidate.id ? null : candidate.id
+                      ))}
+                      waypointEtas={plan?.waypoint_etas ?? null}
+                    />
                   ))}
-                />
-              ))}
             </div>
           )}
           {omittedProfiles.map((omitted) => (
@@ -559,6 +599,12 @@ export function VoyagePlanner(): JSX.Element {
             <Toggle key={key} label={label} checked={layers[key]} onChange={() => toggleLayer(key)} />
           ))}
         </div>
+        {simulatedLayerOn && (
+          <p role="status" className="mt-2 rounded-md border border-caution/60 bg-caution/10 p-2 text-xs text-caution">
+            <AlertTriangle size={12} className="mr-1 shrink-0" aria-hidden="true" />
+            SIMULATED — a simulated layer is on. Not for navigation.
+          </p>
+        )}
       </Panel>
     </>
   );
@@ -708,6 +754,7 @@ function RouteCandidateCard({
   onSelect,
   expanded,
   onToggleExpanded,
+  waypointEtas,
 }: {
   candidate: RouteAlternative;
   reference: RouteEvaluation | null;
@@ -715,6 +762,7 @@ function RouteCandidateCard({
   onSelect: () => void;
   expanded: boolean;
   onToggleExpanded: () => void;
+  waypointEtas: { index: number; eta_iso: string }[] | null;
 }): JSX.Element {
   const result = candidate.evaluation;
   const deltas = reference ? routeDeltas(result, reference) : null;
@@ -828,19 +876,19 @@ function RouteCandidateCard({
               <span>{num(result.prohibited_waypoints, 0)} prohibited waypoint(s)</span>
               <span>{candidate.is_feasible ? 'Feasibility: reached and permitted' : candidate.goal_reached ? 'Feasibility: prohibited' : 'Feasibility: destination not reached'}</span>
             </div>
-            {result.waypoint_etas?.length && (
+            {waypointEtas != null && waypointEtas.length > 0 && (
               <div className="mt-2 border-t border-hair pt-2">
                 <div className="text-2xs font-semibold text-ink-2">Waypoint ETAs (UTC)</div>
                 <div className="mt-1 grid grid-cols-4 gap-x-2 gap-y-1 text-2xs text-ink-2">
-                  {result.waypoint_etas.slice(0, 12).map(({ index, eta_iso }) => (
+                  {waypointEtas.slice(0, 12).map(({ index, eta_iso }) => (
                     <div key={index} className="flex flex-col gap-0.5">
                       <span className="text-[9px] text-ink-3">#{index}</span>
                       <span>{new Date(eta_iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                     </div>
                   ))}
-                  {result.waypoint_etas.length > 12 && (
+                  {waypointEtas.length > 12 && (
                     <span className="text-[9px] text-ink-3">
-                      …and {result.waypoint_etas.length - 12} more
+                      …and {waypointEtas.length - 12} more
                     </span>
                   )}
                 </div>

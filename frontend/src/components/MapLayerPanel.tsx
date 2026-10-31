@@ -26,13 +26,14 @@ const RASTER_MODES: { mode: RasterMode; label: string; hint: string }[] = [
 
 type Row = { key: keyof LayerToggles; label: string; hint?: string; proven?: Provenance };
 
-const ICE_FIELD_PROV: Provenance = { kind: 'simulated', source: 'Model ice field' };
+const ICE_FIELD_PROV: Provenance = { status: 'synthetic', source: 'Model ice field', note: 'hindcast grid, not an observation' };
 const ICEBERG_CATALOGUE_PROV: Provenance = {
-  kind: 'real-seed',
+  status: 'real-seed',
   source: 'Model iceberg catalogue',
+  note: 'real names and origins, drifted by the model',
 };
-const OBSERVED_BERGS_PROV: Provenance = { kind: 'observed', source: 'USNIC-format snapshot' };
-const FLOW_PROV: Provenance = { kind: 'simulated', source: 'Model flow field' };
+const OBSERVED_BERGS_PROV: Provenance = { status: 'real-observation', source: 'USNIC-format snapshot', note: 'dated observed positions, not tracked live' };
+const FLOW_PROV: Provenance = { status: 'synthetic', source: 'Model flow field', note: 'simulated wind and current vectors' };
 
 const GROUPS: { title: string; rows: Row[] }[] = [
   {

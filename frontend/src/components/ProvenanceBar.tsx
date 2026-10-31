@@ -58,21 +58,21 @@ export function ProvenanceBar(): JSX.Element {
   }
 
   const entries: [string, Provenance][] = data ? Object.entries(data.data_provenance) : [];
-  const simulated = entries.filter(([, p]) => p.kind === 'simulated');
+  const simulated = entries.filter(([, p]) => p.status === 'synthetic');
   // 'real-seed' means real names and origins with positions the authors seeded: NOT observations. It must not
   // share a heading with genuinely real data, so it gets its own group.
-  const seeded = entries.filter(([, p]) => p.kind === 'real-seed');
+  const seeded = entries.filter(([, p]) => p.status === 'real-seed');
   const real = entries.filter(
-    ([, p]) => p.kind !== 'simulated' && p.kind !== 'real-seed',
+    ([, p]) => p.status !== 'synthetic' && p.status !== 'real-seed',
   );
 
   function ageText(p: Provenance): string {
-    if (p.age_hours === null || p.age_hours === undefined) return 'age unknown';
-    return `${Number(p.age_hours).toFixed(0)} h old`;
+    if (p.age_days === null || p.age_days === undefined) return 'age unknown';
+    return `${Number(p.age_days).toFixed(0)} d old`;
   }
 
   function validText(p: Provenance): string {
-    return p.valid_time ?? 'valid time unknown';
+    return p.observed_date ?? 'observed date unknown';
   }
 
   return (
@@ -138,7 +138,7 @@ export function ProvenanceBar(): JSX.Element {
                     <div className="mt-0.5 text-2xs leading-relaxed text-ink-3">
                       Stands in for{' '}
                       <span className="text-ink-2">{p.source.replace(/^stands in for /, '')}</span>
-                      {p.product ? ` · ${p.product}` : ''}. {ageText(p)}.
+                      {p.note ? ` · ${p.note}` : ''}. {ageText(p)}.
                     </div>
                   </li>
                 ))}
@@ -156,7 +156,7 @@ export function ProvenanceBar(): JSX.Element {
                       <div className="text-xs font-semibold text-caution">{prettyKey(key)}</div>
                       <div className="mt-0.5 text-2xs leading-relaxed text-ink-3">
                         <span className="text-ink-2">{p.source}</span>
-                        {p.product ? ` · ${p.product}` : ''}. {ageText(p)}.
+                        {p.note ? ` · ${p.note}` : ''}. {ageText(p)}.
                       </div>
                     </li>
                   ))}
@@ -174,7 +174,7 @@ export function ProvenanceBar(): JSX.Element {
                     <div className="text-xs font-semibold text-ok">{prettyKey(key)}</div>
                       <div className="mt-0.5 text-2xs leading-relaxed text-ink-3">
                         <span className="text-ink-2">{p.source}</span>
-                        {p.product ? ` · ${p.product}` : ''}. {ageText(p)} · {validText(p)}.
+                        {p.note ? ` · ${p.note}` : ''}. {ageText(p)} · {validText(p)}.
                       </div>
                   </li>
                 ))}

@@ -73,9 +73,9 @@ export function App(): JSX.Element {
           {activeScreen === 'planner' || activeScreen === 'bridge' ? (
             <div className="flex items-center gap-2 text-2xs">
               <span className="text-ink-3">Regional data:</span>
-              <ProvenanceBadge provenance={{ kind: 'observed', source: 'Copernicus sea-ice edge' }} size="sm" />
-              <ProvenanceBadge provenance={{ kind: 'real_forecast', source: 'GFS wind' }} size="sm" />
-              <ProvenanceBadge provenance={{ kind: 'simulated', source: 'Model iceberg catalogue' }} size="sm" />
+              <ProvenanceBadge provenance={{ status: 'real-observation', source: 'Copernicus sea-ice edge', note: 'OSI-SAF NRT product' }} size="sm" />
+              <ProvenanceBadge provenance={{ status: 'forecast', source: 'GFS wind', note: '0.25 degree analysis' }} size="sm" />
+              <ProvenanceBadge provenance={{ status: 'synthetic', source: 'Model iceberg catalogue', note: 'RK4 drift from seeded positions' }} size="sm" />
             </div>
           ) : (
             <ProvenanceBar />
