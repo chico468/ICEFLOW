@@ -229,6 +229,15 @@ def scorecard() -> Dict[str, Any]:
     coverage = _compute_coverage(reports)
     caveats = _collect_caveats(reports)
 
+    # Deterministic row order: sic before iceberg_drift, then lead, domain, season.
+    all_rows.sort(key=lambda r: (
+        0 if r.get("task") == "sic" else 1,
+        r.get("lead_days") or 0,
+        r.get("domain") or "",
+        r.get("season") or "",
+        r.get("model") or "",
+    ))
+
     return {
         "generated_at": generated_at,
         "git_sha": git_sha or None,
