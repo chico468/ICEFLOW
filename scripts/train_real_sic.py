@@ -438,9 +438,11 @@ def _build_scorecard_report(
             "skill_vs_baseline": None,
             "n": viz_nm_n,
         })
-        # IIEE rows.
+        # IIEE rows (model and damped-persistence baseline).
         iiee_all = pl.get("iiee_15_pct")
+        iiee_all_base = pl.get("iiee_15_pct_baseline")
         iiee_nov_mar = pl.get("iiee_15_pct_nov_mar")
+        iiee_nov_mar_base = pl.get("iiee_15_pct_nov_mar_baseline")
         rows.append({
             "task": "sic",
             "lead_days": lead,
@@ -457,9 +459,33 @@ def _build_scorecard_report(
             "task": "sic",
             "lead_days": lead,
             "domain": "iiee_15pct",
+            "season": "all",
+            "model": "damped_persistence",
+            "rmse": iiee_all_base,
+            "ci": [None, None],
+            "skill_vs_baseline": None,
+            "n": pl["n_samples"],
+            "metric": "iiee_pct",
+        })
+        rows.append({
+            "task": "sic",
+            "lead_days": lead,
+            "domain": "iiee_15pct",
             "season": "nov_mar",
             "model": "gbm_residual",
             "rmse": iiee_nov_mar,
+            "ci": [None, None],
+            "skill_vs_baseline": None,
+            "n": pl["n_samples"],
+            "metric": "iiee_pct",
+        })
+        rows.append({
+            "task": "sic",
+            "lead_days": lead,
+            "domain": "iiee_15pct",
+            "season": "nov_mar",
+            "model": "damped_persistence",
+            "rmse": iiee_nov_mar_base,
             "ci": [None, None],
             "skill_vs_baseline": None,
             "n": pl["n_samples"],

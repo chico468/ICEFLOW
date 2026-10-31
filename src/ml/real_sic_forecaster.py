@@ -42,11 +42,12 @@ def _compute_iiee(
     areas: np.ndarray,
     threshold: float = 0.15,
 ) -> float:
-    """IIEE: area-weighted fraction of cells that are overestimated or underestimated
-    at the 15% concentration threshold (Goessling et al. 2016).
+    """IIEE at 15% concentration threshold (Goessling et al. 2016), area-weighted.
 
-    Overestimated: forecast > threshold but truth <= threshold (false ice).
-    Underestimated: forecast <= threshold but truth > threshold (missed ice).
+    Binary threshold on BOTH forecast and observation:
+      - overestimated: forecast > threshold and truth <= threshold (false ice)
+      - underestimated: forecast <= threshold and truth > threshold (missed ice)
+    Returns percent of VIZ cell area that mismatches, as area-weighted share.
     Excludes cells with NaN pred, truth, or zero/negative area.
     """
     valid = np.isfinite(pred) & np.isfinite(truth) & (areas > 0)
@@ -65,6 +66,34 @@ def _compute_iiee(
         return float("nan")
 
     return float((over.sum() + under.sum()) / total * 100.0)  # percent
+
+
+def _compute_iiee_per_day(
+    pred: np.ndarray,
+    truth: np.ndarray,
+    areas: np.ndarray,
+    date_ordinals: np.ndarray,
+    threshold: float = 0.15,
+) -> float:
+    """IIEE per forecast day, then mean over days.
+
+    For each unique date, computes area-weighted IIEE over that day's VIZ cells,
+    then averages the daily IIEE values across days.
+    """
+    if len(pred) == 0:
+        return float("nan")
+
+    unique_dates = np.unique(date_ordinals)
+    daily_iiee: List[float] = []
+    for d in unique_dates:
+        d_mask = date_ordinals == d
+        daily_val = _compute_iiee(pred[d_mask], truth[d_mask], areas[d_mask], threshold)
+        if np.isfinite(daily_val):
+            daily_iiee.append(daily_val)
+
+    if not daily_iiee:
+        return float("nan")
+    return float(np.mean(daily_iiee))
 
 
 CANDIDATE_HYPERPARAMETERS: Tuple[Dict[str, Any], ...] = (
@@ -414,8 +443,10 @@ class RealSICForecaster:
             if not np.any(mask):
                 continue
 
-            # VIZ cells: truth between 5% and 95%.
-            viz_mask = mask & (truth >= 0.05) & (truth <= 0.95)
+            # VIZ mask from TRAIN climatology only (no filter on observed test
+            # concentration -- that would leak test data into the mask).
+            viz_mask_1d = ds.viz_mask_2d[ds.cell_y, ds.cell_x]
+            viz_mask = mask & viz_mask_1d
             novmar_viz_mask = viz_mask & np.isin(ds.month, novmar_months)
 
             # All-season VIZ CI.
@@ -460,21 +491,35 @@ class RealSICForecaster:
                 baseline_rmse_viz_nm = float("nan")
                 viz_nov_mar_n = 0
 
-            # IIEE at 15% threshold (Goessling et al. 2016), area-weighted, per lead on VIZ cells.
+            # IIEE at 15% threshold (Goessling et al. 2016), area-weighted,
+            # per forecast day then mean over days, on VIZ cells from train
+            # climatology only. Computed for both model and damped-baseline.
             areas = getattr(ds, "cell_areas", np.ones(len(truth)))
-            viz_iiee_mask = mask & (truth >= 0.05) & (truth <= 0.95)
-            if np.any(viz_iiee_mask) and len(areas) == len(truth):
-                iiee_all = _compute_iiee(
-                    full_pred[viz_iiee_mask], truth[viz_iiee_mask], areas[viz_iiee_mask],
+            viz_areas = areas[viz_mask]
+            if np.any(viz_mask) and len(viz_areas) == int(viz_mask.sum()):
+                iiee_all = _compute_iiee_per_day(
+                    full_pred[viz_mask], truth[viz_mask], viz_areas,
+                    ds.target_date_ordinal[viz_mask],
                 )
-                iiee_nm = _compute_iiee(
-                    full_pred[viz_iiee_mask & novmar_viz_mask],
-                    truth[viz_iiee_mask & novmar_viz_mask],
-                    areas[viz_iiee_mask & novmar_viz_mask],
+                iiee_all_base = _compute_iiee_per_day(
+                    ds.baseline[viz_mask], truth[viz_mask], viz_areas,
+                    ds.target_date_ordinal[viz_mask],
+                )
+                iiee_nm = _compute_iiee_per_day(
+                    full_pred[novmar_viz_mask], truth[novmar_viz_mask],
+                    areas[novmar_viz_mask],
+                    ds.target_date_ordinal[novmar_viz_mask],
+                ) if np.any(novmar_viz_mask) else float("nan")
+                iiee_nm_base = _compute_iiee_per_day(
+                    ds.baseline[novmar_viz_mask], truth[novmar_viz_mask],
+                    areas[novmar_viz_mask],
+                    ds.target_date_ordinal[novmar_viz_mask],
                 ) if np.any(novmar_viz_mask) else float("nan")
             else:
                 iiee_all = float("nan")
+                iiee_all_base = float("nan")
                 iiee_nm = float("nan")
+                iiee_nm_base = float("nan")
 
             promoted = bool(
                 all_season_excludes and novmar_excludes
@@ -497,6 +542,8 @@ class RealSICForecaster:
             block["viz_rmse_diff_ci_excludes_zero_nov_mar"] = novmar_excludes
             block["iiee_15_pct"] = round(iiee_all, 4) if np.isfinite(iiee_all) else float("nan")
             block["iiee_15_pct_nov_mar"] = round(iiee_nm, 4) if np.isfinite(iiee_nm) else float("nan")
+            block["iiee_15_pct_baseline"] = round(iiee_all_base, 4) if np.isfinite(iiee_all_base) else float("nan")
+            block["iiee_15_pct_nov_mar_baseline"] = round(iiee_nm_base, 4) if np.isfinite(iiee_nm_base) else float("nan")
             block["promoted"] = promoted
             per_lead.append(block)
 

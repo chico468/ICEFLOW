@@ -77,6 +77,8 @@ class RealSICSplit:
     cell_areas: np.ndarray
     feature_names: Tuple[str, ...]
     window_years: Tuple[int, ...]
+    viz_mask_2d: np.ndarray
+    target_date_ordinal: np.ndarray
 
     def __len__(self) -> int:
         return int(self.X.shape[0])
@@ -255,6 +257,7 @@ def build_real_sic_dataset(
     rows_month: List[np.ndarray] = []
     rows_sector: List[np.ndarray] = []
     rows_areas: List[np.ndarray] = []
+    rows_date_ord: List[np.ndarray] = []
 
     sorted_dates = sorted(dates)
     max_lead = max(leads)
@@ -361,6 +364,7 @@ def build_real_sic_dataset(
             rows_month.append(np.full(n_valid, float(t0.month)))
             rows_sector.append(sid[valid])
             rows_areas.append(area_v[valid])
+            rows_date_ord.append(np.full(n_valid, t1.toordinal(), dtype=np.int64))
 
     if not rows_X:
         return RealSICSplit(
@@ -377,6 +381,8 @@ def build_real_sic_dataset(
             cell_areas=np.empty((0,), dtype=np.float64),
             feature_names=FEATURE_NAMES_REAL,
             window_years=tuple(),
+            viz_mask_2d=np.empty((0, 0), dtype=bool),
+            target_date_ordinal=np.empty((0,), dtype=np.int64),
         )
 
     return RealSICSplit(
@@ -393,6 +399,8 @@ def build_real_sic_dataset(
         cell_areas=np.concatenate(rows_areas, axis=0),
         feature_names=FEATURE_NAMES_REAL,
         window_years=tuple(sorted(set(d.year for d in dates))),
+        viz_mask_2d=viz_mask,
+        target_date_ordinal=np.concatenate(rows_date_ord, axis=0),
     )
 
 

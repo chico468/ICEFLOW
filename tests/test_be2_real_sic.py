@@ -238,3 +238,57 @@ def test_emergency_split_values():
     assert EMBARGO_DAYS == 14
     assert REAL_LEAD_DAYS == (3, 7, 14)
     assert len(FEATURE_NAMES_REAL) == 14
+
+
+def test_compute_iiee_per_day_hand_computed():
+    """Hand-computed IIEE on a tiny 4-cell grid, all on one day.
+
+    Cells:
+      0: pred=0.20 (>0.15), truth=0.10 (<=0.15) -> overestimated (false ice)
+      1: pred=0.10 (<=0.15), truth=0.20 (>0.15) -> underestimated (missed ice)
+      2: pred=0.20, truth=0.20 -> both ice, match
+      3: pred=0.10, truth=0.10 -> both no ice, match
+    Areas: [100, 200, 300, 400] km^2 -> total 1000, mismatching 300 -> 30%.
+    """
+    from src.ml.real_sic_forecaster import _compute_iiee_per_day
+
+    pred = np.array([0.20, 0.10, 0.20, 0.10])
+    truth = np.array([0.10, 0.20, 0.20, 0.10])
+    areas = np.array([100.0, 200.0, 300.0, 400.0])
+    dates = np.array([1000, 1000, 1000, 1000])  # all one day
+
+    iiee = _compute_iiee_per_day(pred, truth, areas, dates)
+    assert abs(iiee - 30.0) < 1e-9, f"expected 30.0, got {iiee}"
+
+
+def test_compute_iiee_per_day_two_days():
+    """IIEE per day then mean over days.
+
+    Day 1000: cells 0,1 -> mismatching area 100+200=300, total 300 -> 100%
+    Day 1001: cells 2,3 -> matching, mismatching 0, total 700 -> 0%
+    Mean over days: (100 + 0) / 2 = 50%.
+    """
+    from src.ml.real_sic_forecaster import _compute_iiee_per_day
+
+    pred = np.array([0.20, 0.10, 0.20, 0.10])
+    truth = np.array([0.10, 0.20, 0.20, 0.10])
+    areas = np.array([100.0, 200.0, 300.0, 400.0])
+    dates = np.array([1000, 1000, 1001, 1001])
+
+    iiee = _compute_iiee_per_day(pred, truth, areas, dates)
+    assert abs(iiee - 50.0) < 1e-9, f"expected 50.0, got {iiee}"
+
+
+def test_compute_iiee_per_day_nan_excluded():
+    """NaN cells are excluded from IIEE."""
+    from src.ml.real_sic_forecaster import _compute_iiee_per_day
+
+    pred = np.array([0.20, np.nan, 0.20])
+    truth = np.array([0.10, 0.20, np.nan])
+    areas = np.array([100.0, 200.0, 300.0])
+    dates = np.array([1000, 1000, 1000])
+
+    iiee = _compute_iiee_per_day(pred, truth, areas, dates)
+    # Only cell 0 is valid: pred=0.20>0.15, truth=0.10<=0.15 -> overestimated
+    # mismatching area = 100, total = 100 -> 100%
+    assert abs(iiee - 100.0) < 1e-9, f"expected 100.0, got {iiee}"
