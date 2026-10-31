@@ -468,8 +468,9 @@ class RealSICForecaster:
                     full_pred[viz_iiee_mask], truth[viz_iiee_mask], areas[viz_iiee_mask],
                 )
                 iiee_nm = _compute_iiee(
-                    full_pred[novmar_viz_mask], truth[novmar_viz_mask],
-                    areas[novmar_viz_mask],
+                    full_pred[viz_iiee_mask & novmar_viz_mask],
+                    truth[viz_iiee_mask & novmar_viz_mask],
+                    areas[viz_iiee_mask & novmar_viz_mask],
                 ) if np.any(novmar_viz_mask) else float("nan")
             else:
                 iiee_all = float("nan")
