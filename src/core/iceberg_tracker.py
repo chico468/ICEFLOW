@@ -52,6 +52,7 @@ from src.core.constants import (
 )
 from src.core.environment import EnvironmentModel, get_environment
 from src.core.geo import coriolis_parameter, haversine_km, haversine_nm, meters_to_degrees
+from src.data.environment_provider import EnvironmentProvider
 
 # A giant tabular berg has a drag response timescale of many hours, so a half-hour step is
 # comfortably stable. A growler responds in minutes, and integrating it at the same step blows
@@ -62,7 +63,10 @@ MIN_INTERNAL_TIMESTEP_S = 60.0
 TIMESTEP_SAFETY_DIVISOR = 5.0
 MAX_PHYSICAL_DRIFT_MS = 3.0  # a drifting berg faster than this is a numerical failure, not physics
 # How often the atmosphere and ocean are re-sampled along the track, in simulated seconds.
-FORCING_REFRESH_S = 1800.0
+# Icebergs drift at order 1 nm/hour, far below the noise field's correlation length, so an
+# hourly refresh keeps the track indistinguishable from a 30-minute refresh while halving the
+# environment sampling cost inside the route optimiser's exclusion build.
+FORCING_REFRESH_S = 3600.0
 
 
 class IcebergProfile(BaseModel):
@@ -192,12 +196,17 @@ def _uniform_forcing(
     }
 
 
-def _field_forcing(env: EnvironmentModel, lat: np.ndarray, lon: np.ndarray, t_hours: float) -> Dict[str, np.ndarray]:
+def _field_forcing(env: EnvironmentProvider, lat: np.ndarray, lon: np.ndarray, t_hours: float) -> Dict[str, np.ndarray]:
     """Forcing sampled from the environment fields at these positions and this time."""
-    ua, va, _ = env.wind_uv(lat, lon, t_hours)
-    uo, vo = env.current_uv(lat, lon, t_hours)
-    scal = env.scalars(lat, lon, t_hours, np.hypot(ua, va), 0.0)
-    return {"ua": ua, "va": va, "uo": uo, "vo": vo, "hs": scal["sig_wave_height_m"], "sst": scal["sst_c"]}
+    grid = env.sample_grid(lat, lon, t_hours)
+    return {
+        "ua": grid["u10"],
+        "va": grid["v10"],
+        "uo": grid["uo"],
+        "vo": grid["vo"],
+        "hs": grid["swh"],
+        "sst": grid.get("sst_c", np.zeros_like(lat)),
+    }
 
 
 # --------------------------------------------------------------------------------------
@@ -320,6 +329,7 @@ def _integrate_ensemble(
     veer_rad: np.ndarray,
     ice_concentration: float,
     apply_melt: bool,
+    initial_velocity_ms: Optional[Tuple[float, float]] = None,
 ) -> Tuple[List[Dict[str, np.ndarray]], Dict[str, float]]:
     """
     RK4 integration of the whole ensemble at once. Member 0 is always the unperturbed control.
@@ -349,9 +359,14 @@ def _integrate_ensemble(
         out["va"] = ua * np.sin(veer_rad) + va * np.cos(veer_rad)
         return out
 
-    # Start in equilibrium with the local current, which is where a tracked berg actually is.
+    # Start in equilibrium with the local current, which is where a tracked berg actually is,
+    # unless an observed initial velocity is supplied (velocity-initialised variant).
     f0 = apply_perturbation(forcing_fn(lat, lon, t0_hours))
-    u, v = f0["uo"].copy(), f0["vo"].copy()
+    if initial_velocity_ms is not None:
+        u = np.full(n, float(initial_velocity_ms[0]), dtype=np.float64)
+        v = np.full(n, float(initial_velocity_ms[1]), dtype=np.float64)
+    else:
+        u, v = f0["uo"].copy(), f0["vo"].copy()
 
     samples: List[Dict[str, np.ndarray]] = []
     budget: Dict[str, float] = {}
@@ -460,7 +475,8 @@ def predict_iceberg_drift(
     t0_hours: float = 0.0,
     ice_concentration: float = 0.0,
     apply_melt: bool = True,
-    environment: Optional[EnvironmentModel] = None,
+    initial_velocity_ms: Optional[Tuple[float, float]] = None,
+    environment: Optional[EnvironmentProvider] = None,
     seed: int = ENSEMBLE_SEED,
 ) -> IcebergForecastResult:
     """
@@ -508,6 +524,7 @@ def predict_iceberg_drift(
     samples, budget = _integrate_ensemble(
         berg, forecast_hours, time_step_hours, forcing_fn, t0_hours,
         c_air, c_water, wind_bias, veer, ice_concentration, apply_melt,
+        initial_velocity_ms,
     )
 
     points: List[TrajectoryPoint] = []
@@ -560,6 +577,8 @@ def predict_iceberg_drift(
         mass_lost_percent=round(100.0 * (1.0 - final_mass / max(initial_mass, 1e-9)), 3),
         final_length_m=round(float(samples[-1]["length"][0]), 1),
         ensemble_members=n,
+        is_synthetic=getattr(env, "is_synthetic", True),
+        source=getattr(env, "source", "synthetic; stands in for ECMWF ERA5/HRES + Copernicus Marine CMEMS"),
         force_budget=ForceBudget(
             air_drag_mn=round(budget.get("air", 0.0), 4),
             water_drag_mn=round(budget.get("water", 0.0), 4),

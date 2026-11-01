@@ -156,29 +156,36 @@ def test_optimize_route_without_departure_iso_has_no_eta():
     assert summary.waypoint_etas == []
 
 
-def test_optimize_route_real_ice_falls_back_to_synthetic(tmp_path, monkeypatch):
-    """When no cached NSIDC data exists, real_ice mode falls back to synthetic.
-
-    The fall-back is *explicit* and never silent: is_synthetic is True and the
-    sea-ice provenance is labelled 'simulated', never 'observed'.
-    """
+def test_optimize_route_real_ice_no_observation_raises(tmp_path, monkeypatch):
+    """real_ice with no cached observation raises NSIDCUnavailableError (never falls back)."""
     monkeypatch.setenv("ICEFLOW_NSIDC_CACHE_DIR", str(tmp_path))
-    optimizer = PolarRouteOptimizer(
-        ice_class=IceClass.PC5,
-        environment_mode="real_ice",
-    )
-    assert optimizer._observed_ice is None
-    assert optimizer.is_synthetic is True
+    from src.data.nsidc_sea_ice import NSIDCUnavailableError
+    with pytest.raises(NSIDCUnavailableError):
+        PolarRouteOptimizer(
+            ice_class=IceClass.PC5,
+            environment_mode="real_ice",
+        )
 
-    summary = optimizer.optimize_route(
-        -58.0, 70.0, -69.0, 76.0,
-        departure_iso="2024-01-15T00:00:00+00:00",
+
+def test_route_optimize_real_ice_no_observation_returns_422(tmp_path, monkeypatch):
+    """real_ice with no observation returns 422 via the API, never a synthetic plan."""
+    monkeypatch.setenv("ICEFLOW_NSIDC_CACHE_DIR", str(tmp_path))
+    r = client.post(
+        "/api/v1/route/optimize",
+        json={
+            "start_lat": -58.0,
+            "start_lon": 70.0,
+            "dest_lat": -69.0,
+            "dest_lon": 76.0,
+            "ice_class": "PC5",
+            "environment_mode": "real_ice",
+            "departure_iso": "2024-01-15T00:00:00+00:00",
+        },
     )
-    assert summary.environment_mode == "real_ice"
-    assert summary.is_synthetic_environment is True
-    sea_kinds = [p.kind for p in summary.provenance if p.layer == "sea_ice_field"]
-    assert sea_kinds == ["simulated"]
-    assert not any(p.kind == "observed" for p in summary.provenance if p.layer == "sea_ice_field")
+    assert r.status_code == 422, r.text
+    detail = r.json()["detail"]
+    assert detail["code"] == "out_of_coverage"
+    assert detail["variable"] == "sea_ice"
 
 
 def test_replay_missing_date_raises(tmp_path, monkeypatch):
@@ -377,6 +384,28 @@ def test_scorecard_with_fixture_report(tmp_path, monkeypatch):
     assert body["coverage"]["3"]["target"] == 0.9
 
 
+def test_scorecard_skips_non_real_reports(tmp_path, monkeypatch):
+    """Reports whose data_source != "real" (e.g. simulated forcing) are skipped entirely."""
+    monkeypatch.setenv("ICEFLOW_EVAL_DIR", str(tmp_path))
+    non_real = {
+        "data_source": "simulated_forcing",
+        "product": "synthetic sanity run",
+        "leads": [1, 3, 7],
+        "results": [
+            {"lead": 1, "domain": "x", "season": "all", "sector": "s",
+             "baseline": "damped", "rmse": 0.05, "rmse_ci": [0.04, 0.06], "n": 10},
+        ],
+    }
+    (tmp_path / "simulated_report.json").write_text(json.dumps(non_real))
+
+    r = client.get("/api/v1/evidence/scorecard")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["data_source"] == "none"
+    assert body["rows"] == []
+    assert body["promoted"] == {"sic": {}, "iceberg": {}}
+
+
 # ---------------------------------------------------------------------------
 # API endpoint contract tests
 # ---------------------------------------------------------------------------
@@ -535,8 +564,8 @@ def test_route_optimize_replay_date_not_in_cache_returns_4xx(tmp_path, monkeypat
     assert 400 <= r.status_code < 500
 
 
-def test_route_optimize_real_ice_no_observation_is_explicit_synthetic(tmp_path, monkeypatch):
-    """real_ice with no observation returns an explicit synthetic response (never silent)."""
+def test_route_optimize_real_ice_no_observation_returns_422_api(tmp_path, monkeypatch):
+    """real_ice with no observation returns 422 via the API, never a silent synthetic fallback."""
     monkeypatch.setenv("ICEFLOW_NSIDC_CACHE_DIR", str(tmp_path))
     r = client.post(
         "/api/v1/route/optimize",
@@ -550,13 +579,10 @@ def test_route_optimize_real_ice_no_observation_is_explicit_synthetic(tmp_path, 
             "departure_iso": "2024-01-15T00:00:00+00:00",
         },
     )
-    assert r.status_code == 200
-    body = r.json()
-    assert body["environment_mode"] == "real_ice"
-    assert body["is_synthetic_environment"] is True
-    sea = [p for p in body["provenance"] if p["layer"] == "sea_ice_field"]
-    assert sea and sea[0]["kind"] == "simulated"
-    assert not any(p["kind"] == "observed" for p in body["provenance"] if p["layer"] == "sea_ice_field")
+    assert r.status_code == 422, r.text
+    detail = r.json()["detail"]
+    assert detail["code"] == "out_of_coverage"
+    assert detail["variable"] == "sea_ice"
 
 
 def test_create_voyage_replay_missing_date_returns_4xx(tmp_path, monkeypatch):
