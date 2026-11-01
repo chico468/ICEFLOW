@@ -1,0 +1,40 @@
+{
+  "generated_at": "2026-11-01T08:52:46+00:00",
+  "phase": 4,
+  "part": 1,
+  "name": "tracks-only hindcast",
+  "environment": "synthetic EnvironmentModel (no ERA5 wind)",
+  "database": "/Users/venkateshs/Desktop/Photos/My Photo's/Kutty/python/ICEFLOW/data/raw/iceberg/consolidated_database_v6.zip",
+  "forecast_hours": 168,
+  "leads": [
+    1,
+    3,
+    7
+  ],
+  "n_raw_tracks": 601,
+  "n_moving_tracks": 464,
+  "n_sample_tracks": 30,
+  "results": {
+    "1": {
+      "lead_days": 1,
+      "n_forecasts": 123,
+      "n_icebergs": 21,
+      "median_error_km": 20.115649637983616,
+      "p90_error_km": 54.81189116373282
+    },
+    "3": {
+      "lead_days": 3,
+      "n_forecasts": 118,
+      "n_icebergs": 21,
+      "median_error_km": 56.60961728622529,
+      "p90_error_km": 162.86700735958257
+    },
+    "7": {
+      "lead_days": 7,
+      "n_forecasts": 99,
+      "n_icebergs": 19,
+      "median_error_km": 106.1520703193681,
+      "p90_error_km": 414.8497027839206
+    }
+  }
+}
