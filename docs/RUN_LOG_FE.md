@@ -53,7 +53,7 @@ Ports: frontend 5199, backend 8199 (strictPort, reuseExistingServer false)
   - frontend/e2e/evidence-screenshots/taskC-plan-screen.png
   - frontend/e2e/evidence-screenshots/taskC-scorecard.png
 
-## STAGE B — DONE (committed: see below)
+## STAGE B — DONE (committed: a5685f7)
 - TimelineSource interface (frontend/src/lib/timeline.ts): RecordedTimelineSource from
   golden fixture ("Recorded replay — real data, departure 2022-01-15") and
   LiveTimelineSource (GET /api/v1/voyage/{id}/timeline). Live failure shows error, never
