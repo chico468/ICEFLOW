@@ -75,7 +75,7 @@ Ports: frontend 5199, backend 8199 (strictPort, reuseExistingServer false)
   - frontend/e2e/evidence-screenshots/taskB-sail.png (Sail screen with sim clock)
   - frontend/e2e/evidence-screenshots/taskD-etadeparture.png (FE-4 departure picker)
 
-## STAGE C — DONE (committed: see below)
+## STAGE C — DONE (committed: 137195b)
 - 3D dependencies installed: three ^0.160.1, @react-three/fiber ^8.18.0, @react-three/drei ^9.122.0 (React 18 compatible)
 - C1: Ocean (Gerstner-sum shader from Hs/Tp/wave_dir), sky (sun azimuth/elevation), ship (side third-person procedural hull)
 - C2: iceMask() pure function (boolean floe grid matching SIC ±0.05), floes from path ahead
