@@ -58,5 +58,11 @@
   6. docs/SPRINT.md: real timeline shapes + provenance conventions (legacy status/note vs kind/age_hours).
 - Full pytest: 354 passed, 1 warning (340 baseline + 6 solar + 8 timeline), clean tree on real-voyage 7fd0e51.
 - Pushed to origin/real-voyage. Compare URL: https://github.com/chico468/ICEFLOW/compare/main...real-voyage
+- Branch hygiene (task 5): be2-sic-ml has 3 UNPUSHED commits (none pushed):
+    f13d39c BE-2: add AUTONOMY.md, RUN_LOG.md, R0 matrix, extras, ice-box test v2
+    e587d02 BE-2: fetch ERA5 via single contiguous zarr slice then subsample to 3-hourly
+    5d5c258 BE-2: rewrite build_replay_pack to use ARCO-ERA5 zarr + GLORYS12V1 + NSIDC V6
+  Cherry-pick to real-voyage ATTEMPTED → CONFLICTED (structural: be2-sic-ml rewrites build_replay_pack.py to a zarr-based approach; real-voyage has a working netcdf-based build_replay_pack with the R0 matrix at 906eb86 and identical docs at 37a5990). NOT cherry-picked — would regress real-voyage's working version and add tests importing zarr-only symbols (failing tests, rule 4). real-voyage already carries equivalent functionality.
+  Per instruction 5, reset be2-sic-ml back to origin/be2-sic-ml via `git branch -f` (local-only, not force-push). SHAs logged above.
 - Extras download still in progress (will complete and log sizes; not a blocker for PHASE 2 push).
 - No items BLOCKED.
