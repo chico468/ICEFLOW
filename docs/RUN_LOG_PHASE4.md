@@ -6,7 +6,16 @@
 - Committed as 25f1f8d
 - Full pytest: 367 passed, 3 warnings in 241.87s (0:04:01), clean tree
 
-## 2026-11-01: Part A demo server — uvicorn on port 8000
+## 2026-11-01: Part B — coverage endpoint (branch be-coverage-endpoint)
+- Added GET /api/v1/environment/coverage to src/api/routers/copernicus_layers.py
+  - replay {start, end, bbox, products:[{layer, product, version, kind, start, end}]} from ICEFLOW_REPLAY_PACK manifest
+  - real_ice {latest_cached_date, walkback_days=14, today, available} from NSIDC cache
+- Added _check_coverage() to src/api/routers/navigation.py: plan requests outside coverage return
+  HTTP 422 with {code: "out_of_coverage", variable, requested, available}; never 500, never silent fallback
+- Added tests/test_coverage.py (6 tests): endpoint shape, product kinds, ISO date, out-of-coverage 422,
+  missing replay_date 422, simulated mode always 200
+- All 6 tests pass
+
 - ICEFLOW_REPLAY_PACK=~/iceflow-data/replay-pack-2022-01 (existing pack, not copied from /tmp)
 - No old uvicorn on port 8000 (old one on 8199, left untouched)
 - Started: ICEFLOW_REPLAY_PACK=~/iceflow-data/replay-pack-2022-01 python3 -m uvicorn src.api.main:app --host 127.0.0.1 --port 8000

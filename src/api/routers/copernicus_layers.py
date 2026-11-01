@@ -1,12 +1,17 @@
 """Time-aware metadata and public tile references for Copernicus Marine layers."""
 from __future__ import annotations
 
+import json
+import os
+import re
 from collections.abc import Mapping
-from datetime import datetime
+from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
 from typing import Literal
 from urllib.parse import quote
 
-from fastapi import APIRouter, HTTPException, Path, Query, Request, Response
+from fastapi import APIRouter, HTTPException, Query, Request, Response
+from fastapi import Path as FastAPIPath
 from pydantic import BaseModel, Field
 
 from src.core.environment_time import (
@@ -18,6 +23,7 @@ from src.core.environment_time import (
 )
 from src.data import copernicus_tiles
 from src.data.copernicus_marine import resolve_environment_layers
+from src.data.nsidc_sea_ice import _FILENAME_RE_V6, default_cache_dir
 
 router = APIRouter(prefix="/api/v1/environment", tags=["Copernicus Marine layers"])
 
@@ -383,9 +389,9 @@ def environment_layers(
 )
 def copernicus_sea_ice_tile(
     mode: Literal["edge", "concentration"],
-    z: int = Path(ge=0, le=10),
-    x: int = Path(ge=0),
-    y: int = Path(ge=0),
+    z: int = FastAPIPath(ge=0, le=10),
+    x: int = FastAPIPath(ge=0),
+    y: int = FastAPIPath(ge=0),
     target_time_utc: str = Query(..., description="Phase 1 environmental target time in UTC."),
     source_valid_time_utc: str = Query(
         ...,
@@ -454,3 +460,116 @@ def copernicus_sea_ice_tile(
         media_type="image/png",
         headers={"Cache-Control": "public, max-age=900"},
     )
+
+
+# ------------------------------------------------------------------ coverage
+class CoverageProduct(BaseModel):
+    layer: str
+    product: str
+    version: str
+    kind: str
+    start: str | None = None
+    end: str | None = None
+
+
+class CoverageReplay(BaseModel):
+    start: str | None = None
+    end: str | None = None
+    bbox: list[float] | None = None
+    products: list[CoverageProduct] = []
+
+
+class CoverageRealIce(BaseModel):
+    latest_cached_date: str | None = None
+    walkback_days: int = 14
+    today: str
+    available: bool = False
+
+
+class CoverageResponse(BaseModel):
+    replay: CoverageReplay
+    real_ice: CoverageRealIce
+
+
+def _replay_pack_dir() -> Path | None:
+    configured = os.environ.get("ICEFLOW_REPLAY_PACK")
+    if configured:
+        p = Path(configured).expanduser()
+        if p.is_dir():
+            return p
+    # Fallback: check common locations.
+    for candidate in (Path.home() / "iceflow-data" / "replay-pack-2022-01", Path("/tmp/iceflow-full-pack")):
+        if candidate.is_dir():
+            return candidate
+    return None
+
+
+def _latest_nsidc_cached_date(cache_dir: Path | None = None) -> date | None:
+    """Find the latest dated NSIDC V6 file in the cache directory."""
+    cache = cache_dir or default_cache_dir()
+    if not cache.is_dir():
+        return None
+    best: date | None = None
+    for path in cache.glob("sic_pss25_*_*.nc"):
+        m = _FILENAME_RE_V6.fullmatch(path.name) or re.fullmatch(r"sic_pss25_(\d{8})_.*", path.name)
+        if m:
+            try:
+                d = datetime.strptime(m.group(1), "%Y%m%d").date()
+                if best is None or d > best:
+                    best = d
+            except ValueError:
+                continue
+    return best
+
+
+@router.get("/coverage", response_model=CoverageResponse)
+def environment_coverage() -> CoverageResponse:
+    """
+    Data-coverage summary for the configured replay pack and the real-ice cache.
+
+    Tells the client what dates and products are available so it can avoid
+    requesting plan/route computations outside the data window (which would
+    return 422 out_of_coverage rather than falling back silently).
+    """
+    today = datetime.now(timezone.utc).date().isoformat()
+
+    # ---- replay coverage from the pack manifest ----
+    pack_dir = _replay_pack_dir()
+    replay = CoverageReplay()
+    if pack_dir is not None:
+        manifest_path = pack_dir / "manifest.json"
+        if manifest_path.is_file():
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            start = manifest.get("start")
+            days = manifest.get("days", 0)
+            end = None
+            if start and days:
+                end = (datetime.strptime(start, "%Y-%m-%d").date() + timedelta(days=days - 1)).isoformat()
+            bbox = manifest.get("bbox")
+            products: list[CoverageProduct] = []
+            for p in manifest.get("products", []):
+                products.append(
+                    CoverageProduct(
+                        layer=p.get("request_params", {}).get("variables", [p.get("product", "")])[0]
+                        if p.get("request_params", {}).get("variables")
+                        else p.get("product", ""),
+                        product=p.get("product", ""),
+                        version=p.get("version", ""),
+                        kind=p.get("provenance_kind", ""),
+                        start=p.get("valid_from") or start,
+                        end=p.get("valid_to") or end,
+                    )
+                )
+            replay = CoverageReplay(start=start, end=end, bbox=bbox, products=products)
+
+    # ---- real_ice coverage from the NSIDC cache ----
+    cache_dir = default_cache_dir()
+    latest = _latest_nsidc_cached_date(cache_dir)
+    real_ice = CoverageRealIce(
+        latest_cached_date=latest.isoformat() if latest else None,
+        walkback_days=14,
+        today=today,
+        available=latest is not None,
+    )
+
+    return CoverageResponse(replay=replay, real_ice=real_ice)
