@@ -22,6 +22,7 @@ from typing import Any, AsyncIterator, Dict
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 
 from src.core.constants import (
     DATA_PROVENANCE,
@@ -156,6 +157,9 @@ if _cors_origins is not None:
         allow_headers=["*"],
     )
 # else: no CORS middleware (same-origin only)
+
+# GZip compression for bandwidth-capped payloads (e.g. timeline exports).
+app.add_middleware(GZipMiddleware, minimum_size=512)
 
 app.include_router(geo_router.router)
 app.include_router(environment_router.router)

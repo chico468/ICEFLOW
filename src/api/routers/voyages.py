@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 from datetime import datetime
 from typing import Any, Dict, List, Literal, Optional
 
@@ -15,10 +16,14 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from src.core.environment_time import parse_utc_datetime
 
+from src.core.geo import haversine_nm, initial_bearing_deg
 from src.core.lindqvist_model import VesselParameters, get_vessel_preset
+from src.core.solar import sun_position
 from src.core.polaris_risk import IceClass
 from src.core.route_optimizer import RouteWeights
 from src.core.voyage import VoyageState, VoyageTick, create_voyage
+from src.data.environment_provider import OutOfCoverage
+from src.data.icebergs import bergs_near
 from src.data.nsidc_sea_ice import NSIDCUnavailableError
 from src.data.stations import get_waypoint, resolve_endpoint
 from src.services.bandwidth import bandwidth_report
@@ -141,6 +146,220 @@ def get_voyage(voyage_id: str) -> VoyageState:
     if state is None:
         raise HTTPException(status_code=404, detail=f"Unknown voyage: {voyage_id}")
     return state
+
+
+# ------------------------------------------------------------------ timeline
+_MAX_TIMELINE_STEPS = 4000  # size cap: keep the JSON payload bounded
+
+
+def _wind_components(speed_ms: float | None, dir_from_deg: float | None):
+    """Derive eastward/northward wind components (m/s) from speed and FROM-direction."""
+    if speed_ms is None or dir_from_deg is None:
+        return None, None
+    rad = math.radians(dir_from_deg)
+    # Meteorological direction is WHERE the wind comes FROM; the vector it blows
+    # toward is dir + 180 deg.
+    u = -speed_ms * math.sin(rad)  # eastward
+    v = -speed_ms * math.cos(rad)  # northward
+    return u, v
+
+
+def _cog_deg(lat0, lon0, lat1, lon1) -> float | None:
+    """Course over ground from the previous fix to this fix (degrees clockwise from north)."""
+    if lat0 is None or lon0 is None:
+        return None
+    d = haversine_nm(lat0, lon0, lat1, lon1)
+    if d < 1e-6:
+        return None
+    return initial_bearing_deg(lat0, lon0, lat1, lon1)
+
+
+def _provenance_from_state(state: VoyageState) -> dict[str, dict[str, Any]]:
+    """Per-variable provenance fallback when no live engine/environment is available."""
+    out: dict[str, dict[str, Any]] = {}
+    for prov in state.provenance or []:
+        entry = {
+            "kind": prov.kind,
+            "source": prov.source,
+            "product": prov.product,
+            "valid_time": prov.valid_time,
+            "age_hours": prov.age_hours,
+        }
+        if prov.layer == "sea_ice_field":
+            out["ice_conc"] = entry
+        elif prov.layer == "atmosphere_ocean":
+            for var in ("u10", "v10", "wind_speed_ms", "wind_dir_from_deg", "sig_wave_height_m",
+                        "t2m_c", "msl_hpa", "snowfall", "total_cloud_cover"):
+                out[var] = entry
+    return out
+
+
+@router.get("/voyage/{voyage_id}/timeline")
+def voyage_timeline(
+    voyage_id: str,
+    step_min: float = Query(default=10.0, gt=0.0, le=1440.0, description="Minutes between timeline steps"),
+    ) -> Dict[str, Any]:
+    """
+    Replay a voyage as a timeline of per-step environmental and navigation state.
+
+    Each step carries t_utc, position, speed/course/heading, ice concentration with its
+    valid time and product, wind, waves, currents, nearby observed bergs, alerts and solar
+    position. Anything the data cannot supply is omitted and listed in ``not_available``.
+    ``provenance_by_variable`` gives {kind, source, product, valid_time, age_hours} per
+    variable. The response is gzipped and size-capped via ``step_min``.
+    """
+    store = get_store()
+    engine = store.engine(voyage_id)
+    if engine is None:
+        state = store.load(voyage_id)
+        if state is None:
+            raise HTTPException(status_code=404, detail=f"Unknown voyage: {voyage_id}")
+        ticks = list(state.ticks)
+        env = None
+    else:
+        state = engine.state
+        ticks = list(state.ticks)
+        env = engine.env
+
+    departure = parse_utc_datetime(state.departure_iso)
+
+    prov_fallback = _provenance_from_state(state)
+
+    # Select ticks at the requested step interval (measure from departure).
+    step_seconds = step_min * 60.0
+    selected: List[VoyageTick] = []
+    last_step_index: int | None = None
+    for tick in ticks:
+        tick_seconds = tick.sim_hours * 3600.0
+        step_index = int(round(tick_seconds / step_seconds)) if step_seconds > 0 else 0
+        if last_step_index is None or step_index != last_step_index:
+            selected.append(tick)
+            last_step_index = step_index
+        if len(selected) >= _MAX_TIMELINE_STEPS:
+            break
+
+    not_available: set[str] = set()
+    steps: List[Dict[str, Any]] = []
+    prev_lat: float | None = None
+    prev_lon: float | None = None
+
+    for tick in selected:
+        t_utc = tick.timestamp_iso
+        lat, lon = tick.latitude, tick.longitude
+
+        # --- provenance / coverage from the live environment (when available) ---
+        prov_by_variable: dict[str, dict[str, Any]] = dict(prov_fallback)
+        wave_valid = True
+        if env is not None:
+            try:
+                sample = env.sample(lat, lon, parse_utc_datetime(t_utc))
+                prov_by_variable = {**prov_fallback, **(sample.provenance_by_variable or {})}
+                wave_valid = bool(sample.wave_valid)
+                # Re-derive wind direction/speed from the sampled components for consistency.
+                if sample.u10 is not None and sample.v10 is not None:
+                    tick_wind_speed = math.hypot(sample.u10, sample.v10)
+                    tick_wind_dir = (math.degrees(math.atan2(sample.u10, sample.v10)) + 360.0) % 360.0
+                else:
+                    tick_wind_speed = tick.wind_speed_ms
+                    tick_wind_dir = tick.wind_dir_from_deg
+            except OutOfCoverage:
+                not_available.add("environment_sample")
+                tick_wind_speed = tick.wind_speed_ms
+                tick_wind_dir = tick.wind_dir_from_deg
+        else:
+            tick_wind_speed = tick.wind_speed_ms
+            tick_wind_dir = tick.wind_dir_from_deg
+
+        u10, v10 = _wind_components(tick_wind_speed, tick_wind_dir)
+        if u10 is None:
+            not_available.add("wind_u")
+            not_available.add("wind_v")
+
+        cog = _cog_deg(prev_lat, prev_lon, lat, lon)
+        if cog is None and tick is selected[0]:
+            not_available.add("cog")
+        prev_lat, prev_lon = lat, lon
+
+        hs = tick.wave_height_m
+        if not wave_valid:
+            hs = None
+            not_available.add("hs")
+        elif hs is None:
+            not_available.add("hs")
+
+        # Wave peak period and wave direction are not carried per-tick.
+        not_available.add("tp")
+        wave_dir = tick_wind_dir  # best available proxy (wind direction)
+        if wave_dir is None:
+            not_available.add("wave_dir")
+
+        uo, vo = None, None
+        not_available.add("current_u")
+        not_available.add("current_v")
+
+        ice_conc = tick.ice_concentration
+        if ice_conc is None:
+            not_available.add("ice_conc")
+
+        # Solar position at this fix.
+        try:
+            sun_az, sun_el = sun_position(lat, lon, parse_utc_datetime(t_utc))
+        except Exception:
+            sun_az, sun_el = None, None
+            not_available.add("sun")
+
+        # Nearby observed bergs (fixed catalogue, never invented).
+        try:
+            near = bergs_near(lat, lon, radius_nm=50.0)
+        except Exception:
+            near = []
+            not_available.add("bergs")
+        bergs = [
+            {
+                "name": b.berg_id,
+                "lat": b.latitude,
+                "lon": b.longitude,
+                "length_nm": round(b.length_m / 1852.0, 2) if b.length_m else None,
+                "width_nm": round(b.width_m / 1852.0, 2) if b.width_m else None,
+                "age": None,
+                "kind": None,
+            }
+            for b in near
+        ]
+        if not bergs:
+            not_available.add("nearby_bergs")
+
+        alerts = list(tick.active_alerts)
+
+        steps.append({
+            "t_utc": t_utc,
+            "lat": lat,
+            "lon": lon,
+            "sog_kn": tick.speed_over_ground_knots,
+            "cog": cog,
+            "heading": tick.heading_deg,
+            "ice_conc": ice_conc,
+            "wind_u": u10,
+            "wind_v": v10,
+            "hs": hs,
+            "tp": None,
+            "wave_dir": wave_dir,
+            "current_u": uo,
+            "current_v": vo,
+            "nearby_bergs": bergs,
+            "alerts": alerts,
+            "sun_azimuth_deg": None if sun_az is None or (isinstance(sun_az, float) and math.isnan(sun_az)) else round(sun_az, 2),
+            "sun_elevation_deg": None if sun_el is None or (isinstance(sun_el, float) and math.isnan(sun_el)) else round(sun_el, 2),
+            "provenance_by_variable": prov_by_variable,
+        })
+
+    return {
+        "voyage_id": voyage_id,
+        "step_min": step_min,
+        "n_steps": len(steps),
+        "not_available": sorted(not_available),
+        "steps": steps,
+    }
 
 
 @router.post("/voyage/{voyage_id}/step")

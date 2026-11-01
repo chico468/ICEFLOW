@@ -95,6 +95,8 @@ class EnvSample:
     msl_hpa: float | None = None
     sig_wave_height_m: float | None = None
     visibility_km: float | None = None
+    snowfall: float | None = None
+    total_cloud_cover: float | None = None
     katabatic_component_ms: float | None = None
 
     wave_valid: bool = True
@@ -123,6 +125,8 @@ class EnvSample:
             "msl_hpa": self.msl_hpa,
             "sig_wave_height_m": self.sig_wave_height_m,
             "visibility_km": self.visibility_km,
+            "snowfall": self.snowfall,
+            "total_cloud_cover": self.total_cloud_cover,
             "katabatic_component_ms": self.katabatic_component_ms,
             "wave_valid": self.wave_valid,
             "ice_valid": self.ice_valid,
@@ -335,6 +339,17 @@ class ReplayProvider:
         ice = self._interp_var(ice_ds, "ice_conc", lat, lon, t_utc, provenance, "nrt_ice_concentration")
         swh = self._interp_var(wave_ds, "swh", lat, lon, t_utc, provenance, "era5_waves")
 
+        # Optional 3-hourly ERA5 surface fields - only present when the pack
+        # was built with the extra surface products. Omitted (None) otherwise.
+        t2m_ds = self._dataset_for("era5_2m_temperature")
+        msl_ds = self._dataset_for("era5_mean_sea_level_pressure")
+        sf_ds = self._dataset_for("era5_snowfall")
+        tcc_ds = self._dataset_for("era5_total_cloud_cover")
+        t2m = self._interp_var(t2m_ds, "t2m", lat, lon, t_utc, provenance, "era5_2m_temperature")
+        msl = self._interp_var(msl_ds, "msl", lat, lon, t_utc, provenance, "era5_mean_sea_level_pressure")
+        snowfall = self._interp_var(sf_ds, "sf", lat, lon, t_utc, provenance, "era5_snowfall")
+        total_cloud_cover = self._interp_var(tcc_ds, "tcc", lat, lon, t_utc, provenance, "era5_total_cloud_cover")
+
         # Wave masking under ice: waves are meaningless under ice cover.
         wave_valid = True
         if swh is not None:
@@ -370,10 +385,12 @@ class ReplayProvider:
             current_speed_ms=current_speed,
             current_dir_to_deg=current_dir,
             sst_c=None,
-            t2m_c=None,
-            msl_hpa=None,
+            t2m_c=t2m,
+            msl_hpa=msl,
             sig_wave_height_m=swh,
             visibility_km=None,
+            snowfall=snowfall,
+            total_cloud_cover=total_cloud_cover,
             katabatic_component_ms=None,
             wave_valid=wave_valid,
             ice_valid=(ice is not None),
@@ -653,6 +670,8 @@ class SimulatedProvider:
             msl_hpa=core.msl_hpa,
             sig_wave_height_m=core.sig_wave_height_m,
             visibility_km=core.visibility_km,
+            snowfall=None,
+            total_cloud_cover=None,
             katabatic_component_ms=core.katabatic_component_ms,
             wave_valid=True,
             ice_valid=True,
