@@ -29,7 +29,7 @@ Ports: frontend 5199, backend 8199 (strictPort, reuseExistingServer false)
 - repack_products: [era5_wind_10m, cmems_current, nrt_ice_concentration, glorys_siconc]
 - sha256: 07f744dde099746132501f4d76b2246217e636521b969901c0a3e4564620bb66
 
-## STAGE A — DONE (committed: a1b2c3d)
+## STAGE A — DONE (committed: ed178ee)
 - normalizeProvenance() in frontend/src/lib/provenance.ts — accepts both API shape
   (status/note/age_days) and fixture shape (kind/age_hours). Canonical kinds:
   observed / reanalysis / forecast / derived / simulated / real-seed. Legacy
