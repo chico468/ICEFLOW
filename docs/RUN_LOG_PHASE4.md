@@ -21,6 +21,15 @@
   - lead 3d: best=velocity_7d_damped, test median 7.23 km / p90 27.43 km, coverage p50 0.457 / p90 0.932 (n=21327)
   - lead 7d: best=no_move, test median 21.53 km / p90 77.24 km, coverage p50 0.381 / p90 0.886 (n=21104)
   Unit tests: tests/test_iceberg_physics_part1.py (fixtures, no network, 4 passed).
+- Step 4 paired comparison (identical samples, VAL/TEST): complete. scripts/iceberg_physics_comparison.py
+  evaluates the three no-forcing baselines plus wind_only / full_physics / velocity_initialised on identical
+  (track, t0, lead) samples; VAL chooses best baseline per lead; TEST reports median/p90/n and bootstrap CI
+  by iceberg vs the best baseline; promoted computed in code. Report: models/eval/iceberg_physics_report.json
+  (data_source "real"; forcing variants marked not-available because ERA5 wind + GLORYS current are not on
+  disk — not fabricated). Unit tests: tests/test_iceberg_physics_comparison.py (3 passed).
+- Step 5 velocity-initialised physics variant: defined pre-TEST and chosen on VAL only (added to FORCING_VARIANTS
+  alongside wind_only and full_physics). Not computable with real numbers until PART 2 ERA5 download and GLORYS
+  ingest are present; marked not-available, not fabricated.
 - Simulated-forcing sanity run (not a real result): models/eval/iceberg_hindcast_simulated_forcing.json,
   data_source "simulated_forcing", kept out of the scorecard and README.
 

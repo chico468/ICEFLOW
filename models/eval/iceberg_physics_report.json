@@ -1,0 +1,283 @@
+{
+  "generated_at": "2026-11-01T09:45:36+00:00",
+  "phase": 4,
+  "step": 4,
+  "name": "paired iceberg drift comparison on identical (track, t0, lead) samples",
+  "data_source": "real",
+  "product": "BYU/NIC consolidated Antarctic iceberg database v6",
+  "train_start_year": 2005,
+  "train_end_year": 2017,
+  "val_year": 2018,
+  "test_start_year": 2019,
+  "test_end_year": 2022,
+  "leads": [
+    1,
+    3,
+    7
+  ],
+  "baselines": [
+    {
+      "key": "no_move",
+      "label": "no movement"
+    },
+    {
+      "key": "velocity_3d",
+      "label": "3-day constant velocity"
+    },
+    {
+      "key": "velocity_7d_damped",
+      "label": "7-day damped constant velocity"
+    }
+  ],
+  "forcing_available": false,
+  "forcing_note": "Wind-only ablation (ERA5 wind), full physics (ERA5 wind + GLORYS currents, surface and 0-100 m mean), and velocity-initialised physics (start from the last 3-day observed velocity) require PART 2 ERA5 download and GLORYS ingest. Rows omitted, not fabricated, when data is absent.",
+  "method": "VAL (2018) selects best baseline per lead by median error. TEST (2019-2022) reports median/p90/n on identical (track, t0, lead) samples. Bootstrap CI by iceberg of (variant - best baseline) RMSE difference; promoted = best baseline beats runner-up with CI excluding zero. No tuning on TEST.",
+  "per_lead": [
+    {
+      "lead_days": 1,
+      "val": {
+        "no_move": {
+          "median_km": 1.456266366192233,
+          "p90_km": 15.16402365182023,
+          "n_samples": 8999
+        },
+        "velocity_3d": {
+          "median_km": 2.1341660565946796,
+          "p90_km": 13.665032651766232,
+          "n_samples": 8999
+        },
+        "velocity_7d_damped": {
+          "median_km": 1.858589818665482,
+          "p90_km": 13.096763117821215,
+          "n_samples": 8999
+        }
+      },
+      "best_baseline_val": "no_move",
+      "test": {
+        "no_move": {
+          "label": "no movement",
+          "median_km": 3.323241818910004,
+          "p90_km": 13.509816356731745,
+          "n_samples": 21449,
+          "n_tracks": 50,
+          "n_steps": 21449
+        },
+        "velocity_3d": {
+          "label": "3-day constant velocity",
+          "median_km": 1.8833799508783968,
+          "p90_km": 8.77640574852302,
+          "n_samples": 21449,
+          "n_tracks": 50,
+          "n_steps": 21449
+        },
+        "velocity_7d_damped": {
+          "label": "7-day damped constant velocity",
+          "median_km": 2.3461901865023345,
+          "p90_km": 10.31932956223138,
+          "n_samples": 21449,
+          "n_tracks": 50,
+          "n_steps": 21449
+        },
+        "wind_only": {
+          "label": "wind_only",
+          "available": false,
+          "reason": "ERA5 wind and/or GLORYS current not on disk (PART 2/3 pending)"
+        },
+        "full_physics": {
+          "label": "full_physics",
+          "available": false,
+          "reason": "ERA5 wind and/or GLORYS current not on disk (PART 2/3 pending)"
+        },
+        "velocity_initialised": {
+          "label": "velocity_initialised",
+          "available": false,
+          "reason": "ERA5 wind and/or GLORYS current not on disk (PART 2/3 pending)"
+        },
+        "ci_vs_best_baseline": {
+          "velocity_3d": {
+            "rmse_variant_km": 6.4507,
+            "rmse_best_baseline_km": 8.701,
+            "ci_lo": -2.8446,
+            "ci_hi": -1.4298,
+            "diff_km": -2.2502,
+            "ci_excludes_zero": true
+          },
+          "velocity_7d_damped": {
+            "rmse_variant_km": 7.0178,
+            "rmse_best_baseline_km": 8.701,
+            "ci_lo": -2.0046,
+            "ci_hi": -1.2183,
+            "diff_km": -1.6832,
+            "ci_excludes_zero": true
+          }
+        },
+        "promoted": false,
+        "best_baseline": "no_move"
+      }
+    },
+    {
+      "lead_days": 3,
+      "val": {
+        "no_move": {
+          "median_km": 6.149922155491403,
+          "p90_km": 36.9931496996257,
+          "n_samples": 8948
+        },
+        "velocity_3d": {
+          "median_km": 7.075197919444614,
+          "p90_km": 35.52993657632044,
+          "n_samples": 8948
+        },
+        "velocity_7d_damped": {
+          "median_km": 6.119786725210645,
+          "p90_km": 32.56263148873121,
+          "n_samples": 8948
+        }
+      },
+      "best_baseline_val": "velocity_7d_damped",
+      "test": {
+        "no_move": {
+          "label": "no movement",
+          "median_km": 9.875510138550798,
+          "p90_km": 36.5827127776391,
+          "n_samples": 21327,
+          "n_tracks": 50,
+          "n_steps": 21327
+        },
+        "velocity_3d": {
+          "label": "3-day constant velocity",
+          "median_km": 6.5614828265174765,
+          "p90_km": 25.49050115894459,
+          "n_samples": 21327,
+          "n_tracks": 50,
+          "n_steps": 21327
+        },
+        "velocity_7d_damped": {
+          "label": "7-day damped constant velocity",
+          "median_km": 7.233187868193021,
+          "p90_km": 27.432596069087218,
+          "n_samples": 21327,
+          "n_tracks": 50,
+          "n_steps": 21327
+        },
+        "wind_only": {
+          "label": "wind_only",
+          "available": false,
+          "reason": "ERA5 wind and/or GLORYS current not on disk (PART 2/3 pending)"
+        },
+        "full_physics": {
+          "label": "full_physics",
+          "available": false,
+          "reason": "ERA5 wind and/or GLORYS current not on disk (PART 2/3 pending)"
+        },
+        "velocity_initialised": {
+          "label": "velocity_initialised",
+          "available": false,
+          "reason": "ERA5 wind and/or GLORYS current not on disk (PART 2/3 pending)"
+        },
+        "ci_vs_best_baseline": {
+          "no_move": {
+            "rmse_variant_km": 22.767,
+            "rmse_best_baseline_km": 17.6293,
+            "ci_lo": 3.8153,
+            "ci_hi": 6.0372,
+            "diff_km": 5.1377,
+            "ci_excludes_zero": true
+          },
+          "velocity_3d": {
+            "rmse_variant_km": 16.9883,
+            "rmse_best_baseline_km": 17.6293,
+            "ci_lo": -1.4513,
+            "ci_hi": 0.4629,
+            "diff_km": -0.641,
+            "ci_excludes_zero": false
+          }
+        },
+        "promoted": false,
+        "best_baseline": "velocity_7d_damped"
+      }
+    },
+    {
+      "lead_days": 7,
+      "val": {
+        "no_move": {
+          "median_km": 12.38870165314269,
+          "p90_km": 72.57159409503778,
+          "n_samples": 8877
+        },
+        "velocity_3d": {
+          "median_km": 17.447542598942295,
+          "p90_km": 80.73108959871038,
+          "n_samples": 8877
+        },
+        "velocity_7d_damped": {
+          "median_km": 13.388871905219254,
+          "p90_km": 63.598410695673344,
+          "n_samples": 8877
+        }
+      },
+      "best_baseline_val": "no_move",
+      "test": {
+        "no_move": {
+          "label": "no movement",
+          "median_km": 21.528619328114786,
+          "p90_km": 77.2376892148101,
+          "n_samples": 21104,
+          "n_tracks": 50,
+          "n_steps": 21104
+        },
+        "velocity_3d": {
+          "label": "3-day constant velocity",
+          "median_km": 17.402943428372154,
+          "p90_km": 63.97027194303434,
+          "n_samples": 21104,
+          "n_tracks": 50,
+          "n_steps": 21104
+        },
+        "velocity_7d_damped": {
+          "label": "7-day damped constant velocity",
+          "median_km": 16.11950050703065,
+          "p90_km": 59.241029989391855,
+          "n_samples": 21104,
+          "n_tracks": 50,
+          "n_steps": 21104
+        },
+        "wind_only": {
+          "label": "wind_only",
+          "available": false,
+          "reason": "ERA5 wind and/or GLORYS current not on disk (PART 2/3 pending)"
+        },
+        "full_physics": {
+          "label": "full_physics",
+          "available": false,
+          "reason": "ERA5 wind and/or GLORYS current not on disk (PART 2/3 pending)"
+        },
+        "velocity_initialised": {
+          "label": "velocity_initialised",
+          "available": false,
+          "reason": "ERA5 wind and/or GLORYS current not on disk (PART 2/3 pending)"
+        },
+        "ci_vs_best_baseline": {
+          "velocity_3d": {
+            "rmse_variant_km": 41.4339,
+            "rmse_best_baseline_km": 48.2797,
+            "ci_lo": -10.4107,
+            "ci_hi": -2.1199,
+            "diff_km": -6.8458,
+            "ci_excludes_zero": true
+          },
+          "velocity_7d_damped": {
+            "rmse_variant_km": 37.6936,
+            "rmse_best_baseline_km": 48.2797,
+            "ci_lo": -12.6369,
+            "ci_hi": -7.8032,
+            "diff_km": -10.5862,
+            "ci_excludes_zero": true
+          }
+        },
+        "promoted": false,
+        "best_baseline": "no_move"
+      }
+    }
+  ]
+}
