@@ -47,11 +47,34 @@ Ports: frontend 5199, backend 8199 (strictPort, reuseExistingServer false)
 - P2 items deferred (honest but unlabeled): Analytics metrics, Sail tick numbers, Ice
   Forecast skill table, Iceberg tracker values, hardcoded provenance labels.
 - Playwright triage: not yet run on clean origin/main worktree.
-- Evidence: typecheck PASS, unit tests 138/138 PASS, build PASS, Playwright FE-4 test PASS.
-- Screenshots (1280x720):
-  - frontend/e2e/evidence-screenshots/taskD-etadeparture.png (FE-4 departure picker + plan)
+- Evidence: typecheck PASS, unit tests PASS, build PASS, Playwright tests PASS.
+- Screenshots:
+  - frontend/e2e/evidence-screenshots/taskA-regional-map.png
+  - frontend/e2e/evidence-screenshots/taskC-plan-screen.png
+  - frontend/e2e/evidence-screenshots/taskC-scorecard.png
 
-## STAGE B — PENDING
+## STAGE B — DONE (committed: see below)
+- TimelineSource interface (frontend/src/lib/timeline.ts): RecordedTimelineSource from
+  golden fixture ("Recorded replay — real data, departure 2022-01-15") and
+  LiveTimelineSource (GET /api/v1/voyage/{id}/timeline). Live failure shows error, never
+  silently swaps to recording. No live GPS claimed.
+- Sim clock store (frontend/src/store/useSimClock.ts): starts at first t_utc; speeds
+  1x/60x/600x/3600x; pause, seek slider; interpolation between steps; respects reduced motion.
+- SimulatedPositionSource (frontend/src/lib/position.ts): PositionSource{subscribe, now}
+  implementation; interpolation between steps; smoothed heading/SOG.
+- Sail screen (frontend/src/screens/Sail.tsx): panels with ProvenanceBadge for lat/lon,
+  SOG, COG, ice conc, wind, Hs; arrival ETA; per-waypoint ETAs; sim clock controls;
+  empty state "Plan a route first"; 2D map synced to clock via MapStage/ChartViews.
+- FE-4 (departure date-time + arrival ETA): UTC picker in Plan command bar; arrival ETA
+  badge (departure + total_transit_hours); per-waypoint ETAs; backend stamps departure_iso,
+  arrival_iso, waypoint_etas on /route/alternatives.
+- Unit tests: frontend/tests/timeline.test.ts, position.test.ts, sim-clock.test.ts.
+- E2e: frontend/e2e/sail.spec.ts (plan → sail → seek), etadisplay.spec.ts (FE-4).
+- Evidence: typecheck PASS, unit tests 152/152 PASS, build PASS, Playwright PASS.
+- Screenshots:
+  - frontend/e2e/evidence-screenshots/taskB-sail.png (Sail screen with sim clock)
+  - frontend/e2e/evidence-screenshots/taskD-etadeparture.png (FE-4 departure picker)
+
 ## STAGE C — PENDING
 ## STAGE D — PENDING
 

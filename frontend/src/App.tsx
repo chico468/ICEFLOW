@@ -25,6 +25,7 @@ import { Analytics } from './screens/Analytics';
 import { BridgeConsole } from './screens/BridgeConsole';
 import { IceForecast } from './screens/IceForecast';
 import { IcebergTracker } from './screens/IcebergTracker';
+import { Sail } from './screens/Sail';
 import { Scorecard } from './screens/Scorecard';
 import { VoyagePlanner } from './screens/VoyagePlanner';
 import { useAppStore, type ScreenId } from './store/useAppStore';
@@ -40,6 +41,7 @@ interface Tab {
 const TABS: Tab[] = [
   { id: 'planner', label: 'Plan', icon: Layers, simple: true },
   { id: 'bridge', label: 'Sail', icon: Ship, simple: true },
+  { id: 'sail', label: 'Voyage', icon: Ship, simple: false },
   { id: 'forecast', label: 'Sea ice', icon: Snowflake, simple: false },
   { id: 'icebergs', label: 'Icebergs', icon: Activity, simple: false },
   { id: 'analytics', label: 'Insights', icon: BarChart3, simple: false },
@@ -73,9 +75,9 @@ export function App(): JSX.Element {
           {activeScreen === 'planner' || activeScreen === 'bridge' ? (
             <div className="flex items-center gap-2 text-2xs">
               <span className="text-ink-3">Regional data:</span>
-              <ProvenanceBadge provenance={{ status: 'real-observation', source: 'Copernicus sea-ice edge', note: 'OSI-SAF NRT product' }} size="sm" />
+              <ProvenanceBadge provenance={{ status: 'observed', source: 'Copernicus sea-ice edge', note: 'OSI-SAF NRT product' }} size="sm" />
               <ProvenanceBadge provenance={{ status: 'forecast', source: 'GFS wind', note: '0.25 degree analysis' }} size="sm" />
-              <ProvenanceBadge provenance={{ status: 'synthetic', source: 'Model iceberg catalogue', note: 'RK4 drift from seeded positions' }} size="sm" />
+              <ProvenanceBadge provenance={{ status: 'simulated', source: 'Model iceberg catalogue', note: 'RK4 drift from seeded positions' }} size="sm" />
             </div>
           ) : (
             <ProvenanceBar />
@@ -136,6 +138,9 @@ export function App(): JSX.Element {
           </Screen>
           <Screen id="bridge" active={activeScreen}>
             <BridgeConsole />
+          </Screen>
+          <Screen id="sail" active={activeScreen}>
+            <Sail />
           </Screen>
           <Screen id="forecast" active={activeScreen}>
             <IceForecast />

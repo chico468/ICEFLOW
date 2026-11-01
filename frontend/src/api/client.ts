@@ -294,6 +294,10 @@ export const createVoyage = (body: CreateVoyageRequest) => post<VoyageState>('/v
 
 export const getVoyage = (id: string) => get<VoyageState>(`/voyage/${encodeURIComponent(id)}`);
 
+/** Timeline points for a voyage: the ticks returned by GET /voyage/{id}. */
+export const getVoyageTimeline = (id: string) =>
+  get<VoyageState>(`/voyage/${encodeURIComponent(id)}`).then((state) => state.ticks);
+
 export const stepVoyage = (id: string, hours: number, tickHours: number) =>
   post<{ voyage_id: string; status: string; ticks_produced: number; sim_hours: number }>(
     `/voyage/${encodeURIComponent(id)}/step`,
