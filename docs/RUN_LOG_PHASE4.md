@@ -13,7 +13,16 @@
 - Report renamed: models/eval/iceberg_hindcast_simulated_forcing.json (was iceberg_hindcast_tracks_only.json), data_source set to "simulated_forcing".
 - This is a simulated-forcing sanity run only. Kept out of the scorecard and README. Not presented as a real result.
 - Results (simulated forcing, 30 sampled tracks, 340 forecasts): lead 1d median 20.12 km/p90 54.81 km (n=123); lead 3d median 56.61 km/p90 162.87 km (n=118); lead 7d median 106.15 km/p90 414.85 km (n=99).
-- Real Part 1 (tracks only, no forcing): radii p50/p90 calibrated on VAL residuals; empirical coverage on TEST per lead (1, 3, 7); observed-bergs API (BYU nearest at or before t0, NIC CSV for live). Pending (step 3).
+- Real Part 1 (tracks only, no forcing): complete. scripts/iceberg_physics_part1.py computes the three
+  no-forcing baselines (no movement, 3-day velocity, 7-day damped velocity) on real BYU/NIC v6 tracks.
+  Radii p50/p90 calibrated on VAL (2018) residuals of the best baseline per lead; empirical coverage
+  measured on TEST (2019-2022). Report: models/eval/iceberg_part1_report.json (data_source "real").
+  - lead 1d: best=no_move, test median 3.32 km / p90 13.51 km, coverage p50 0.374 / p90 0.924 (n=21449)
+  - lead 3d: best=velocity_7d_damped, test median 7.23 km / p90 27.43 km, coverage p50 0.457 / p90 0.932 (n=21327)
+  - lead 7d: best=no_move, test median 21.53 km / p90 77.24 km, coverage p50 0.381 / p90 0.886 (n=21104)
+  Unit tests: tests/test_iceberg_physics_part1.py (fixtures, no network, 4 passed).
+- Simulated-forcing sanity run (not a real result): models/eval/iceberg_hindcast_simulated_forcing.json,
+  data_source "simulated_forcing", kept out of the scorecard and README.
 
 ## Phase 4 plan (parts in order):
 - PART 1: tracks-only hindcast — run RK4 drift physics (iceberg_tracker.py) on real BYU/NIC v6 tracks, compare simulated vs observed at leads 1/3/7 days, no ML, no ERA5 wind (synthetic environment forcing only).

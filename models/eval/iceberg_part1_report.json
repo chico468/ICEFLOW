@@ -1,0 +1,140 @@
+{
+  "generated_at": "2026-11-01T09:39:24+00:00",
+  "phase": 4,
+  "part": 1,
+  "name": "tracks-only iceberg physics baseline (no forcing, no ML)",
+  "data_source": "real",
+  "product": "BYU/NIC consolidated Antarctic iceberg database v6",
+  "train_start_year": 2005,
+  "train_end_year": 2017,
+  "val_year": 2018,
+  "test_start_year": 2019,
+  "test_end_year": 2022,
+  "leads": [
+    1,
+    3,
+    7
+  ],
+  "baselines": [
+    {
+      "key": "no_move",
+      "label": "no movement"
+    },
+    {
+      "key": "velocity_3d",
+      "label": "3-day constant velocity"
+    },
+    {
+      "key": "velocity_7d_damped",
+      "label": "7-day damped constant velocity"
+    }
+  ],
+  "note": "No forcing model, no ERA5, no GLORYS, no ML. Baselines are computed directly from the observed BYU/NIC tracks. Radii p50/p90 calibrated on VAL (2018) residuals of the best baseline per lead; empirical coverage measured on TEST (2019-2022).",
+  "per_lead": [
+    {
+      "lead_days": 1,
+      "val": {
+        "no_move": {
+          "median_km": 1.456266366192233,
+          "p90_km": 15.16402365182023,
+          "n_samples": 8999
+        },
+        "velocity_3d": {
+          "median_km": 2.1341660565946796,
+          "p90_km": 13.665032651766232,
+          "n_samples": 8999
+        },
+        "velocity_7d_damped": {
+          "median_km": 1.858589818665482,
+          "p90_km": 13.096763117821215,
+          "n_samples": 8999
+        }
+      },
+      "best_baseline_val": "no_move",
+      "cal_p50_km": 1.456266366192233,
+      "cal_p90_km": 15.16402365182023,
+      "test": {
+        "baseline": "no_move",
+        "baseline_label": "no movement",
+        "median_km": 3.323241818910004,
+        "p90_km": 13.509816356731745,
+        "n_samples": 21449,
+        "n_icebergs": 50,
+        "empirical_coverage_p50": 0.3742365611450417,
+        "empirical_coverage_p90": 0.923772670054548,
+        "cal_p50_km": 1.456266366192233,
+        "cal_p90_km": 15.16402365182023
+      }
+    },
+    {
+      "lead_days": 3,
+      "val": {
+        "no_move": {
+          "median_km": 6.149922155491403,
+          "p90_km": 36.9931496996257,
+          "n_samples": 8948
+        },
+        "velocity_3d": {
+          "median_km": 7.075197919444614,
+          "p90_km": 35.52993657632044,
+          "n_samples": 8948
+        },
+        "velocity_7d_damped": {
+          "median_km": 6.119786725210645,
+          "p90_km": 32.56263148873121,
+          "n_samples": 8948
+        }
+      },
+      "best_baseline_val": "velocity_7d_damped",
+      "cal_p50_km": 6.119786725210645,
+      "cal_p90_km": 32.56263148873121,
+      "test": {
+        "baseline": "velocity_7d_damped",
+        "baseline_label": "7-day damped constant velocity",
+        "median_km": 7.233187868193021,
+        "p90_km": 27.432596069087218,
+        "n_samples": 21327,
+        "n_icebergs": 50,
+        "empirical_coverage_p50": 0.4566043044028696,
+        "empirical_coverage_p90": 0.9316828433441178,
+        "cal_p50_km": 6.119786725210645,
+        "cal_p90_km": 32.56263148873121
+      }
+    },
+    {
+      "lead_days": 7,
+      "val": {
+        "no_move": {
+          "median_km": 12.38870165314269,
+          "p90_km": 72.57159409503778,
+          "n_samples": 8877
+        },
+        "velocity_3d": {
+          "median_km": 17.447542598942295,
+          "p90_km": 80.73108959871038,
+          "n_samples": 8877
+        },
+        "velocity_7d_damped": {
+          "median_km": 13.388871905219254,
+          "p90_km": 63.598410695673344,
+          "n_samples": 8877
+        }
+      },
+      "best_baseline_val": "no_move",
+      "cal_p50_km": 12.38870165314269,
+      "cal_p90_km": 72.57159409503778,
+      "test": {
+        "baseline": "no_move",
+        "baseline_label": "no movement",
+        "median_km": 21.528619328114786,
+        "p90_km": 77.2376892148101,
+        "n_samples": 21104,
+        "n_icebergs": 50,
+        "empirical_coverage_p50": 0.3808756633813495,
+        "empirical_coverage_p90": 0.8858036391205458,
+        "cal_p50_km": 12.38870165314269,
+        "cal_p90_km": 72.57159409503778
+      }
+    }
+  ]
+}
