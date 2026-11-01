@@ -4,6 +4,7 @@
   "part": 1,
   "name": "tracks-only hindcast",
   "environment": "synthetic EnvironmentModel (no ERA5 wind)",
+  "data_source": "simulated_forcing",
   "database": "/Users/venkateshs/Desktop/Photos/My Photo's/Kutty/python/ICEFLOW/data/raw/iceberg/consolidated_database_v6.zip",
   "forecast_hours": 168,
   "leads": [

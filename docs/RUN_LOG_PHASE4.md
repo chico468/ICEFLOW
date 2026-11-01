@@ -8,13 +8,14 @@
 - Stashed BE-2 eval infrastructure (src/eval/*, scripts/eval_sic.py, fetch_real_sic.py, NSIDC reader fixes) already applied to tree; eval tests pass (28 passed).
 - models/eval/ contains iceberg_audit_report.json, iceberg_ml_report.json, real_sic_report.json, real_sic_report.md.
 
-## 2026-11-01: PART 1 complete (tracks-only hindcast)
-- Ran scripts/hindcast_tracks_only.py on 30 sampled moving BYU/NIC v6 tracks, sparse t0 sampling (stride 7, max 8 t0s/track), one 168h RK4 forecast per t0 covering leads 1/3/7 days against observed truth.
-- 340 (t0, lead) forecasts in 485s. Report: models/eval/iceberg_hindcast_tracks_only.json
-  - lead 1d: n=123, n_icebergs=21, median=20.12 km, p90=54.81 km
-  - lead 3d: n=118, n_icebergs=21, median=56.61 km, p90=162.87 km
-  - lead 7d: n=99, n_icebergs=19, median=106.15 km, p90=414.85 km
-- Fixed script: was launching one forecast per (t0, lead) (~36k calls, timed out >10 min) and could not verify lead 7 inside a 72h forecast; now one 168h forecast per t0, correct lead-7 verification.
+## 2026-11-01: Step 2 complete — simulated forcing report designated (not a real result)
+- The hindcast ran scripts/hindcast_tracks_only.py against get_environment(), which returns a synthetic EnvironmentModel (is_synthetic=True; source "synthetic; stands in for ECMWF ERA5/HRES + Copernicus Marine CMEMS"). Wind and current are synthetic fields, not real ERA5/GLORYS.
+- Report renamed: models/eval/iceberg_hindcast_simulated_forcing.json (was iceberg_hindcast_tracks_only.json), data_source set to "simulated_forcing".
+- This is a simulated-forcing sanity run only. Kept out of the scorecard and README. Not presented as a real result.
+- Results (simulated forcing, 30 sampled tracks, 340 forecasts): lead 1d median 20.12 km/p90 54.81 km (n=123); lead 3d median 56.61 km/p90 162.87 km (n=118); lead 7d median 106.15 km/p90 414.85 km (n=99).
+- Real Part 1 (tracks only, no forcing): radii p50/p90 calibrated on VAL residuals; empirical coverage on TEST per lead (1, 3, 7); observed-bergs API (BYU nearest at or before t0, NIC CSV for live). Pending (step 3).
+
+## Phase 4 plan (parts in order):
 - PART 1: tracks-only hindcast — run RK4 drift physics (iceberg_tracker.py) on real BYU/NIC v6 tracks, compare simulated vs observed at leads 1/3/7 days, no ML, no ERA5 wind (synthetic environment forcing only).
 - PART 2: wind-only ablation — run scripts/download_era5_wind_ablation.py to download ERA5 10m wind from ARCO for representative days in 2019-2022, then hindcast with wind-only forcing.
 - PART 3: full hindcast — wind + current forcing on real tracks.
