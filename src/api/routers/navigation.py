@@ -394,6 +394,7 @@ def alternatives(req: RouteRequest) -> RouteAlternativesResult:
         avoid_icebergs=req.avoid_icebergs,
         departure_iso=req.departure_iso,
     )
+    return result
 
 
 @router.post("/route/compare")
