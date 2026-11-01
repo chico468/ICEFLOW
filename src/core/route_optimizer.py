@@ -146,6 +146,9 @@ class RouteEvaluation(BaseModel):
     is_feasible: bool
     infeasible_reason: str = ""
     prohibited_waypoints: int = 0
+    # v1.1: wall-clock arrival ETA and per-waypoint ETAs when a departure ISO is supplied.
+    arrival_iso: Optional[str] = None
+    waypoint_etas: List[WaypointEta] = Field(default_factory=list)
 
 
 class SearchDiagnostics(BaseModel):
@@ -1177,6 +1180,23 @@ class PolarRouteOptimizer:
 
         if not any(c.id == "balanced" for c in candidates) and candidates:
             omitted.append({"profile_id": "balanced", "reason": "Balanced geometry duplicates another listed candidate."})
+
+        # Wall-clock arrival ETA and per-waypoint ETAs when a departure ISO is supplied.
+        if departure_iso is not None and balanced_summary is not None:
+            from src.core.environment_time import parse_utc_datetime
+            departure_dt = parse_utc_datetime(departure_iso, "departure_iso")
+            if balanced_summary.total_transit_hours is not None:
+                eta_dt = departure_dt + timedelta(hours=balanced_summary.total_transit_hours)
+                balanced_summary.arrival_iso = eta_dt.isoformat(timespec="seconds")
+            for candidate in candidates:
+                ev = candidate.evaluation
+                if ev.total_transit_hours is not None:
+                    ev.arrival_iso = (departure_dt + timedelta(hours=ev.total_transit_hours)).isoformat(timespec="seconds")
+                    ev.waypoint_etas = [
+                        WaypointEta(index=idx, eta_iso=(departure_dt + timedelta(hours=wp.cumulative_hours)).isoformat(timespec="seconds"))
+                        for idx, wp in enumerate(ev.waypoints)
+                    ]
+
         return RouteAlternativesResult(
             candidates=candidates,
             balanced_summary=balanced_summary,
