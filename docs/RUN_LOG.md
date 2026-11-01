@@ -66,3 +66,9 @@
   Per instruction 5, reset be2-sic-ml back to origin/be2-sic-ml via `git branch -f` (local-only, not force-push). SHAs logged above.
 - Extras download still in progress (will complete and log sizes; not a blocker for PHASE 2 push).
 - No items BLOCKED.
+
+## Download rate measurement (extras, PID 38042)
+- bytes_in sample 1: 186,260,235; sample 2: 199,433,475; sample 3: 202,344,755; sample 4: 241,941,219
+- Rate varies per file (80 KB/s - 1.6 MB/s seen in prior run log); avg ~176 KB/s over pytest interval
+- ~242 MB of ~6.6 GB downloaded; remaining ~6.36 GB; ETA uncertain, possibly >90 min
+- Decision: let it continue; check between steps. If ETA confirmed >90 min, kill and build only snowfall + total_cloud_cover.
