@@ -294,6 +294,31 @@ def _rmse(pred: np.ndarray, truth: np.ndarray, mask: np.ndarray) -> float:
     return float(np.sqrt(np.mean(diff ** 2))) if len(diff) > 0 else float("nan")
 
 
+def _rmse_daily_mean(
+    pred: np.ndarray, truth: np.ndarray, mask: np.ndarray, date_ordinal: np.ndarray,
+) -> float:
+    """Mean of daily RMSEs: RMSE computed per date, then averaged across dates.
+
+    This is a secondary statistic, labelled as such.  The gate and its CI use
+    the pooled RMSE (all VIZ cells across all test days), not this daily mean.
+    """
+    m = mask & np.isfinite(pred) & np.isfinite(truth)
+    if m.sum() == 0:
+        return float("nan")
+    p = pred[m]
+    t = truth[m]
+    d = date_ordinal[m].astype(np.int64)
+    unique_days = np.unique(d)
+    daily_rmses = []
+    for day in unique_days:
+        day_mask = d == day
+        diff = p[day_mask] - t[day_mask]
+        daily_rmses.append(float(np.sqrt(np.mean(diff ** 2))))
+    if not daily_rmses:
+        return float("nan")
+    return float(np.mean(daily_rmses))
+
+
 def _compute_rmse_diff_ci(
     pred: np.ndarray,
     truth: np.ndarray,
@@ -603,15 +628,38 @@ class RealSICForecaster:
             model_rmse = _rmse(p, t, np.ones(len(t), dtype=bool))
             baseline_rmse = _rmse(b, t, np.ones(len(t), dtype=bool))
             pers_rmse = _rmse(pers, t, np.ones(len(t), dtype=bool))
+            # Daily mean RMSE (secondary statistic, not used by gate).
+            model_daily_mean = _rmse_daily_mean(p, t, np.ones(len(t), dtype=bool), date_ord[m])
+            baseline_daily_mean = _rmse_daily_mean(b, t, np.ones(len(t), dtype=bool), date_ord[m])
+            # Point difference between model and baseline RMSE.
+            point_diff = model_rmse - baseline_rmse
+            # Check the point difference lies inside its own CI.
+            ci_contains_point = bool(ci_lo <= point_diff <= ci_hi)
+            # Block-length sensitivity: CI at block lengths 7, 14, 28, 56 days.
+            block_sensitivity = {}
+            for bl in (7, 14, 28, 56):
+                _, _, ci_lo_bl, ci_hi_bl, _, _ = _compute_rmse_diff_ci(
+                    full_pred, truth, ds.baseline, date_ord, m, n_boot, seed, block_days=bl,
+                )
+                block_sensitivity[str(bl)] = {
+                    "ci_lo": round(ci_lo_bl, 5),
+                    "ci_hi": round(ci_hi_bl, 5),
+                    "excludes_zero": bool(ci_lo_bl > 0.0 or ci_hi_bl < 0.0),
+                }
             return {
                 "n_samples": int(m.sum()),
                 "model_rmse": round(model_rmse, 5),
                 "baseline_rmse": round(baseline_rmse, 5),
+                "model_rmse_daily_mean": round(model_daily_mean, 5),
+                "baseline_rmse_daily_mean": round(baseline_daily_mean, 5),
                 "persistence_rmse": round(pers_rmse, 5),
+                "point_rmse_diff": round(point_diff, 5),
+                "ci_contains_point_diff": ci_contains_point,
                 "skill_vs_baseline": round(1.0 - model_rmse / baseline_rmse, 5)
                     if baseline_rmse > 0 else float("nan"),
                 "rmse_diff_ci": [round(ci_lo, 5), round(ci_hi, 5)],
                 "rmse_diff_ci_excludes_zero": bool(ci_lo > 0.0 or ci_hi < 0.0),
+                "block_length_sensitivity": block_sensitivity,
             }
 
         per_lead: List[Dict[str, Any]] = []
@@ -670,6 +718,20 @@ class RealSICForecaster:
                 model_rmse_viz_nm = float("nan")
                 baseline_rmse_viz_nm = float("nan")
                 viz_nov_mar_n = 0
+
+            # Block-length sensitivity on VIZ mask (informational; does not change promoted).
+            viz_block_sensitivity = {}
+            for bl in (7, 14, 28, 56):
+                _, _, ci_lo_bl, ci_hi_bl, n_blocks_bl, _ = _compute_rmse_diff_ci(
+                    full_pred, truth, ds.baseline, date_ord, viz_mask,
+                    n_boot, seed + 3, block_days=bl,
+                )
+                viz_block_sensitivity[str(bl)] = {
+                    "n_date_blocks": int(n_blocks_bl),
+                    "ci_lo": round(ci_lo_bl, 5),
+                    "ci_hi": round(ci_hi_bl, 5),
+                    "excludes_zero": bool(ci_lo_bl > 0.0 or ci_hi_bl < 0.0),
+                }
 
             # IIEE at 15% threshold (Goessling et al. 2016), area-weighted,
             # per forecast day then mean over days, on VIZ cells from train
@@ -747,6 +809,7 @@ class RealSICForecaster:
             block["n_date_blocks"] = int(n_blocks)
             block["block_length_days"] = int(block_len)
             block["n_bootstrap_resamples"] = int(n_boot)
+            block["viz_block_length_sensitivity"] = viz_block_sensitivity
             block["iiee_15_pct"] = round(iiee_all, 4) if np.isfinite(iiee_all) else float("nan")
             block["iiee_15_pct_nov_mar"] = round(iiee_nm, 4) if np.isfinite(iiee_nm) else float("nan")
             block["iiee_15_pct_baseline"] = round(iiee_all_base, 4) if np.isfinite(iiee_all_base) else float("nan")

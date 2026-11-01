@@ -373,7 +373,8 @@ def test_scorecard_with_fixture_report(tmp_path, monkeypatch):
     assert len(body["rows"]) == 1
     assert body["rows"][0]["model"] == "damped_anomaly_persistence"
     assert body["rows"][0]["skill_vs_baseline"] == round(1.0 - 0.08 / 0.10, 4)
-    assert body["promoted"]["sic"]["3"] is True
+    assert body["promoted"]["sic"]["3"]["promoted"] is True
+    assert body["promoted"]["sic"]["3"]["model"] == "gbm_residual"
     assert body["coverage"]["3"]["target"] == 0.9
 
 

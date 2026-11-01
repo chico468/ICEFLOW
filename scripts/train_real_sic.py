@@ -350,11 +350,12 @@ def _print_results(metrics: Dict[str, Any], tag: str) -> None:
 
     print(f"  {tag} per-lead (VIZ cells, promotion gate):")
     print(f"    {'lead':>5s} {'n':>6s}  {'model':>8s} {'baseline':>8s} {'persist':>8s} "
-          f"{'diff_ci':>22s}  {'promoted':>8s}")
+          f"{'model_dm':>8s} {'base_dm':>8s} {'diff_ci':>22s}  {'promoted':>8s}")
     for pl in metrics["per_lead"]:
         print(
             f"    {pl['lead_days']:>5d} {pl['n_samples']:>6d}  "
-            f"{pl['model_rmse']:>8.4f} {pl['viz_baseline_rmse']:>8.4f} {pl['persistence_rmse']:>8.4f} "
+            f"{pl['viz_model_rmse']:>8.4f} {pl['viz_baseline_rmse']:>8.4f} {pl['persistence_rmse']:>8.4f} "
+            f"{pl.get('model_rmse_daily_mean', float('nan')):>8.4f} {pl.get('baseline_rmse_daily_mean', float('nan')):>8.4f} "
             f"[{pl['viz_rmse_diff_ci'][0]:>8.4f},{pl['viz_rmse_diff_ci'][1]:>8.4f}] "
             f"  {str(pl['promoted']):>8s}"
         )
@@ -604,7 +605,10 @@ def _build_scorecard_report(
                 "caveat": "2025+ AMSR2-era sensor, not in training window",
             })
 
-    promoted = {str(pl["lead_days"]): pl.get("promoted", False) for pl in test_per_lead}
+    promoted = {
+        str(pl["lead_days"]): {"promoted": pl.get("promoted", False), "model": "gbm_residual"}
+        for pl in test_per_lead
+    }
 
     # Block bootstrap info per lead (n date-blocks, block length, resamples).
     bootstrap_info: Dict[str, Any] = {}
@@ -692,7 +696,7 @@ def _build_scorecard_report(
             "trained_on": "real",
             "operational_skill_validated": False,
             "used_in_routing": False,
-            "promoted_leads": sorted(promoted.keys()) if any(promoted.values()) else [],
+            "promoted_leads": sorted([k for k, v in promoted.items() if v["promoted"]]) if any(v["promoted"] for v in promoted.values()) else [],
             "status": "real_data_training_complete",
         },
         "caveats": caveats,
