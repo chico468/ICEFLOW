@@ -37,3 +37,26 @@
 - be2-sic-ml reset to origin/be2-sic-ml (a4395d4); unpushed be2-sic-ml commits NOT cherry-picked (real-voyage already has build_replay_pack R0 matrix at 906eb86)
 - Full pytest: 340 passed, 1 warning in 254.89s (0:04:14)
 - No items BLOCKED
+
+## 2026-11-01: PHASE 2 complete (timeline API + golden fixture) on real-voyage, pushed as 7fd0e51
+- Committed docs/AUTONOMY.md (7e1b7ee) on real-voyage; branch in sync with origin
+- PHASE 0 (closeout): replay pack sha256 all verified against manifest.json; coverage printed per product (era5_wind, era5_waves, cmems_current, glorys_siconc, nrt_ice_concentration). NOTE: era5_waves_20220115_33d.nc (39 MB) sits in pack but is NOT declared in manifest (manifest completeness gap logged).
+- Ice-box test (scripts/ice_box_test.py): GLORYS siconc attrs have NO _FillValue/missing_value/comment; cell_methods='area: mean where sea_ice'. Rule documented in code: NaN siconc=0 ONLY where uo valid (ocean), else excluded. Regrid GLORYS->NSIDC 25 km (area average; each fine cell assigned to its NSIDC cell). 3 cases, NO gross disagreement:
+  * Weddell (20-60W,60-75S) Jan 15 2022: n=4613 corr=0.9368 mean_diff=-0.065 rmse=0.160
+  * 60-80E Jan 15 2022: n=1500 corr=nan(zero var) mean_diff=-0.035 rmse=0.144
+  * 60-80E Aug 15 2022 winter: n=1500 corr=0.9206 mean_diff=+0.008 rmse=0.096 (downloaded one-day files: siconc 2.1 MB, uo/vo 183 MB; NSIDC 420 KB)
+- ERA5 waves under ice (task 3): raw swh on NSIDC SIC>=0.15 cells = NaN 82.5% / value 17.5% / never 0 (min 0.343 m); provider masks to wave_valid=False under ice (never 0).
+- Branch hygiene (task 5): be2-sic-ml has 3 UNPUSHED commits (5d5c258, e587d02, f13d39c), none pushed; NOT cherry-picked to real-voyage (real-voyage already carries build_replay_pack R0 matrix at 906eb86 and docs at 37a5990; cherry-pick would regress/duplicate). real-voyage==origin/real-voyage.
+- BE-2 closeout (task 6): IIEE table complete in models/eval/real_sic_report.md — IIEE per lead 1/3/7/14, all-season and austral_departure (Nov-Mar), lead-3 IIEE=0.120 Mkm2/day (<1 threshold, no bug). V6 product confirmed.
+- Extras (task 4): scripts/build_extras.py started (snowfall sf, tcc, t2m, msl 3-hourly from ARCO-ERA5); DOWNLOAD IN PROGRESS (~132 files, ~50 MB each = up to ~6.6 GB gross, ~250 MB packed after SO slice). Will verify <=5 GB budget and add to R0 matrix + manifest on completion.
+- PHASE 2 (timeline API + golden fixture):
+  1. GET /api/v1/voyage/{id}/timeline?step_min=10 added (src/api/routers/voyages.py): gzip (GZipMiddleware), size-capped by step_min. Per step: t_utc, lat, lon, sog_kn, cog, heading, ice_conc, wind u/v, hs, tp, wave_dir, current u/v, nearby observed bergs {name,lat,lon,length_nm,width_nm,age,kind}, alerts, sun az/el, not_available[], provenance_by_variable per variable.
+  2. snowfall/tcc added to EnvSample; ReplayProvider populates t2m/msl/snowfall/tcc from pack when present.
+  3. src/core/solar.py: solar azimuth/elevation (Meeus/NOAA), equinox-geometry test anchors (tests/test_solar.py, 6 pass).
+  4. scripts/export_golden_timeline.py: Cape Town -> Bharati replay on 2022-01-15 via API test client (no network), fixture frontend/e2e/fixtures/golden-voyage-timeline.json (1.39 MB, under 5 MB cap, 432 steps at 30-min) + manifest (sha256, git sha, generated_at, inputs, versions).
+  5. Fixture-based tests (tests/test_timeline.py, 8 pass): shape, not_available, provenance on every variable, sun position, size cap, monotonic UTC.
+  6. docs/SPRINT.md: real timeline shapes + provenance conventions (legacy status/note vs kind/age_hours).
+- Full pytest: 354 passed, 1 warning (340 baseline + 6 solar + 8 timeline), clean tree on real-voyage 7fd0e51.
+- Pushed to origin/real-voyage. Compare URL: https://github.com/chico468/ICEFLOW/compare/main...real-voyage
+- Extras download still in progress (will complete and log sizes; not a blocker for PHASE 2 push).
+- No items BLOCKED.
