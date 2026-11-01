@@ -8,20 +8,20 @@
  */
 import { useQuery } from '@tanstack/react-query';
 import * as api from '../api/client';
-import type { Provenance, ScorecardResponse } from '../api/types';
+import type { ScorecardResponse } from '../api/types';
 import { ProvenanceBadge } from '../components/ProvenanceBadge';
 import { Panel, Stat } from '../components/ui';
 import { int, num, shortIso } from '../lib/format';
 import { scorecardFixture, scorecardIsSampleData } from '../lib/scorecard';
 
-const MODEL_PROVENANCE: Record<string, Provenance> = {
+const MODEL_PROVENANCE: Record<string, { status: 'observed' | 'reanalysis' | 'forecast' | 'derived' | 'simulated' | 'real-seed'; source: string; note: string }> = {
   damped_persistence: {
     status: 'forecast',
     source: 'damped-persistence baseline',
     note: 'sea-ice concentration hindcast',
   },
   gbm_residual: {
-    status: 'experimental_ml',
+    status: 'simulated',
     source: 'gradient-boosted residual model',
     note: 'sea-ice concentration hindcast',
   },
@@ -31,14 +31,14 @@ const MODEL_PROVENANCE: Record<string, Provenance> = {
     note: 'iceberg drift hindcast',
   },
   'ml_residual_on_velocity': {
-    status: 'experimental_ml',
+    status: 'simulated',
     source: 'ML residual on velocity',
     note: 'iceberg drift hindcast',
   },
 };
 
-function modelProvenance(model: string): Provenance {
-  return MODEL_PROVENANCE[model] ?? { status: 'synthetic', source: 'unspecified model', note: model };
+function modelProvenance(model: string): { status: 'observed' | 'reanalysis' | 'forecast' | 'derived' | 'simulated' | 'real-seed'; source: string; note: string } {
+  return MODEL_PROVENANCE[model] ?? { status: 'simulated', source: 'unspecified model', note: model };
 }
 
 export function Scorecard(): JSX.Element {

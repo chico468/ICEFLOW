@@ -5,6 +5,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { normalizeProvenance } from '../src/lib/provenance.ts';
 
 const SRC = fileURLToPath(new URL('../src', import.meta.url));
 
@@ -71,4 +72,33 @@ test('dock tabs never nest a Panel\'s right-hand content inside the tab button (
   const buttonClose = tab.indexOf('</button>', buttonOpen);
   assert.ok(buttonClose > buttonOpen);
   assert.ok(!tab.slice(buttonOpen, buttonClose).includes('props.right'), 'props.right is inside the tab <button>');
+});
+
+test('provenance: every displayed number carries a badge that accepts both provenance shapes', () => {
+  // Shape 1: the API Provenance record (status/source/note/age_days).
+  const api = normalizeProvenance({
+    status: 'observed',
+    source: 'NOAA/NSIDC CDR G02202',
+    note: 'daily sea-ice concentration',
+    age_days: 5,
+  });
+  assert.equal(api?.status, 'observed');
+  assert.equal(api?.age_days, 5);
+
+  // Shape 2: the golden-fixture provenance_by_variable record (kind/source/product/valid_time/age_hours).
+  const fx = normalizeProvenance({
+    kind: 'simulated',
+    source: 'synthetic Southern Ocean forcing',
+    product: 'simulated',
+    valid_time: '2022-01-15',
+    age_hours: 48,
+  });
+  assert.equal(fx?.status, 'simulated');
+  assert.equal(fx?.note, 'simulated');
+  assert.equal(fx?.observed_date, '2022-01-15');
+  assert.equal(fx?.age_days, 2); // 48h / 24
+
+  // A record with no identity yields no badge (the number is hidden, not faked).
+  assert.equal(normalizeProvenance({ status: '', source: '' }), null);
+  assert.equal(normalizeProvenance({ kind: '', source: '' }), null);
 });

@@ -422,7 +422,7 @@ export function VoyagePlanner(): JSX.Element {
             <Badge title="Measured server planning duration">{num(alternativesPlanningMs / 1000, 1)} s</Badge>
           )}
           {arrivalIso && (
-            <div className="flex flex-col gap-0.5 ml-3 border-l border-hair pl-3">
+            <div data-testid="arrival-eta" className="flex flex-col gap-0.5 ml-3 border-l border-hair pl-3">
               <span className="text-2xs text-ink-3">Arrival ETA</span>
               <span className="text-xs font-semibold text-ink">{formatUtcIso(new Date(arrivalIso))}</span>
             </div>
@@ -877,7 +877,7 @@ function RouteCandidateCard({
               <span>{candidate.is_feasible ? 'Feasibility: reached and permitted' : candidate.goal_reached ? 'Feasibility: prohibited' : 'Feasibility: destination not reached'}</span>
             </div>
             {waypointEtas != null && waypointEtas.length > 0 && (
-              <div className="mt-2 border-t border-hair pt-2">
+              <div data-testid="waypoint-etas" className="mt-2 border-t border-hair pt-2">
                 <div className="text-2xs font-semibold text-ink-2">Waypoint ETAs (UTC)</div>
                 <div className="mt-1 grid grid-cols-4 gap-x-2 gap-y-1 text-2xs text-ink-2">
                   {waypointEtas.slice(0, 12).map(({ index, eta_iso }) => (
