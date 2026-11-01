@@ -14,12 +14,15 @@
     "test:e2e:ui": "playwright test --ui"
   },
   "dependencies": {
+    "@react-three/drei": "^9.122.0",
+    "@react-three/fiber": "^8.18.0",
     "@tanstack/react-query": "^5.59.0",
     "lucide-react": "^0.454.0",
     "mapbox-gl": "^3.33.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "recharts": "^2.13.0",
+    "three": "^0.160.1",
     "zustand": "^4.5.5"
   },
   "devDependencies": {

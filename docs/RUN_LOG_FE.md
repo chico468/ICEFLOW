@@ -75,7 +75,16 @@ Ports: frontend 5199, backend 8199 (strictPort, reuseExistingServer false)
   - frontend/e2e/evidence-screenshots/taskB-sail.png (Sail screen with sim clock)
   - frontend/e2e/evidence-screenshots/taskD-etadeparture.png (FE-4 departure picker)
 
-## STAGE C — PENDING
+## STAGE C — DONE (committed: see below)
+- 3D dependencies installed: three ^0.160.1, @react-three/fiber ^8.18.0, @react-three/drei ^9.122.0 (React 18 compatible)
+- C1: Ocean (Gerstner-sum shader from Hs/Tp/wave_dir), sky (sun azimuth/elevation), ship (side third-person procedural hull)
+- C2: iceMask() pure function (boolean floe grid matching SIC ±0.05), floes from path ahead
+- C3: Sky/day-night cycle, ship in side third-person view
+- Shared clock with 2D view via useSimClock
+- 2D/3D toggle (ViewModeToggle)
+- ThreeDee screen with error boundary
+- ATTRIBUTIONS.md: procedural hull (no external asset)
+- Evidence: typecheck PASS, unit tests 152/152 PASS, build PASS (chunk size warning only)
 ## STAGE D — PENDING
 
 Compare URL: https://github.com/chico468/ICEFLOW/compare/main...voyage-bridge

@@ -16,7 +16,7 @@
  * viewport the user has panned and zoomed; rebuilding that on every tab change would lose their
  * place, and a chart that forgets where you were looking is an irritating one.
  */
-import { Activity, BarChart3, ClipboardList, Layers, Ship, Snowflake } from 'lucide-react';
+import { Activity, BarChart3, ClipboardList, Layers, Package, Ship, Snowflake } from 'lucide-react';
 import { ProvenanceBar } from './components/ProvenanceBar';
 import { ProvenanceBadge } from './components/ProvenanceBadge';
 import { ScreenActiveContext } from './components/screenActive';
@@ -27,6 +27,7 @@ import { IceForecast } from './screens/IceForecast';
 import { IcebergTracker } from './screens/IcebergTracker';
 import { Sail } from './screens/Sail';
 import { Scorecard } from './screens/Scorecard';
+import { ThreeDee } from './screens/ThreeDee';
 import { VoyagePlanner } from './screens/VoyagePlanner';
 import { useAppStore, type ScreenId } from './store/useAppStore';
 
@@ -42,6 +43,7 @@ const TABS: Tab[] = [
   { id: 'planner', label: 'Plan', icon: Layers, simple: true },
   { id: 'bridge', label: 'Sail', icon: Ship, simple: true },
   { id: 'sail', label: 'Voyage', icon: Ship, simple: false },
+  { id: 'scene', label: '3D', icon: Package, simple: false },
   { id: 'forecast', label: 'Sea ice', icon: Snowflake, simple: false },
   { id: 'icebergs', label: 'Icebergs', icon: Activity, simple: false },
   { id: 'analytics', label: 'Insights', icon: BarChart3, simple: false },
@@ -141,6 +143,9 @@ export function App(): JSX.Element {
           </Screen>
           <Screen id="sail" active={activeScreen}>
             <Sail />
+          </Screen>
+          <Screen id="scene" active={activeScreen}>
+            <ThreeDee />
           </Screen>
           <Screen id="forecast" active={activeScreen}>
             <IceForecast />
