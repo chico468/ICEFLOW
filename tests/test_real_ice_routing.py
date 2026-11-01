@@ -377,6 +377,28 @@ def test_scorecard_with_fixture_report(tmp_path, monkeypatch):
     assert body["coverage"]["3"]["target"] == 0.9
 
 
+def test_scorecard_skips_non_real_reports(tmp_path, monkeypatch):
+    """Reports whose data_source != "real" (e.g. simulated forcing) are skipped entirely."""
+    monkeypatch.setenv("ICEFLOW_EVAL_DIR", str(tmp_path))
+    non_real = {
+        "data_source": "simulated_forcing",
+        "product": "synthetic sanity run",
+        "leads": [1, 3, 7],
+        "results": [
+            {"lead": 1, "domain": "x", "season": "all", "sector": "s",
+             "baseline": "damped", "rmse": 0.05, "rmse_ci": [0.04, 0.06], "n": 10},
+        ],
+    }
+    (tmp_path / "simulated_report.json").write_text(json.dumps(non_real))
+
+    r = client.get("/api/v1/evidence/scorecard")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["data_source"] == "none"
+    assert body["rows"] == []
+    assert body["promoted"] == {"sic": {}, "iceberg": {}}
+
+
 # ---------------------------------------------------------------------------
 # API endpoint contract tests
 # ---------------------------------------------------------------------------

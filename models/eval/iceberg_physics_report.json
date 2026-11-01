@@ -1,20 +1,39 @@
 {
-  "generated_at": "2026-11-01T09:45:36+00:00",
+  "generated_at": "2026-11-01T11:26:45+00:00",
   "phase": 4,
   "step": 4,
-  "name": "paired iceberg drift comparison on identical (track, t0, lead) samples",
+  "name": "paired iceberg drift comparison, real forcing (ERA5 + GLORYS), identical samples",
   "data_source": "real",
-  "product": "BYU/NIC consolidated Antarctic iceberg database v6",
+  "product": "BYU/NIC consolidated Antarctic iceberg database v6 + ECMWF ERA5 (ARCO) + Copernicus Marine GLORYS",
   "train_start_year": 2005,
   "train_end_year": 2017,
   "val_year": 2018,
   "test_start_year": 2019,
   "test_end_year": 2022,
+  "evaluation_window": {
+    "t0_block": [
+      "2022-01-10",
+      "2022-01-19"
+    ],
+    "forcing_days": [
+      "2022-01-07",
+      "2022-01-26"
+    ]
+  },
   "leads": [
     1,
     3,
     7
   ],
+  "forcing_available": true,
+  "era5_days": 160,
+  "glorys_days": 20,
+  "total_download_gb": 5.0,
+  "budget_gb": 6.0,
+  "wind_scale": 1.0,
+  "current_scale": 1.0,
+  "scalars_tuned_on_val": false,
+  "scalars_note": "Identity scalars (wind 1.0, current 1.0); VAL tuning skipped because the 6 GB budget covered only the TEST forcing window, not VAL.",
   "baselines": [
     {
       "key": "no_move",
@@ -29,255 +48,445 @@
       "label": "7-day damped constant velocity"
     }
   ],
-  "forcing_available": false,
-  "forcing_note": "Wind-only ablation (ERA5 wind), full physics (ERA5 wind + GLORYS currents, surface and 0-100 m mean), and velocity-initialised physics (start from the last 3-day observed velocity) require PART 2 ERA5 download and GLORYS ingest. Rows omitted, not fabricated, when data is absent.",
-  "method": "VAL (2018) selects best baseline per lead by median error. TEST (2019-2022) reports median/p90/n on identical (track, t0, lead) samples. Bootstrap CI by iceberg of (variant - best baseline) RMSE difference; promoted = best baseline beats runner-up with CI excluding zero. No tuning on TEST.",
+  "forcing_variants": [
+    {
+      "key": "wind_only",
+      "label": "ERA5 wind only (current = 0)"
+    },
+    {
+      "key": "physics",
+      "label": "ERA5 wind + GLORYS 0-100 m current"
+    },
+    {
+      "key": "velocity_initialised",
+      "label": "physics initialised from last 3-day observed velocity"
+    }
+  ],
+  "method": "VAL (2018) best baseline per lead carried forward (no TEST tuning). TEST (2022 block) reports median/p90/n on identical (track, t0, lead) samples. Bootstrap CI by iceberg of (variant RMSE - best baseline RMSE). promoted = True only if no forcing variant significantly beats the best baseline (CI entirely below zero). No forcing fabricated.",
+  "part1_reference": {
+    "val_unique_icebergs": 32,
+    "val_rows": 26824,
+    "test_rows": 63880,
+    "note": "Radii p50/p90 and empirical coverage below are from the Part 1 no-forcing run (radii calibrated on VAL 2018 residuals; coverage measured on TEST 2019-2022), reproduced here for context only.",
+    "radii_p50_p90_km": {
+      "1": [
+        1.46,
+        15.16
+      ],
+      "3": [
+        6.12,
+        32.56
+      ],
+      "7": [
+        12.39,
+        72.57
+      ]
+    },
+    "test_coverage_p50_p90": {
+      "1": [
+        0.374,
+        0.924
+      ],
+      "3": [
+        0.457,
+        0.932
+      ],
+      "7": [
+        0.381,
+        0.886
+      ]
+    },
+    "test_median_p90_km": {
+      "1": [
+        3.32,
+        13.51
+      ],
+      "3": [
+        7.23,
+        27.43
+      ],
+      "7": [
+        21.53,
+        77.24
+      ]
+    }
+  },
+  "n_samples_total": 420,
+  "n_tracks": 14,
   "per_lead": [
     {
       "lead_days": 1,
-      "val": {
-        "no_move": {
-          "median_km": 1.456266366192233,
-          "p90_km": 15.16402365182023,
-          "n_samples": 8999
-        },
-        "velocity_3d": {
-          "median_km": 2.1341660565946796,
-          "p90_km": 13.665032651766232,
-          "n_samples": 8999
-        },
-        "velocity_7d_damped": {
-          "median_km": 1.858589818665482,
-          "p90_km": 13.096763117821215,
-          "n_samples": 8999
-        }
-      },
       "best_baseline_val": "no_move",
-      "test": {
+      "best_baseline_val_label": "no movement",
+      "test_best_baseline": "velocity_3d",
+      "best_baseline_rmse_km": 3.7312,
+      "promoted": true,
+      "variants": {
         "no_move": {
           "label": "no movement",
-          "median_km": 3.323241818910004,
-          "p90_km": 13.509816356731745,
-          "n_samples": 21449,
-          "n_tracks": 50,
-          "n_steps": 21449
+          "available": true,
+          "n_samples": 140,
+          "n_tracks": 14,
+          "n_steps": 140,
+          "rmse_km": 3.7312,
+          "median_km": 2.5595,
+          "p90_km": 6.3491,
+          "ci_vs_best_baseline": {
+            "rmse_variant_km": 3.7312,
+            "rmse_best_baseline_km": 3.7312,
+            "diff_km": 0.0,
+            "ci_lo": 0.0,
+            "ci_hi": 0.0,
+            "ci_excludes_zero": false,
+            "significantly_better": false
+          }
         },
         "velocity_3d": {
           "label": "3-day constant velocity",
-          "median_km": 1.8833799508783968,
-          "p90_km": 8.77640574852302,
-          "n_samples": 21449,
-          "n_tracks": 50,
-          "n_steps": 21449
+          "available": true,
+          "n_samples": 140,
+          "n_tracks": 14,
+          "n_steps": 140,
+          "rmse_km": 2.1932,
+          "median_km": 1.5552,
+          "p90_km": 3.539,
+          "ci_vs_best_baseline": {
+            "rmse_variant_km": 2.1932,
+            "rmse_best_baseline_km": 3.7312,
+            "diff_km": -1.5381,
+            "ci_lo": -2.5477,
+            "ci_hi": -0.667,
+            "ci_excludes_zero": true,
+            "significantly_better": true
+          }
         },
         "velocity_7d_damped": {
           "label": "7-day damped constant velocity",
-          "median_km": 2.3461901865023345,
-          "p90_km": 10.31932956223138,
-          "n_samples": 21449,
-          "n_tracks": 50,
-          "n_steps": 21449
-        },
-        "wind_only": {
-          "label": "wind_only",
-          "available": false,
-          "reason": "ERA5 wind and/or GLORYS current not on disk (PART 2/3 pending)"
-        },
-        "full_physics": {
-          "label": "full_physics",
-          "available": false,
-          "reason": "ERA5 wind and/or GLORYS current not on disk (PART 2/3 pending)"
-        },
-        "velocity_initialised": {
-          "label": "velocity_initialised",
-          "available": false,
-          "reason": "ERA5 wind and/or GLORYS current not on disk (PART 2/3 pending)"
-        },
-        "ci_vs_best_baseline": {
-          "velocity_3d": {
-            "rmse_variant_km": 6.4507,
-            "rmse_best_baseline_km": 8.701,
-            "ci_lo": -2.8446,
-            "ci_hi": -1.4298,
-            "diff_km": -2.2502,
-            "ci_excludes_zero": true
-          },
-          "velocity_7d_damped": {
-            "rmse_variant_km": 7.0178,
-            "rmse_best_baseline_km": 8.701,
-            "ci_lo": -2.0046,
-            "ci_hi": -1.2183,
-            "diff_km": -1.6832,
-            "ci_excludes_zero": true
+          "available": true,
+          "n_samples": 140,
+          "n_tracks": 14,
+          "n_steps": 140,
+          "rmse_km": 2.8168,
+          "median_km": 1.859,
+          "p90_km": 5.1167,
+          "ci_vs_best_baseline": {
+            "rmse_variant_km": 2.8168,
+            "rmse_best_baseline_km": 3.7312,
+            "diff_km": -0.9144,
+            "ci_lo": -1.475,
+            "ci_hi": -0.4733,
+            "ci_excludes_zero": true,
+            "significantly_better": true
           }
         },
-        "promoted": false,
-        "best_baseline": "no_move"
+        "wind_only": {
+          "label": "ERA5 wind only (current = 0)",
+          "available": true,
+          "n_samples": 140,
+          "n_tracks": 14,
+          "n_steps": 140,
+          "rmse_km": 34.0124,
+          "median_km": 5.5742,
+          "p90_km": 22.5768,
+          "ci_vs_best_baseline": {
+            "rmse_variant_km": 34.0124,
+            "rmse_best_baseline_km": 3.7312,
+            "diff_km": 30.2812,
+            "ci_lo": 4.5337,
+            "ci_hi": 53.2937,
+            "ci_excludes_zero": true,
+            "significantly_better": false
+          }
+        },
+        "physics": {
+          "label": "ERA5 wind + GLORYS 0-100 m current",
+          "available": true,
+          "n_samples": 140,
+          "n_tracks": 14,
+          "n_steps": 140,
+          "rmse_km": 34.7925,
+          "median_km": 8.2882,
+          "p90_km": 23.5995,
+          "ci_vs_best_baseline": {
+            "rmse_variant_km": 34.7925,
+            "rmse_best_baseline_km": 3.7312,
+            "diff_km": 31.0613,
+            "ci_lo": 6.4162,
+            "ci_hi": 53.913,
+            "ci_excludes_zero": true,
+            "significantly_better": false
+          }
+        },
+        "velocity_initialised": {
+          "label": "physics initialised from last 3-day observed velocity",
+          "available": true,
+          "n_samples": 140,
+          "n_tracks": 14,
+          "n_steps": 140,
+          "rmse_km": 34.7671,
+          "median_km": 8.3347,
+          "p90_km": 23.5754,
+          "ci_vs_best_baseline": {
+            "rmse_variant_km": 34.7671,
+            "rmse_best_baseline_km": 3.7312,
+            "diff_km": 31.0358,
+            "ci_lo": 6.3861,
+            "ci_hi": 53.8962,
+            "ci_excludes_zero": true,
+            "significantly_better": false
+          }
+        }
       }
     },
     {
       "lead_days": 3,
-      "val": {
-        "no_move": {
-          "median_km": 6.149922155491403,
-          "p90_km": 36.9931496996257,
-          "n_samples": 8948
-        },
-        "velocity_3d": {
-          "median_km": 7.075197919444614,
-          "p90_km": 35.52993657632044,
-          "n_samples": 8948
-        },
-        "velocity_7d_damped": {
-          "median_km": 6.119786725210645,
-          "p90_km": 32.56263148873121,
-          "n_samples": 8948
-        }
-      },
       "best_baseline_val": "velocity_7d_damped",
-      "test": {
+      "best_baseline_val_label": "7-day damped constant velocity",
+      "test_best_baseline": "velocity_3d",
+      "best_baseline_rmse_km": 8.3437,
+      "promoted": true,
+      "variants": {
         "no_move": {
           "label": "no movement",
-          "median_km": 9.875510138550798,
-          "p90_km": 36.5827127776391,
-          "n_samples": 21327,
-          "n_tracks": 50,
-          "n_steps": 21327
+          "available": true,
+          "n_samples": 140,
+          "n_tracks": 14,
+          "n_steps": 140,
+          "rmse_km": 11.0618,
+          "median_km": 8.1653,
+          "p90_km": 17.298,
+          "ci_vs_best_baseline": {
+            "rmse_variant_km": 11.0618,
+            "rmse_best_baseline_km": 8.3437,
+            "diff_km": 2.7182,
+            "ci_lo": 1.3843,
+            "ci_hi": 4.2964,
+            "ci_excludes_zero": true,
+            "significantly_better": false
+          }
         },
         "velocity_3d": {
           "label": "3-day constant velocity",
-          "median_km": 6.5614828265174765,
-          "p90_km": 25.49050115894459,
-          "n_samples": 21327,
-          "n_tracks": 50,
-          "n_steps": 21327
+          "available": true,
+          "n_samples": 140,
+          "n_tracks": 14,
+          "n_steps": 140,
+          "rmse_km": 7.0177,
+          "median_km": 5.1952,
+          "p90_km": 11.6561,
+          "ci_vs_best_baseline": {
+            "rmse_variant_km": 7.0177,
+            "rmse_best_baseline_km": 8.3437,
+            "diff_km": -1.326,
+            "ci_lo": -2.7569,
+            "ci_hi": 0.2615,
+            "ci_excludes_zero": false,
+            "significantly_better": false
+          }
         },
         "velocity_7d_damped": {
           "label": "7-day damped constant velocity",
-          "median_km": 7.233187868193021,
-          "p90_km": 27.432596069087218,
-          "n_samples": 21327,
-          "n_tracks": 50,
-          "n_steps": 21327
-        },
-        "wind_only": {
-          "label": "wind_only",
-          "available": false,
-          "reason": "ERA5 wind and/or GLORYS current not on disk (PART 2/3 pending)"
-        },
-        "full_physics": {
-          "label": "full_physics",
-          "available": false,
-          "reason": "ERA5 wind and/or GLORYS current not on disk (PART 2/3 pending)"
-        },
-        "velocity_initialised": {
-          "label": "velocity_initialised",
-          "available": false,
-          "reason": "ERA5 wind and/or GLORYS current not on disk (PART 2/3 pending)"
-        },
-        "ci_vs_best_baseline": {
-          "no_move": {
-            "rmse_variant_km": 22.767,
-            "rmse_best_baseline_km": 17.6293,
-            "ci_lo": 3.8153,
-            "ci_hi": 6.0372,
-            "diff_km": 5.1377,
-            "ci_excludes_zero": true
-          },
-          "velocity_3d": {
-            "rmse_variant_km": 16.9883,
-            "rmse_best_baseline_km": 17.6293,
-            "ci_lo": -1.4513,
-            "ci_hi": 0.4629,
-            "diff_km": -0.641,
-            "ci_excludes_zero": false
+          "available": true,
+          "n_samples": 140,
+          "n_tracks": 14,
+          "n_steps": 140,
+          "rmse_km": 8.3437,
+          "median_km": 5.7214,
+          "p90_km": 12.6311,
+          "ci_vs_best_baseline": {
+            "rmse_variant_km": 8.3437,
+            "rmse_best_baseline_km": 8.3437,
+            "diff_km": 0.0,
+            "ci_lo": 0.0,
+            "ci_hi": 0.0,
+            "ci_excludes_zero": false,
+            "significantly_better": false
           }
         },
-        "promoted": false,
-        "best_baseline": "velocity_7d_damped"
+        "wind_only": {
+          "label": "ERA5 wind only (current = 0)",
+          "available": true,
+          "n_samples": 140,
+          "n_tracks": 14,
+          "n_steps": 140,
+          "rmse_km": 105.3956,
+          "median_km": 15.8648,
+          "p90_km": 66.184,
+          "ci_vs_best_baseline": {
+            "rmse_variant_km": 105.3956,
+            "rmse_best_baseline_km": 8.3437,
+            "diff_km": 97.0519,
+            "ci_lo": 13.4707,
+            "ci_hi": 163.1234,
+            "ci_excludes_zero": true,
+            "significantly_better": false
+          }
+        },
+        "physics": {
+          "label": "ERA5 wind + GLORYS 0-100 m current",
+          "available": true,
+          "n_samples": 140,
+          "n_tracks": 14,
+          "n_steps": 140,
+          "rmse_km": 109.5318,
+          "median_km": 24.9486,
+          "p90_km": 79.6559,
+          "ci_vs_best_baseline": {
+            "rmse_variant_km": 109.5318,
+            "rmse_best_baseline_km": 8.3437,
+            "diff_km": 101.1881,
+            "ci_lo": 20.5876,
+            "ci_hi": 165.6657,
+            "ci_excludes_zero": true,
+            "significantly_better": false
+          }
+        },
+        "velocity_initialised": {
+          "label": "physics initialised from last 3-day observed velocity",
+          "available": true,
+          "n_samples": 140,
+          "n_tracks": 14,
+          "n_steps": 140,
+          "rmse_km": 109.5204,
+          "median_km": 25.131,
+          "p90_km": 79.4271,
+          "ci_vs_best_baseline": {
+            "rmse_variant_km": 109.5204,
+            "rmse_best_baseline_km": 8.3437,
+            "diff_km": 101.1767,
+            "ci_lo": 20.4707,
+            "ci_hi": 165.6672,
+            "ci_excludes_zero": true,
+            "significantly_better": false
+          }
+        }
       }
     },
     {
       "lead_days": 7,
-      "val": {
-        "no_move": {
-          "median_km": 12.38870165314269,
-          "p90_km": 72.57159409503778,
-          "n_samples": 8877
-        },
-        "velocity_3d": {
-          "median_km": 17.447542598942295,
-          "p90_km": 80.73108959871038,
-          "n_samples": 8877
-        },
-        "velocity_7d_damped": {
-          "median_km": 13.388871905219254,
-          "p90_km": 63.598410695673344,
-          "n_samples": 8877
-        }
-      },
       "best_baseline_val": "no_move",
-      "test": {
+      "best_baseline_val_label": "no movement",
+      "test_best_baseline": "velocity_7d_damped",
+      "best_baseline_rmse_km": 30.0142,
+      "promoted": true,
+      "variants": {
         "no_move": {
           "label": "no movement",
-          "median_km": 21.528619328114786,
-          "p90_km": 77.2376892148101,
-          "n_samples": 21104,
-          "n_tracks": 50,
-          "n_steps": 21104
+          "available": true,
+          "n_samples": 140,
+          "n_tracks": 14,
+          "n_steps": 140,
+          "rmse_km": 30.0142,
+          "median_km": 17.8075,
+          "p90_km": 45.135,
+          "ci_vs_best_baseline": {
+            "rmse_variant_km": 30.0142,
+            "rmse_best_baseline_km": 30.0142,
+            "diff_km": 0.0,
+            "ci_lo": 0.0,
+            "ci_hi": 0.0,
+            "ci_excludes_zero": false,
+            "significantly_better": false
+          }
         },
         "velocity_3d": {
           "label": "3-day constant velocity",
-          "median_km": 17.402943428372154,
-          "p90_km": 63.97027194303434,
-          "n_samples": 21104,
-          "n_tracks": 50,
-          "n_steps": 21104
+          "available": true,
+          "n_samples": 140,
+          "n_tracks": 14,
+          "n_steps": 140,
+          "rmse_km": 23.2118,
+          "median_km": 15.9437,
+          "p90_km": 34.327,
+          "ci_vs_best_baseline": {
+            "rmse_variant_km": 23.2118,
+            "rmse_best_baseline_km": 30.0142,
+            "diff_km": -6.8025,
+            "ci_lo": -12.5351,
+            "ci_hi": 0.2015,
+            "ci_excludes_zero": false,
+            "significantly_better": false
+          }
         },
         "velocity_7d_damped": {
           "label": "7-day damped constant velocity",
-          "median_km": 16.11950050703065,
-          "p90_km": 59.241029989391855,
-          "n_samples": 21104,
-          "n_tracks": 50,
-          "n_steps": 21104
-        },
-        "wind_only": {
-          "label": "wind_only",
-          "available": false,
-          "reason": "ERA5 wind and/or GLORYS current not on disk (PART 2/3 pending)"
-        },
-        "full_physics": {
-          "label": "full_physics",
-          "available": false,
-          "reason": "ERA5 wind and/or GLORYS current not on disk (PART 2/3 pending)"
-        },
-        "velocity_initialised": {
-          "label": "velocity_initialised",
-          "available": false,
-          "reason": "ERA5 wind and/or GLORYS current not on disk (PART 2/3 pending)"
-        },
-        "ci_vs_best_baseline": {
-          "velocity_3d": {
-            "rmse_variant_km": 41.4339,
-            "rmse_best_baseline_km": 48.2797,
-            "ci_lo": -10.4107,
-            "ci_hi": -2.1199,
-            "diff_km": -6.8458,
-            "ci_excludes_zero": true
-          },
-          "velocity_7d_damped": {
-            "rmse_variant_km": 37.6936,
-            "rmse_best_baseline_km": 48.2797,
-            "ci_lo": -12.6369,
-            "ci_hi": -7.8032,
-            "diff_km": -10.5862,
-            "ci_excludes_zero": true
+          "available": true,
+          "n_samples": 140,
+          "n_tracks": 14,
+          "n_steps": 140,
+          "rmse_km": 24.6257,
+          "median_km": 14.002,
+          "p90_km": 35.5422,
+          "ci_vs_best_baseline": {
+            "rmse_variant_km": 24.6257,
+            "rmse_best_baseline_km": 30.0142,
+            "diff_km": -5.3885,
+            "ci_lo": -8.4443,
+            "ci_hi": -2.3878,
+            "ci_excludes_zero": true,
+            "significantly_better": true
           }
         },
-        "promoted": false,
-        "best_baseline": "no_move"
+        "wind_only": {
+          "label": "ERA5 wind only (current = 0)",
+          "available": true,
+          "n_samples": 140,
+          "n_tracks": 14,
+          "n_steps": 140,
+          "rmse_km": 309.7707,
+          "median_km": 46.8333,
+          "p90_km": 209.3903,
+          "ci_vs_best_baseline": {
+            "rmse_variant_km": 309.7707,
+            "rmse_best_baseline_km": 30.0142,
+            "diff_km": 279.7564,
+            "ci_lo": 107.6971,
+            "ci_hi": 398.6888,
+            "ci_excludes_zero": true,
+            "significantly_better": false
+          }
+        },
+        "physics": {
+          "label": "ERA5 wind + GLORYS 0-100 m current",
+          "available": true,
+          "n_samples": 140,
+          "n_tracks": 14,
+          "n_steps": 140,
+          "rmse_km": 314.829,
+          "median_km": 65.8957,
+          "p90_km": 233.4681,
+          "ci_vs_best_baseline": {
+            "rmse_variant_km": 314.829,
+            "rmse_best_baseline_km": 30.0142,
+            "diff_km": 284.8147,
+            "ci_lo": 114.8269,
+            "ci_hi": 405.6942,
+            "ci_excludes_zero": true,
+            "significantly_better": false
+          }
+        },
+        "velocity_initialised": {
+          "label": "physics initialised from last 3-day observed velocity",
+          "available": true,
+          "n_samples": 140,
+          "n_tracks": 14,
+          "n_steps": 140,
+          "rmse_km": 314.7683,
+          "median_km": 65.6938,
+          "p90_km": 233.1052,
+          "ci_vs_best_baseline": {
+            "rmse_variant_km": 314.7683,
+            "rmse_best_baseline_km": 30.0142,
+            "diff_km": 284.7541,
+            "ci_lo": 114.754,
+            "ci_hi": 405.6477,
+            "ci_excludes_zero": true,
+            "significantly_better": false
+          }
+        }
       }
     }
-  ]
+  ],
+  "era5_downloaded_gb": 1.88,
+  "glorys_downloaded_gb": 3.13
 }
