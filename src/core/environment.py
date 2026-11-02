@@ -159,16 +159,31 @@ class EnvironmentModel:
 
         Taking the curl of a scalar field guarantees the perturbation is non-divergent, which is
         what makes the eddies look like real eddies instead of sources and sinks.
+
+        The four finite-difference evaluations of the streamfunction are batched into a single
+        vectorised noise call so the route optimiser's per-step forcing refresh (hundreds of
+        single-point evaluations per iceberg drift integration) stays fast.
         """
         lat = np.asarray(lat, dtype=np.float64)
         lon = np.asarray(lon, dtype=np.float64)
         h = 0.35
-
-        def psi(la, lo):
-            return noise.fbm(lo / sx - t_hours / st, la / sy, t_hours / (st * 3.0), octaves=4)
-
-        dpsi_dlat = (psi(lat + h, lon) - psi(lat - h, lon)) / (2.0 * h)
-        dpsi_dlon = (psi(lat, lon + h) - psi(lat, lon - h)) / (2.0 * h)
+        z = t_hours / (st * 3.0)
+        x = np.stack([
+            lon / sx - t_hours / st,      # psi(lat + h, lon)
+            lon / sx - t_hours / st,      # psi(lat - h, lon)
+            (lon + h) / sx - t_hours / st,# psi(lat, lon + h)
+            (lon - h) / sx - t_hours / st,# psi(lat, lon - h)
+        ])
+        y = np.stack([
+            (lat + h) / sy,               # psi(lat + h, lon)
+            (lat - h) / sy,               # psi(lat - h, lon)
+            lat / sy,                     # psi(lat, lon + h)
+            lat / sy,                     # psi(lat, lon - h)
+        ])
+        z_batch = np.broadcast_to(z, x.shape)
+        psis = noise.fbm(x, y, z_batch, octaves=4)
+        dpsi_dlat = (psis[0] - psis[1]) / (2.0 * h)
+        dpsi_dlon = (psis[2] - psis[3]) / (2.0 * h)
         cos_lat = np.maximum(0.05, np.cos(np.radians(lat)))
         u = -amp * dpsi_dlat
         v = amp * dpsi_dlon / cos_lat
@@ -305,6 +320,38 @@ class EnvironmentModel:
             visibility_km=round(float(sc["visibility_km"][0]), 1),
             katabatic_component_ms=round(float(kata[0]), 2),
         )
+
+    def sample_grid(
+        self,
+        lats: np.ndarray,
+        lons: np.ndarray,
+        t_hours: float,
+    ) -> dict[str, np.ndarray]:
+        """Gridded sample returning a dict of variable -> 2D array."""
+        lat_g = np.asarray(lats, dtype=np.float64)
+        lon_g = np.asarray(lons, dtype=np.float64)
+        lon_g = np.where(lon_g > 180.0, lon_g - 360.0, lon_g)
+
+        u, v, kata = self.wind_uv(lat_g, lon_g, t_hours)
+        uo, vo = self.current_uv(lat_g, lon_g, t_hours)
+        ws = np.hypot(u, v)
+        sc = self.scalars(lat_g, lon_g, t_hours, ws, np.zeros_like(lat_g))
+
+        return {
+            "u10": u,
+            "v10": v,
+            "uo": uo,
+            "vo": vo,
+            "swh": sc["sig_wave_height_m"],
+            "ice_conc": np.zeros_like(lat_g),
+            "wind_speed_ms": ws,
+            "current_speed_ms": np.hypot(uo, vo),
+            "t2m_c": sc["t2m_c"],
+            "msl_hpa": sc["msl_hpa"],
+            "sst_c": sc["sst_c"],
+            "visibility_km": sc["visibility_km"],
+            "katabatic_component_ms": kata,
+        }
 
     def field(
         self,

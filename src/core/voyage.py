@@ -49,6 +49,7 @@ from src.core.route_optimizer import (
     Waypoint,
 )
 from src.core.sea_ice import SeaIceModel, get_sea_ice_model
+from src.data.environment_provider import EnvironmentProvider, SimulatedProvider
 
 DEFAULT_TICK_HOURS = 1.0
 OFF_TRACK_LIMIT_NM = 25.0
@@ -181,7 +182,7 @@ class VoyageEngine:
         route_profile_id: str = "balanced",
         weights: Optional[RouteWeights] = None,
         sea_ice: Optional[SeaIceModel] = None,
-        environment: Optional[EnvironmentModel] = None,
+        environment: Optional[EnvironmentProvider] = None,
         avoid_icebergs: bool = True,
         environment_mode: str = "simulated",
         replay_date: Optional[str] = None,
@@ -190,13 +191,20 @@ class VoyageEngine:
         self.ice_class = ice_class
         self.weights = weights or RouteWeights()
         self.sea_ice = sea_ice or get_sea_ice_model()
-        self.env = environment or get_environment()
+        if environment is None:
+            self.env: EnvironmentProvider = SimulatedProvider()
+        elif isinstance(environment, EnvironmentModel):
+            self.env = SimulatedProvider()
+            self.env._model = environment
+        else:
+            self.env = environment
         self.avoid_icebergs = avoid_icebergs
         self._departure_time_hours = departure_time_hours
         self.environment_mode = environment_mode
         self.replay_date = replay_date
 
         departure = departure or datetime.now(timezone.utc)
+        self._departure_datetime = departure
         env_time = resolve_active_voyage_time(departure, 0.0, None, departure_time_hours)
         route = plan.optimized.waypoints if plan.optimized else plan.waypoints
 
@@ -324,7 +332,8 @@ class VoyageEngine:
 
         # Conditions where the ship is, at the time it is there.
         ice = self.sea_ice.state(lat, lon, t_hours=0.0, lead_hours=t_now)
-        env = self.env.sample(lat, lon, t_now, ice_concentration=ice.concentration)
+        t_utc = self._departure_datetime + timedelta(hours=t_now)
+        env = self.env.sample(lat, lon, t_utc)
 
         polaris = calculate_rio(
             self.ice_class,

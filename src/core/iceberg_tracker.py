@@ -52,6 +52,7 @@ from src.core.constants import (
 )
 from src.core.environment import EnvironmentModel, get_environment
 from src.core.geo import coriolis_parameter, haversine_km, haversine_nm, meters_to_degrees
+from src.data.environment_provider import EnvironmentProvider
 
 # A giant tabular berg has a drag response timescale of many hours, so a half-hour step is
 # comfortably stable. A growler responds in minutes, and integrating it at the same step blows
@@ -62,7 +63,10 @@ MIN_INTERNAL_TIMESTEP_S = 60.0
 TIMESTEP_SAFETY_DIVISOR = 5.0
 MAX_PHYSICAL_DRIFT_MS = 3.0  # a drifting berg faster than this is a numerical failure, not physics
 # How often the atmosphere and ocean are re-sampled along the track, in simulated seconds.
-FORCING_REFRESH_S = 1800.0
+# Icebergs drift at order 1 nm/hour, far below the noise field's correlation length, so an
+# hourly refresh keeps the track indistinguishable from a 30-minute refresh while halving the
+# environment sampling cost inside the route optimiser's exclusion build.
+FORCING_REFRESH_S = 3600.0
 
 
 class IcebergProfile(BaseModel):
@@ -192,12 +196,17 @@ def _uniform_forcing(
     }
 
 
-def _field_forcing(env: EnvironmentModel, lat: np.ndarray, lon: np.ndarray, t_hours: float) -> Dict[str, np.ndarray]:
+def _field_forcing(env: EnvironmentProvider, lat: np.ndarray, lon: np.ndarray, t_hours: float) -> Dict[str, np.ndarray]:
     """Forcing sampled from the environment fields at these positions and this time."""
-    ua, va, _ = env.wind_uv(lat, lon, t_hours)
-    uo, vo = env.current_uv(lat, lon, t_hours)
-    scal = env.scalars(lat, lon, t_hours, np.hypot(ua, va), 0.0)
-    return {"ua": ua, "va": va, "uo": uo, "vo": vo, "hs": scal["sig_wave_height_m"], "sst": scal["sst_c"]}
+    grid = env.sample_grid(lat, lon, t_hours)
+    return {
+        "ua": grid["u10"],
+        "va": grid["v10"],
+        "uo": grid["uo"],
+        "vo": grid["vo"],
+        "hs": grid["swh"],
+        "sst": grid["sst_c"],
+    }
 
 
 # --------------------------------------------------------------------------------------
@@ -460,7 +469,7 @@ def predict_iceberg_drift(
     t0_hours: float = 0.0,
     ice_concentration: float = 0.0,
     apply_melt: bool = True,
-    environment: Optional[EnvironmentModel] = None,
+    environment: Optional[EnvironmentProvider] = None,
     seed: int = ENSEMBLE_SEED,
 ) -> IcebergForecastResult:
     """

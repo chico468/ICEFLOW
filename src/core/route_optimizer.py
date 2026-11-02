@@ -81,6 +81,7 @@ from src.core.provenance import (
     build_provenance,
 )
 from src.core.sea_ice import SeaIceModel, get_sea_ice_model
+from src.data.environment_provider import EnvironmentProvider, SimulatedProvider
 from src.data.landmask import get_coast_field
 
 # Lattice resolution. Half a degree of latitude is 30 nm, which is a sensible waypoint spacing
@@ -375,9 +376,10 @@ class FieldCache:
         max_hours: float,
         t0_hours: float,
         sea_ice: SeaIceModel,
-        environment: EnvironmentModel,
+        environment: EnvironmentProvider,
         environment_mode: str = "simulated",
         observed_ice: Optional[object] = None,
+        ice_concentration_fn: Optional[Callable[[float], np.ndarray]] = None,
     ) -> None:
         self.lat_min, self.lon_min = lat_min, lon_min
         self.lat_step, self.lon_step = lat_step, lon_step
@@ -386,6 +388,7 @@ class FieldCache:
         self.t0 = t0_hours
         self.environment_mode = environment_mode
         self.observed_ice = observed_ice
+        self.ice_concentration_fn = ice_concentration_fn
 
         lats = lat_min + np.arange(self.n_lat) * lat_step
         lons_unwrapped = lon_min + np.arange(self.n_lon) * lon_step
@@ -419,7 +422,9 @@ class FieldCache:
 
         for si, lead in enumerate(self.slice_hours):
             valid = t0_hours + float(lead)
-            if self.observed_ice is not None:
+            if self.ice_concentration_fn is not None:
+                conc = self.ice_concentration_fn(valid, lat_g, lon_wrapped)
+            elif self.observed_ice is not None:
                 conc = self.observed_ice.concentration_grid(lat_g, lon_wrapped)
             else:
                 conc, _ = sea_ice._advected_concentration(lat_g, lon_wrapped, t0_hours, float(lead))
@@ -441,10 +446,13 @@ class FieldCache:
             self.speed[si] = spd
             self.fuel_rate[si] = perf.fuel_rate(np.maximum(spd, 0.5), thick, conc)
 
-            u, v, _ = environment.wind_uv(lat_g, lon_wrapped, valid)
-            self.wind[si] = np.hypot(u, v)
-            scal = environment.scalars(lat_g, lon_wrapped, valid, self.wind[si], conc)
-            self.wave[si] = scal["sig_wave_height_m"]
+            grid = environment.sample_grid(lat_g, lon_wrapped, valid)
+            self.wind[si] = np.hypot(grid["u10"], grid["v10"])
+            self.wave[si] = np.where(
+                np.isfinite(grid["ice_conc"]) & (grid["ice_conc"] <= 0.15),
+                grid["swh"],
+                np.nan,
+            )
 
     @property
     def cells(self) -> int:
@@ -579,20 +587,31 @@ class PolarRouteOptimizer:
         weights: Optional[RouteWeights] = None,
         installed_power_kw: float = 13_500.0,
         sea_ice: Optional[SeaIceModel] = None,
-        environment: Optional[EnvironmentModel] = None,
+        environment: Optional[EnvironmentProvider] = None,
         environment_mode: str = "simulated",
         replay_date: Optional[str] = None,
+        ice_time_mode: str = "departure_snapshot",
     ) -> None:
         self.vessel = vessel or VesselParameters()
         self.ice_class = ice_class
         self.weights = weights or RouteWeights()
         self.installed_power_kw = getattr(self.vessel, "installed_power_kw", None) or installed_power_kw
         self.sea_ice = sea_ice or get_sea_ice_model()
-        self.env = environment or get_environment()
+        if environment is None:
+            self.env: EnvironmentProvider = SimulatedProvider()
+        elif isinstance(environment, EnvironmentModel):
+            self.env = SimulatedProvider()
+            self.env._model = environment
+        else:
+            self.env = environment
         self.environment_mode = environment_mode
         self.replay_date = replay_date
+        self.ice_time_mode = ice_time_mode
         self.perf = get_performance(self.vessel, self.installed_power_kw)
         self._observed_ice = self._load_observed_ice() if environment_mode != "simulated" else None
+        self._ice_fields: dict[date, object] = {}
+        if ice_time_mode == "daily" and self._observed_ice is not None:
+            self._ice_fields[self._observed_ice.valid_date] = self._observed_ice
 
     # ----------------------------------------------------------- observed ice
     def _load_observed_ice(self) -> Optional[object]:
@@ -630,12 +649,10 @@ class PolarRouteOptimizer:
         try:
             obs = get_observed_observation(target_date)
         except NSIDCUnavailableError:
-            # Replay demanded a specific day that is not available: fail loudly.
-            if self.environment_mode == "replay":
-                raise
-            # real_ice with no recent observation: fall back to the synthetic
-            # model, surfaced explicitly through is_synthetic / provenance below.
-            return None
+            # Both replay and real_ice are hard requests for a real observation.
+            # Raise a clear error naming the dates tried; never fall back silently
+            # to synthetic ice.
+            raise
         return ObservedIceField(obs)
 
     @property
@@ -648,10 +665,48 @@ class PolarRouteOptimizer:
             return None
         return self._observed_ice.valid_date.isoformat()
 
+    def _get_ice_field_for_date(self, d: date) -> Optional[object]:
+        """Load (or retrieve from cache) an ObservedIceField for a given date."""
+        if d in self._ice_fields:
+            return self._ice_fields[d]
+        from src.data.observed_sea_ice import (
+            NSIDCUnavailableError,
+            ObservedIceField,
+            get_observed_observation,
+        )
+        try:
+            obs = get_observed_observation(d)
+        except NSIDCUnavailableError:
+            return None
+        field = ObservedIceField(obs)
+        self._ice_fields[d] = field
+        return field
+
+    def _make_ice_concentration_fn(self, departure_date: date) -> Callable[[float, np.ndarray, np.ndarray], np.ndarray]:
+        """Return ``(hours, lat_g, lon_wrapped) -> 2D concentration`` for daily ice time mode.
+
+        For each hour offset from departure, find the nearest cached day's ice
+        field and return its concentration grid on the route lattice.
+        """
+
+        def conc_fn(hours: float, lat_g: np.ndarray, lon_wrapped: np.ndarray) -> np.ndarray:
+            # Map hours to nearest day offset.
+            day_offset = round(hours / 24.0)
+            target_date = departure_date + timedelta(days=day_offset)
+            field = self._get_ice_field_for_date(target_date)
+            if field is None:
+                # Fall back to departure day's field.
+                field = self._observed_ice
+            if field is None:
+                return np.zeros(lat_g.shape)
+            return field.concentration_grid(lat_g, lon_wrapped)
+
+        return conc_fn
+
     # ---------------------------------------------------------------- helpers
     def _build_cache(
         self, start: Tuple[float, float], dest: Tuple[float, float], t0_hours: float,
-        lat_step: float, lon_step: float,
+        lat_step: float, lon_step: float, departure_date: Optional[date] = None,
     ) -> Tuple[FieldCache, float]:
         """Bounding box around the passage, generous enough to allow a real diversion."""
         lon_ref = start[1]
@@ -671,6 +726,10 @@ class PolarRouteOptimizer:
 
         gc_nm = haversine_nm(start[0], start[1], dest[0], dest[1])
         expected_hours = (gc_nm / 8.0) * 1.4  # pessimistic average speed, generous margin
+
+        ice_concentration_fn = None
+        if self.ice_time_mode == "daily" and departure_date is not None:
+            ice_concentration_fn = self._make_ice_concentration_fn(departure_date)
 
         cache = FieldCache(
             lat_lo, lat_hi, lon_lo, lon_hi, lat_step, lon_step,
@@ -1034,6 +1093,7 @@ class PolarRouteOptimizer:
         dest = (dest_lat, dest_lon)
         cache, dest_lon_unwrapped = self._build_cache(
             start, dest, departure_time_hours, lat_step, lon_step,
+            departure_date=date.fromisoformat(departure_iso[:10]) if departure_iso else None,
         )
         start_node = self._node_of(
             cache, start_lat,
@@ -1213,7 +1273,7 @@ class PolarRouteOptimizer:
         dest = (dest_lat, dest_lon)
         warnings: List[str] = []
 
-        cache, dest_lon_unwrapped = self._build_cache(start, dest, departure_time_hours, lat_step, lon_step)
+        cache, dest_lon_unwrapped = self._build_cache(start, dest, departure_time_hours, lat_step, lon_step, departure_date=date.fromisoformat(departure_iso[:10]) if departure_iso else None)
         start_node = self._node_of(cache, start_lat, cache.lon_min + lon_delta(normalize_lon(cache.lon_min), start_lon))
         goal_node = self._node_of(cache, dest_lat, dest_lon_unwrapped)
 

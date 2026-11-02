@@ -1,0 +1,28 @@
+{
+  "voyage_id": "20143804dcfc",
+  "origin": "cape_town",
+  "destination": "bharati",
+  "replay_date": "2022-01-15",
+  "generated_at": "2026-11-01T03:57:09+00:00",
+  "git_sha": "1bbc29dee8727d61e0a1283c6fe3f6c8c1a4b0b0",
+  "fixture_file": "frontend/e2e/fixtures/golden-voyage-timeline.json",
+  "fixture_size_bytes": 1456880,
+  "step_min": 30.0,
+  "n_steps": 432,
+  "not_available": [
+    "cog",
+    "current_u",
+    "current_v",
+    "nearby_bergs",
+    "tp"
+  ],
+  "replay_pack": "/tmp/iceflow-full-pack",
+  "repack_products": [
+    "era5_wind_10m",
+    "cmems_current",
+    "nrt_ice_concentration",
+    "glorys_siconc"
+  ],
+  "nsidc_cache": "/tmp/iceflow-full-pack/nsidc_raw_cache",
+  "sha256": "07f744dde099746132501f4d76b2246217e636521b969901c0a3e4564620bb66"
+}

@@ -54,6 +54,7 @@ from __future__ import annotations
 
 import math
 import zlib
+from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
@@ -77,6 +78,7 @@ from src.core.constants import (
 from src.core.environment import EnvironmentModel, EnvSample, get_environment
 from src.core.geo import destination_point, haversine_nm, initial_bearing_deg
 from src.core.sea_ice import IceState, SeaIceModel, get_sea_ice_model
+from src.data.environment_provider import EnvironmentProvider, SimulatedProvider
 
 # --------------------------------------------------------------------------------------
 # Sensor model constants, kept local because they describe this simulated sensor rather
@@ -407,7 +409,7 @@ def simulate_sweep(
     speed_knots: float,
     t_hours: float = 0.0,
     sea_ice_model: Optional[SeaIceModel] = None,
-    environment: Optional[EnvironmentModel] = None,
+    environment: Optional[EnvironmentProvider] = None,
     seed: Optional[int] = None,
     ice_state: Optional[IceState] = None,
     env_sample: Optional[EnvSample] = None,
@@ -424,7 +426,7 @@ def simulate_sweep(
     rather than pay for them twice. The result is identical either way.
     """
     ice_model = sea_ice_model or get_sea_ice_model()
-    env_model = environment or get_environment()
+    env_model = environment or SimulatedProvider()
 
     heading_deg = float(heading_deg) % 360.0
     speed_knots = max(0.0, float(speed_knots))
@@ -433,7 +435,7 @@ def simulate_sweep(
     env = (
         env_sample
         if env_sample is not None
-        else env_model.sample(lat, lon, t_hours, ice_concentration=ice.concentration)
+        else env_model.sample(lat, lon, datetime.fromtimestamp(t_hours * 3600, tz=timezone.utc))
     )
 
     clutter = sea_clutter_level(env)
