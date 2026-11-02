@@ -147,6 +147,9 @@ class RouteEvaluation(BaseModel):
     is_feasible: bool
     infeasible_reason: str = ""
     prohibited_waypoints: int = 0
+    # v1.1 additions: clock times derived from the voyage departure.
+    arrival_iso: Optional[str] = None
+    waypoint_etas: List[WaypointEta] = Field(default_factory=list)
 
 
 class SearchDiagnostics(BaseModel):
@@ -232,6 +235,8 @@ class RouteAlternativesResult(BaseModel):
     is_synthetic_environment: bool = True
     environment_mode: str = "simulated"
     environment_provenance: Dict[str, Dict[str, str]] = Field(default_factory=dict)
+    # v1.1 additions: wall-clock departure and the environment that produced the data.
+    departure_iso: Optional[str] = None
     provenance: List[Provenance] = Field(default_factory=list)
 
 

@@ -1,10 +1,15 @@
 """Icebergs, route planning and route comparison."""
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+import json
+import os
+import re
+from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Tuple
 
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from src.core.constants import DATA_PROVENANCE, ICEBERG_EXCLUSION_RADIUS_NM, KM_PER_NM
@@ -26,7 +31,7 @@ from src.core.route_optimizer import (
     RouteWeights,
 )
 from src.data.icebergs import get_iceberg_profiles, get_profile
-from src.data.nsidc_sea_ice import NSIDCUnavailableError
+from src.data.nsidc_sea_ice import NSIDCUnavailableError, _FILENAME_RE_V6, default_cache_dir
 from src.data.observed_icebergs import load_snapshot as load_observed_icebergs
 from src.data.stations import resolve_endpoint
 from src.ml.iceberg_dataset import load_database, nearest_at_or_before
@@ -34,11 +39,76 @@ from src.ml.iceberg_dataset import load_database, nearest_at_or_before
 router = APIRouter(prefix="/api/v1", tags=["navigation"])
 
 
+def _replay_pack_dir() -> Path | None:
+    configured = os.environ.get("ICEFLOW_REPLAY_PACK")
+    if configured:
+        p = Path(configured).expanduser()
+        if p.is_dir():
+            return p
+    for candidate in (Path.home() / "iceflow-data" / "replay-pack-2022-01", Path("/tmp/iceflow-full-pack")):
+        if candidate.is_dir():
+            return candidate
+    return None
+
+
+def _latest_nsidc_cached_date(cache_dir: Path | None = None) -> date | None:
+    cache = cache_dir or default_cache_dir()
+    if not cache.is_dir():
+        return None
+    best: date | None = None
+    for path in cache.glob("sic_pss25_*_*.nc"):
+        m = _FILENAME_RE_V6.fullmatch(path.name) or re.fullmatch(r"sic_pss25_(\d{8})_.*", path.name)
+        if m:
+            try:
+                d = datetime.strptime(m.group(1), "%Y%m%d").date()
+                if best is None or d > best:
+                    best = d
+            except ValueError:
+                continue
+    return best
+
+
+def _coverage_422(variable: str, requested: str, available: str | None) -> None:
+    raise HTTPException(
+        status_code=422,
+        detail={"code": "out_of_coverage", "variable": variable, "requested": requested, "available": available},
+    )
+
+
+def _check_coverage(req) -> None:
+    """Raise 422 out_of_coverage when the requested dates are outside available data."""
+    if req.environment_mode == "replay":
+        pack_dir = _replay_pack_dir()
+        if pack_dir is None:
+            _coverage_422("replay_pack", "no pack configured", None)
+        manifest_path = pack_dir / "manifest.json"
+        if not manifest_path.is_file():
+            _coverage_422("replay_pack", "no manifest", None)
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        start = manifest.get("start")
+        days = manifest.get("days", 0)
+        if not start or not req.replay_date:
+            _coverage_422("replay_pack", "missing start or replay_date", start)
+        pack_start = datetime.strptime(start, "%Y-%m-%d").date()
+        pack_end = pack_start + timedelta(days=max(days - 1, 0))
+        req_date = datetime.strptime(req.replay_date, "%Y-%m-%d").date()
+        if req_date < pack_start or req_date > pack_end:
+            _coverage_422("sea_ice", req.replay_date, f"{start} to {pack_end.isoformat()}")
+    elif req.environment_mode == "real_ice":
+        latest = _latest_nsidc_cached_date()
+        if latest is None:
+            _coverage_422("sea_ice", "no cached observation", None)
+        today = datetime.now(timezone.utc).date()
+        if (today - latest).days > 14:
+            _coverage_422("sea_ice", latest.isoformat(), f"within 14 days of {today.isoformat()}")
+
+
 def _build_optimizer(req: RouteRequest) -> Tuple[PolarRouteOptimizer, Tuple[float, float], Tuple[float, float]]:
     """Resolve endpoints and construct the planner, turning observational data failures into 4xx.
 
     Returns (optimizer, start, dest).
     """
+    _check_coverage(req)
     start, dest, vessel = _resolve_request(req)
     try:
         optimizer = PolarRouteOptimizer(
@@ -52,7 +122,7 @@ def _build_optimizer(req: RouteRequest) -> Tuple[PolarRouteOptimizer, Tuple[floa
     except NSIDCUnavailableError as exc:
         raise HTTPException(
             status_code=422,
-            detail=f"environment_mode='{req.environment_mode}' could not be honoured: {exc}",
+            detail={"code": "out_of_coverage", "variable": "sea_ice", "requested": str(exc), "available": None},
         ) from exc
     return optimizer, start, dest
 
@@ -394,6 +464,7 @@ def alternatives(req: RouteRequest) -> RouteAlternativesResult:
         avoid_icebergs=req.avoid_icebergs,
         departure_iso=req.departure_iso,
     )
+    return result
 
 
 @router.post("/route/compare")
