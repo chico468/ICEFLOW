@@ -329,6 +329,7 @@ def _integrate_ensemble(
     veer_rad: np.ndarray,
     ice_concentration: float,
     apply_melt: bool,
+    initial_velocity_ms: Optional[Tuple[float, float]] = None,
 ) -> Tuple[List[Dict[str, np.ndarray]], Dict[str, float]]:
     """
     RK4 integration of the whole ensemble at once. Member 0 is always the unperturbed control.
@@ -358,9 +359,14 @@ def _integrate_ensemble(
         out["va"] = ua * np.sin(veer_rad) + va * np.cos(veer_rad)
         return out
 
-    # Start in equilibrium with the local current, which is where a tracked berg actually is.
+    # Start in equilibrium with the local current, which is where a tracked berg actually is,
+    # unless an observed initial velocity is supplied (velocity-initialised variant).
     f0 = apply_perturbation(forcing_fn(lat, lon, t0_hours))
-    u, v = f0["uo"].copy(), f0["vo"].copy()
+    if initial_velocity_ms is not None:
+        u = np.full(n, float(initial_velocity_ms[0]), dtype=np.float64)
+        v = np.full(n, float(initial_velocity_ms[1]), dtype=np.float64)
+    else:
+        u, v = f0["uo"].copy(), f0["vo"].copy()
 
     samples: List[Dict[str, np.ndarray]] = []
     budget: Dict[str, float] = {}
@@ -517,6 +523,7 @@ def predict_iceberg_drift(
     samples, budget = _integrate_ensemble(
         berg, forecast_hours, time_step_hours, forcing_fn, t0_hours,
         c_air, c_water, wind_bias, veer, ice_concentration, apply_melt,
+        initial_velocity_ms,
     )
 
     points: List[TrajectoryPoint] = []
@@ -569,6 +576,8 @@ def predict_iceberg_drift(
         mass_lost_percent=round(100.0 * (1.0 - final_mass / max(initial_mass, 1e-9)), 3),
         final_length_m=round(float(samples[-1]["length"][0]), 1),
         ensemble_members=n,
+        is_synthetic=getattr(env, "is_synthetic", True),
+        source=getattr(env, "source", "synthetic; stands in for ECMWF ERA5/HRES + Copernicus Marine CMEMS"),
         force_budget=ForceBudget(
             air_drag_mn=round(budget.get("air", 0.0), 4),
             water_drag_mn=round(budget.get("water", 0.0), 4),
