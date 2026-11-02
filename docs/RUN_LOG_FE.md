@@ -89,7 +89,7 @@ Ports: frontend 5199, backend 8199 (strictPort, reuseExistingServer false)
 
 Compare URL: https://github.com/chico468/ICEFLOW/compare/main...voyage-bridge
 
-## STAGE 0 — GROUND TRUTH + AUDIT (committed: <SHA>)
+## STAGE 0 — GROUND TRUTH + AUDIT (committed: 58e004a)
 - W0 ground truth: `git log --oneline -8` (top: FE_RULES 075caee, then Stage D 97387e8 …
   Stage A ed178ee). Proxy target `http://127.0.0.1:8199` (vite.config.ts:4; the demo
   backend is actually listening on 8199, not the 8000 in start.sh).
