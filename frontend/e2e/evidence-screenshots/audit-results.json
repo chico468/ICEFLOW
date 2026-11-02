@@ -1,0 +1,595 @@
+{
+  "Plan": {
+    "1024x768": {
+      "reached": true,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "horizontalOverflow": false,
+      "clippedText": [
+        {
+          "tag": "SPAN",
+          "cls": "block truncate text-2xs text-ink-3",
+          "text": "Ice concentration (simulated) · Observed bergs (stale) · Ber"
+        },
+        {
+          "tag": "BUTTON",
+          "cls": "flex-1 truncate px-3 py-2 text-left text",
+          "text": "Plan"
+        },
+        {
+          "tag": "BUTTON",
+          "cls": "flex-1 truncate px-3 py-2 text-left text",
+          "text": "Layers"
+        },
+        {
+          "tag": "BUTTON",
+          "cls": "flex-1 truncate px-3 py-2 text-left text",
+          "text": "Inspect"
+        },
+        {
+          "tag": "BUTTON",
+          "cls": "flex-1 truncate px-3 py-2 text-left text",
+          "text": "Routes"
+        },
+        {
+          "tag": "BUTTON",
+          "cls": "flex-1 truncate px-3 py-2 text-left text",
+          "text": "Evidence"
+        }
+      ],
+      "emptyLoadingErrorStates": []
+    },
+    "1280x720": {
+      "reached": true,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "horizontalOverflow": false,
+      "clippedText": [
+        {
+          "tag": "DIV",
+          "cls": "relative min-h-0 flex-1 overflow-hidden",
+          "text": "PlanLayersPassageOrigin and destinationOriginCape TownMormug"
+        },
+        {
+          "tag": "SPAN",
+          "cls": "block truncate text-2xs text-ink-3",
+          "text": "Ice concentration (simulated) · Observed bergs (stale) · Ber"
+        }
+      ],
+      "emptyLoadingErrorStates": []
+    },
+    "1440x900": {
+      "reached": true,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "horizontalOverflow": false,
+      "clippedText": [
+        {
+          "tag": "DIV",
+          "cls": "relative min-h-0 flex-1 overflow-hidden",
+          "text": "PlanLayersPassageOrigin and destinationOriginCape TownMormug"
+        },
+        {
+          "tag": "SPAN",
+          "cls": "block truncate text-2xs text-ink-3",
+          "text": "Ice concentration (simulated) · Observed bergs (stale) · Ber"
+        }
+      ],
+      "emptyLoadingErrorStates": []
+    },
+    "1920x1080": {
+      "reached": true,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "horizontalOverflow": false,
+      "clippedText": [
+        {
+          "tag": "SPAN",
+          "cls": "block truncate text-2xs text-ink-3",
+          "text": "Ice concentration (simulated) · Observed bergs (stale) · Ber"
+        }
+      ],
+      "emptyLoadingErrorStates": []
+    }
+  },
+  "Sail": {
+    "1024x768": {
+      "reached": true,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "horizontalOverflow": false,
+      "clippedText": [
+        {
+          "tag": "SPAN",
+          "cls": "block truncate text-2xs text-ink-3",
+          "text": "Ice concentration (simulated) · Observed bergs (stale) · Ber"
+        }
+      ],
+      "emptyLoadingErrorStates": []
+    },
+    "1280x720": {
+      "reached": true,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "horizontalOverflow": false,
+      "clippedText": [
+        {
+          "tag": "SPAN",
+          "cls": "block truncate text-2xs text-ink-3",
+          "text": "Ice concentration (simulated) · Observed bergs (stale) · Ber"
+        }
+      ],
+      "emptyLoadingErrorStates": []
+    },
+    "1440x900": {
+      "reached": true,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "horizontalOverflow": false,
+      "clippedText": [
+        {
+          "tag": "SPAN",
+          "cls": "block truncate text-2xs text-ink-3",
+          "text": "Ice concentration (simulated) · Observed bergs (stale) · Ber"
+        }
+      ],
+      "emptyLoadingErrorStates": []
+    },
+    "1920x1080": {
+      "reached": true,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "horizontalOverflow": false,
+      "clippedText": [
+        {
+          "tag": "SPAN",
+          "cls": "block truncate text-2xs text-ink-3",
+          "text": "Ice concentration (simulated) · Observed bergs (stale) · Ber"
+        }
+      ],
+      "emptyLoadingErrorStates": []
+    }
+  },
+  "Voyage": {
+    "1024x768": {
+      "reached": true,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "horizontalOverflow": false,
+      "clippedText": [
+        {
+          "tag": "DIV",
+          "cls": "absolute inset-0 overflow-hidden",
+          "text": "PolarRegionalLegendIce concentration (simulated) · Observed "
+        },
+        {
+          "tag": "SPAN",
+          "cls": "block truncate text-2xs text-ink-3",
+          "text": "Ice concentration (simulated) · Observed bergs (stale) · Ber"
+        }
+      ],
+      "emptyLoadingErrorStates": []
+    },
+    "1280x720": {
+      "reached": true,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "horizontalOverflow": false,
+      "clippedText": [
+        {
+          "tag": "DIV",
+          "cls": "absolute inset-0 overflow-hidden",
+          "text": "PolarRegionalLegendIce concentration (simulated) · Observed "
+        },
+        {
+          "tag": "SPAN",
+          "cls": "block truncate text-2xs text-ink-3",
+          "text": "Ice concentration (simulated) · Observed bergs (stale) · Ber"
+        }
+      ],
+      "emptyLoadingErrorStates": []
+    },
+    "1440x900": {
+      "reached": true,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "horizontalOverflow": false,
+      "clippedText": [
+        {
+          "tag": "DIV",
+          "cls": "absolute inset-0 overflow-hidden",
+          "text": "PolarRegionalLegendIce concentration (simulated) · Observed "
+        },
+        {
+          "tag": "SPAN",
+          "cls": "block truncate text-2xs text-ink-3",
+          "text": "Ice concentration (simulated) · Observed bergs (stale) · Ber"
+        }
+      ],
+      "emptyLoadingErrorStates": []
+    },
+    "1920x1080": {
+      "reached": true,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "horizontalOverflow": false,
+      "clippedText": [
+        {
+          "tag": "DIV",
+          "cls": "absolute inset-0 overflow-hidden",
+          "text": "PolarRegionalLegendIce concentration (simulated) · Observed "
+        },
+        {
+          "tag": "SPAN",
+          "cls": "block truncate text-2xs text-ink-3",
+          "text": "Ice concentration (simulated) · Observed bergs (stale) · Ber"
+        }
+      ],
+      "emptyLoadingErrorStates": []
+    }
+  },
+  "3D": {
+    "1024x768": {
+      "reached": true,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "horizontalOverflow": false,
+      "clippedText": [
+        {
+          "tag": "DIV",
+          "cls": "absolute inset-0 overflow-hidden",
+          "text": "ICEFLOW · 3DWebGL scene · shared clock with 2D2D3DIce layern"
+        }
+      ],
+      "emptyLoadingErrorStates": []
+    },
+    "1280x720": {
+      "reached": true,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "horizontalOverflow": false,
+      "clippedText": [
+        {
+          "tag": "DIV",
+          "cls": "absolute inset-0 overflow-hidden",
+          "text": "ICEFLOW · 3DWebGL scene · shared clock with 2D2D3DIce layern"
+        }
+      ],
+      "emptyLoadingErrorStates": []
+    },
+    "1440x900": {
+      "reached": true,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "horizontalOverflow": false,
+      "clippedText": [
+        {
+          "tag": "DIV",
+          "cls": "absolute inset-0 overflow-hidden",
+          "text": "ICEFLOW · 3DWebGL scene · shared clock with 2D2D3DIce layern"
+        }
+      ],
+      "emptyLoadingErrorStates": []
+    },
+    "1920x1080": {
+      "reached": true,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "horizontalOverflow": false,
+      "clippedText": [],
+      "emptyLoadingErrorStates": []
+    }
+  },
+  "Sea ice": {
+    "1024x768": {
+      "reached": true,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "horizontalOverflow": false,
+      "clippedText": [
+        {
+          "tag": "SPAN",
+          "cls": "block truncate text-2xs text-ink-3",
+          "text": "Ice concentration (simulated) · Observed bergs (stale) · Ber"
+        }
+      ],
+      "emptyLoadingErrorStates": []
+    },
+    "1280x720": {
+      "reached": true,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "horizontalOverflow": false,
+      "clippedText": [
+        {
+          "tag": "SPAN",
+          "cls": "block truncate text-2xs text-ink-3",
+          "text": "Ice concentration (simulated) · Observed bergs (stale) · Ber"
+        }
+      ],
+      "emptyLoadingErrorStates": []
+    },
+    "1440x900": {
+      "reached": true,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "horizontalOverflow": false,
+      "clippedText": [
+        {
+          "tag": "SPAN",
+          "cls": "block truncate text-2xs text-ink-3",
+          "text": "Ice concentration (simulated) · Observed bergs (stale) · Ber"
+        }
+      ],
+      "emptyLoadingErrorStates": []
+    },
+    "1920x1080": {
+      "reached": true,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "horizontalOverflow": false,
+      "clippedText": [
+        {
+          "tag": "SPAN",
+          "cls": "block truncate text-2xs text-ink-3",
+          "text": "Ice concentration (simulated) · Observed bergs (stale) · Ber"
+        }
+      ],
+      "emptyLoadingErrorStates": []
+    }
+  },
+  "Icebergs": {
+    "1024x768": {
+      "reached": true,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "horizontalOverflow": false,
+      "clippedText": [
+        {
+          "tag": "SPAN",
+          "cls": "block truncate text-2xs text-ink-3",
+          "text": "Ice concentration (simulated) · Observed bergs (stale) · Ber"
+        }
+      ],
+      "emptyLoadingErrorStates": []
+    },
+    "1280x720": {
+      "reached": true,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "horizontalOverflow": false,
+      "clippedText": [
+        {
+          "tag": "SPAN",
+          "cls": "block truncate text-2xs text-ink-3",
+          "text": "Ice concentration (simulated) · Observed bergs (stale) · Ber"
+        }
+      ],
+      "emptyLoadingErrorStates": []
+    },
+    "1440x900": {
+      "reached": true,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "horizontalOverflow": false,
+      "clippedText": [
+        {
+          "tag": "SPAN",
+          "cls": "block truncate text-2xs text-ink-3",
+          "text": "Ice concentration (simulated) · Observed bergs (stale) · Ber"
+        }
+      ],
+      "emptyLoadingErrorStates": []
+    },
+    "1920x1080": {
+      "reached": true,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "horizontalOverflow": false,
+      "clippedText": [
+        {
+          "tag": "SPAN",
+          "cls": "block truncate text-2xs text-ink-3",
+          "text": "Ice concentration (simulated) · Observed bergs (stale) · Ber"
+        }
+      ],
+      "emptyLoadingErrorStates": []
+    }
+  },
+  "Insights": {
+    "1024x768": {
+      "reached": true,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "horizontalOverflow": false,
+      "clippedText": [
+        {
+          "tag": "H2",
+          "cls": "display truncate text-[15px] text-ink",
+          "text": "Optimised against ice-blind baseline"
+        },
+        {
+          "tag": "SPAN",
+          "cls": "truncate text-2xs text-ink-3",
+          "text": "Plan a voyage to populate this"
+        },
+        {
+          "tag": "H2",
+          "cls": "display truncate text-[15px] text-ink",
+          "text": "Satellite bandwidth budget"
+        },
+        {
+          "tag": "SPAN",
+          "cls": "truncate text-2xs text-ink-3",
+          "text": "Measured, not asserted"
+        }
+      ],
+      "emptyLoadingErrorStates": []
+    },
+    "1280x720": {
+      "reached": true,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "horizontalOverflow": false,
+      "clippedText": [],
+      "emptyLoadingErrorStates": []
+    },
+    "1440x900": {
+      "reached": true,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "horizontalOverflow": false,
+      "clippedText": [],
+      "emptyLoadingErrorStates": []
+    },
+    "1920x1080": {
+      "reached": true,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "horizontalOverflow": false,
+      "clippedText": [],
+      "emptyLoadingErrorStates": []
+    }
+  },
+  "Scorecard": {
+    "1024x768": {
+      "reached": true,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "horizontalOverflow": false,
+      "clippedText": [
+        {
+          "tag": "SPAN",
+          "cls": "display truncate",
+          "text": "SIC + iceberg drift hindcast"
+        },
+        {
+          "tag": "SPAN",
+          "cls": "display truncate",
+          "text": "2005–2006–2007–2008–2009–2010–2011–2012–2013–2014–2015–2016–"
+        },
+        {
+          "tag": "SPAN",
+          "cls": "display truncate",
+          "text": "2022–2023–2024"
+        },
+        {
+          "tag": "H2",
+          "cls": "display truncate text-[15px] text-ink",
+          "text": "Promoted"
+        },
+        {
+          "tag": "SPAN",
+          "cls": "truncate text-2xs text-ink-3",
+          "text": "Promotion gate: RMSE beats tuned baseline, CI excludes zero,"
+        },
+        {
+          "tag": "H2",
+          "cls": "display truncate text-[15px] text-ink",
+          "text": "Conformal coverage"
+        },
+        {
+          "tag": "SPAN",
+          "cls": "truncate text-2xs text-ink-3",
+          "text": "90% intervals, stratified by lead and concentration bin"
+        }
+      ],
+      "emptyLoadingErrorStates": []
+    },
+    "1280x720": {
+      "reached": true,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "horizontalOverflow": false,
+      "clippedText": [
+        {
+          "tag": "SPAN",
+          "cls": "display truncate",
+          "text": "SIC + iceberg drift hindcast"
+        },
+        {
+          "tag": "SPAN",
+          "cls": "display truncate",
+          "text": "2005–2006–2007–2008–2009–2010–2011–2012–2013–2014–2015–2016–"
+        },
+        {
+          "tag": "SPAN",
+          "cls": "display truncate",
+          "text": "2022–2023–2024"
+        }
+      ],
+      "emptyLoadingErrorStates": []
+    },
+    "1440x900": {
+      "reached": true,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "horizontalOverflow": false,
+      "clippedText": [
+        {
+          "tag": "SPAN",
+          "cls": "display truncate",
+          "text": "SIC + iceberg drift hindcast"
+        },
+        {
+          "tag": "SPAN",
+          "cls": "display truncate",
+          "text": "2005–2006–2007–2008–2009–2010–2011–2012–2013–2014–2015–2016–"
+        }
+      ],
+      "emptyLoadingErrorStates": []
+    },
+    "1920x1080": {
+      "reached": true,
+      "consoleErrors": [],
+      "failedRequests": [],
+      "horizontalOverflow": false,
+      "clippedText": [
+        {
+          "tag": "SPAN",
+          "cls": "display truncate",
+          "text": "SIC + iceberg drift hindcast"
+        },
+        {
+          "tag": "SPAN",
+          "cls": "display truncate",
+          "text": "2005–2006–2007–2008–2009–2010–2011–2012–2013–2014–2015–2016–"
+        }
+      ],
+      "emptyLoadingErrorStates": []
+    }
+  },
+  "Simple_Plan": {
+    "reached": true,
+    "consoleErrors": [],
+    "failedRequests": [],
+    "horizontalOverflow": false,
+    "clippedText": [
+      {
+        "tag": "DIV",
+        "cls": "relative min-h-0 flex-1 overflow-hidden",
+        "text": "PlanLayersPassageOrigin and destinationOriginCape TownMormug"
+      },
+      {
+        "tag": "SPAN",
+        "cls": "block truncate text-2xs text-ink-3",
+        "text": "Ice concentration (simulated) · Observed bergs (stale) · Ber"
+      }
+    ],
+    "emptyLoadingErrorStates": []
+  },
+  "Simple_Sail": {
+    "reached": true,
+    "consoleErrors": [],
+    "failedRequests": [],
+    "horizontalOverflow": false,
+    "clippedText": [
+      {
+        "tag": "SPAN",
+        "cls": "block truncate text-2xs text-ink-3",
+        "text": "Ice concentration (simulated) · Observed bergs (stale) · Ber"
+      }
+    ],
+    "emptyLoadingErrorStates": []
+  }
+}

@@ -17,6 +17,7 @@
  * place, and a chart that forgets where you were looking is an irritating one.
  */
 import { Activity, BarChart3, ClipboardList, Layers, Package, Ship, Snowflake } from 'lucide-react';
+import { lazy, Suspense } from 'react';
 import { ProvenanceBar } from './components/ProvenanceBar';
 import { ProvenanceBadge } from './components/ProvenanceBadge';
 import { ScreenActiveContext } from './components/screenActive';
@@ -27,7 +28,7 @@ import { IceForecast } from './screens/IceForecast';
 import { IcebergTracker } from './screens/IcebergTracker';
 import { Sail } from './screens/Sail';
 import { Scorecard } from './screens/Scorecard';
-import { ThreeDee } from './screens/ThreeDee';
+const ThreeDee = lazy(() => import('./screens/ThreeDee').then((m) => ({ default: m.ThreeDee })));
 import { VoyagePlanner } from './screens/VoyagePlanner';
 import { useAppStore, type ScreenId } from './store/useAppStore';
 
@@ -145,7 +146,9 @@ export function App(): JSX.Element {
             <Sail />
           </Screen>
           <Screen id="scene" active={activeScreen}>
-            <ThreeDee />
+            <Suspense fallback={<div className="flex h-full items-center justify-center text-ink-2">Loading 3D scene…</div>}>
+              <ThreeDee />
+            </Suspense>
           </Screen>
           <Screen id="forecast" active={activeScreen}>
             <IceForecast />

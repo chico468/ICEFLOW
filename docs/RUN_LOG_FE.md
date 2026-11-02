@@ -88,3 +88,37 @@ Ports: frontend 5199, backend 8199 (strictPort, reuseExistingServer false)
 ## STAGE D — PENDING
 
 Compare URL: https://github.com/chico468/ICEFLOW/compare/main...voyage-bridge
+
+## STAGE 0 — GROUND TRUTH + AUDIT (committed: <SHA>)
+- W0 ground truth: `git log --oneline -8` (top: FE_RULES 075caee, then Stage D 97387e8 …
+  Stage A ed178ee). Proxy target `http://127.0.0.1:8199` (vite.config.ts:4; the demo
+  backend is actually listening on 8199, not the 8000 in start.sh).
+- Health: 200, `{"status":"ok", … "warmup":{"state":"ready"}}`.
+- `/api/v1/environment/coverage`: 404 (logged in BACKEND_ISSUES.md §2; route exists in source
+  but not registered in the running process).
+- `/api/v1/evidence/scorecard`: 404 (logged §3).
+- Map sea-ice endpoint: `/api/v1/environment/layers` (200, 7 layers; 2022-01-15 is
+  `outside_coverage`, a recent date is `ready`). Recorded to
+  `frontend/e2e/fixtures/recorded/environment-layers-2026-11-02.json`.
+- Cape Town -> Bharati replay plan (2022-01-15, mode replay): 200, voyage
+  `da1b0b496646`, 51 route points, last cum_hours 305.57. Recorded to
+  `frontend/e2e/fixtures/recorded/plan-2026-11-02.json`.
+- Timeline step count: `/voyage/{id}/timeline` is missing from the running backend (404), so the
+  step count was computed from live state: `floor(sim_hours*3600/step_min_seconds)+1` with
+  step_min=30 → **623** at full sim_hours=311, and **441** at the max single-step sim_hours=220
+  ("about 440" as expected). Verified by stepping a fresh voyage to 220 h (BESET, 2553.89 nm).
+- Mapbox token: **no** (empty in .env.example, no env var).
+- 3D reality check: all 13 features DONE — Gerstner Ocean, Sky, Ship (Kenney CC0 glTF +
+  procedural fallback), iceMask + 4 tests, named bergs, brash/growlers, weather fields,
+  raoMotion + 3 monotonic/beam-head tests, reduced motion, adaptive quality, lazy chunk,
+  ATTRIBUTIONS.md. `node --test tests/rao.test.ts tests/icemask.test.ts` = 7/7 PASS.
+- typecheck PASS (`tsc --noEmit -p tsconfig.app.json`, exit 0). build PASS (vite, 5.98 s,
+  `ThreeDee-Cwwn1cVi.js` 860 kB separate chunk).
+- Audit (10 screens x 4 viewports + Simple): 32/32 reached, 0 console errors, 0 failed
+  requests, 0 horizontal overflow, 0 empty/loading/error states, 52 clipped cells all
+  intentional `truncate`/`overflow-hidden`. Raw: `frontend/e2e/evidence-screenshots/audit-results.json`;
+  40 PNGs in the same dir. Written to `docs/FE_AUDIT_2.md`.
+- Decisions: kept all 5 pre-existing modified files (App/IceField/Ocean/Ship/ThreeScene) —
+  each diff is complete and consistent, no truncation. Backend not restarted.
+- BLOCKED: none.
+- Compare URL: https://github.com/chico468/ICEFLOW/compare/main...voyage-bridge
