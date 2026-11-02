@@ -110,8 +110,8 @@ def _to_rows_from_ml_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return out
 
 
-def _compute_promoted(reports: List[Dict[str, Any]]) -> Dict[str, Dict[str, bool]]:
-    promoted: Dict[str, Dict[str, bool]] = {"sic": {}, "iceberg": {}}
+def _compute_promoted(reports: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+    promoted: Dict[str, Dict[str, Any]] = {"sic": {}, "iceberg": {}}
     for report in reports:
         # ML reports carry their own promoted_leads.
         ml_promoted = report.get("promoted", {})
@@ -120,7 +120,7 @@ def _compute_promoted(reports: List[Dict[str, Any]]) -> Dict[str, Dict[str, bool
                 if isinstance(leads, dict):
                     promoted.setdefault(task, {})
                     for lead, val in leads.items():
-                        promoted[task][str(lead)] = bool(val)
+                        promoted[task][str(lead)] = {"promoted": val, "model": "gbm_residual" if task == "sic" else "residual_ml"}
         results = report.get("results", [])
         if not results:
             continue
@@ -154,7 +154,9 @@ def _compute_promoted(reports: List[Dict[str, Any]]) -> Dict[str, Dict[str, bool
                         season_pass = False
                 if not season_pass:
                     all_pass = False
-            promoted[task][str(lead)] = all_pass
+            promoted[task][str(lead)] = {"promoted": all_pass, "model": "gbm_residual"}
+    # Iceberg physics variant is not evaluated (null).
+    promoted["iceberg"]["physics"] = {"promoted": None, "model": "not evaluated"}
     return promoted
 
 

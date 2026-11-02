@@ -126,7 +126,7 @@ def main(argv: List[str] | None = None) -> int:
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
     parser.add_argument("--sample-viz-fraction", type=float, default=0.03,
                         help="Fraction of VIZ cells from each sampled training day")
-    parser.add_argument("--n-boot", type=int, default=200)
+    parser.add_argument("--n-boot", type=int, default=2000)
     parser.add_argument("--quick", action="store_true",
                         help="Quick smoke run with a small date subset")
     parser.add_argument("--evaluate-only", action="store_true",
@@ -350,11 +350,12 @@ def _print_results(metrics: Dict[str, Any], tag: str) -> None:
 
     print(f"  {tag} per-lead (VIZ cells, promotion gate):")
     print(f"    {'lead':>5s} {'n':>6s}  {'model':>8s} {'baseline':>8s} {'persist':>8s} "
-          f"{'diff_ci':>22s}  {'promoted':>8s}")
+          f"{'model_dm':>8s} {'base_dm':>8s} {'diff_ci':>22s}  {'promoted':>8s}")
     for pl in metrics["per_lead"]:
         print(
             f"    {pl['lead_days']:>5d} {pl['n_samples']:>6d}  "
-            f"{pl['model_rmse']:>8.4f} {pl['viz_baseline_rmse']:>8.4f} {pl['persistence_rmse']:>8.4f} "
+            f"{pl['viz_model_rmse']:>8.4f} {pl['viz_baseline_rmse']:>8.4f} {pl['persistence_rmse']:>8.4f} "
+            f"{pl.get('model_rmse_daily_mean', float('nan')):>8.4f} {pl.get('baseline_rmse_daily_mean', float('nan')):>8.4f} "
             f"[{pl['viz_rmse_diff_ci'][0]:>8.4f},{pl['viz_rmse_diff_ci'][1]:>8.4f}] "
             f"  {str(pl['promoted']):>8s}"
         )
@@ -604,7 +605,36 @@ def _build_scorecard_report(
                 "caveat": "2025+ AMSR2-era sensor, not in training window",
             })
 
-    promoted = {str(pl["lead_days"]): pl.get("promoted", False) for pl in test_per_lead}
+    promoted = {
+        str(pl["lead_days"]): {"promoted": pl.get("promoted", False), "model": "gbm_residual"}
+        for pl in test_per_lead
+    }
+
+    # Block bootstrap info per lead (n date-blocks, block length, resamples).
+    bootstrap_info: Dict[str, Any] = {}
+    for pl in test_per_lead:
+        lead = str(pl["lead_days"])
+        bootstrap_info[lead] = {
+            "n_date_blocks": pl.get("n_date_blocks"),
+            "block_length_days": pl.get("block_length_days"),
+            "n_bootstrap_resamples": pl.get("n_bootstrap_resamples"),
+        }
+
+    # Sensor-era results as a separate field (does not change promoted).
+    sensor_era: Dict[str, Any] = {}
+    if sensor_metrics is not None:
+        for pl in sensor_metrics["per_lead"]:
+            lead = str(pl["lead_days"])
+            ci = pl.get("viz_rmse_diff_ci", [None, None])
+            sensor_era[lead] = {
+                "model_rmse": pl.get("viz_model_rmse"),
+                "baseline_rmse": pl.get("viz_baseline_rmse"),
+                "rmse_diff_ci": ci,
+                "rmse_diff_ci_excludes_zero": pl.get("viz_rmse_diff_ci_excludes_zero_all_season", False),
+                "n_samples": pl.get("n_samples"),
+                "season": "all",
+                "caveat": "2025+ AMSR2-era sensor, not in training window",
+            }
 
     coverage_out: Dict[str, Any] = {}
     for lead_str, lead_cov in cov.get("per_lead", {}).items():
@@ -617,6 +647,7 @@ def _build_scorecard_report(
         "Trained on NSIDC V6 SSMIS-era (2005-2019). Val 2020-2021, test 2022-2024 untouched.",
         f"Sensor check evaluated on AMSR2-era data ({sensor_date_range or 'no 2025+ data'}, {sensor_n_days} days); out-of-training-distribution, indicative only.",
         "Promoted leads must beat tuned damped-persistence baseline with 95% CI excluding zero in both all-season and Nov-Mar on VIZ cells.",
+        "CI computed with block bootstrap over 14+ day date blocks (never pools individual grid cells).",
         "IIEE at 15% threshold per Goessling et al. 2016, area-weighted, per-day averaged.",
         "IIEE rows published only when the per-lead physical sanity check passes "
         "(cell area near nominal 625 km^2, mismatches > 0, mismatch area < daily extent).",
@@ -627,6 +658,15 @@ def _build_scorecard_report(
         caveats.append(
             f"Sensor check: {sensor_metrics['n_samples']} samples across "
             f"{sensor_metrics['overall']['window_years']}."
+        )
+
+    # Promotion caveats if any lead is promoted.
+    if any(promoted.values()):
+        promoted_leads = [l for l, v in promoted.items() if v]
+        caveats.append(
+            f"Promoted leads {promoted_leads}: test period is SSMIS-era (2005-2024), "
+            f"RMSE gain vs tuned damped-persistence baseline is a few percent, "
+            f"and AMSR2-era (2025+) results are indicative only."
         )
 
     return {
@@ -646,6 +686,8 @@ def _build_scorecard_report(
         "sensor_n_days": sensor_n_days,
         "rows": rows,
         "promoted": {"sic": promoted},
+        "sensor_era": sensor_era,
+        "bootstrap_info": bootstrap_info,
         "coverage": coverage_out,
         "coverage_per_lead_per_season": cov.get("per_lead_per_season", {}),
         "coverage_per_lead_per_sector": cov.get("per_lead_per_sector", {}),
@@ -654,7 +696,7 @@ def _build_scorecard_report(
             "trained_on": "real",
             "operational_skill_validated": False,
             "used_in_routing": False,
-            "promoted_leads": sorted(promoted.keys()) if any(promoted.values()) else [],
+            "promoted_leads": sorted([k for k, v in promoted.items() if v["promoted"]]) if any(v["promoted"] for v in promoted.values()) else [],
             "status": "real_data_training_complete",
         },
         "caveats": caveats,

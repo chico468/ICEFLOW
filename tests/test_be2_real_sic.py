@@ -354,3 +354,86 @@ def test_iiee_sanity_check_fails_bad_cell_area():
     result = _iiee_sanity_check(pred, truth, areas_m2, dates)
     assert result["passed"] is False
     assert result["checks"]["cell_area_plausible"] is False
+
+
+def test_block_bootstrap_ci_includes_zero_when_improvement_on_few_dates():
+    """Block bootstrap CI correctly includes zero when improvement exists on only a few dates.
+
+    Data: model beats baseline by a fixed delta on just 3 of 30 dates (10%).
+    Pooled-cell bootstrap would treat all 3000 cell-days as independent → narrow CI
+    that wrongly excludes zero. Block bootstrap (14-day blocks, ~3 blocks) resamples
+    whole dates → wider CI that correctly includes zero because most bootstrap
+    samples miss some or all of the good dates.
+    """
+    from src.ml.real_sic_forecaster import _compute_rmse_diff_ci
+
+    rng = np.random.default_rng(42)
+    n_dates = 30
+    n_cells = 100
+
+    # Baseline: random SIC values per cell per date.
+    baseline = rng.uniform(0.1, 0.9, (n_dates, n_cells))
+
+    # Model: same as baseline on most dates, slightly better on just 3 dates.
+    model = baseline.copy()
+    good_dates = [0, 10, 20]  # only 3 out of 30 dates
+    for d in good_dates:
+        model[d] = baseline[d] - 0.02  # model is 0.02 better on these dates
+
+    # Date ordinals: one per date, repeated for each cell.
+    date_ord = np.repeat(np.arange(n_dates), n_cells)
+
+    # Mask: all cells valid.
+    mask = np.ones(n_dates * n_cells, dtype=bool)
+
+    pred = model.ravel()
+    truth = baseline.ravel()  # truth = baseline (no real improvement)
+    base = baseline.ravel()
+
+    # Block bootstrap CI with 14-day blocks (~3 blocks for 30 dates).
+    model_rmse, baseline_rmse, ci_lo, ci_hi, n_blocks, block_len = _compute_rmse_diff_ci(
+        pred, truth, base, date_ord, mask, n_boot=2000, seed=42, block_days=14,
+    )
+
+    # With only 3 good dates out of 30, block CI should include zero (ci_lo <= 0 <= ci_hi).
+    assert ci_lo <= 0.0 <= ci_hi, (
+        f"Block CI should include zero, got [{ci_lo}, {ci_hi}], "
+        f"n_blocks={n_blocks}, block_len={block_len}"
+    )
+    assert n_blocks >= 2, f"Expected at least 2 date blocks, got {n_blocks}"
+    assert block_len == 14
+
+
+def test_block_bootstrap_ci_excludes_zero_when_improvement_on_most_dates():
+    """Block bootstrap CI excludes zero when improvement exists on most dates.
+
+    Sanity check: when model is consistently better than baseline on most dates,
+    both pooled and block CI should exclude zero.
+    """
+    from src.ml.real_sic_forecaster import _compute_rmse_diff_ci
+
+    rng = np.random.default_rng(7)
+    n_dates = 30
+    n_cells = 100
+
+    baseline = rng.uniform(0.1, 0.9, (n_dates, n_cells))
+    # Model is consistently closer to truth than baseline.
+    truth = baseline + 0.06
+    model = baseline + 0.03  # model is 0.03 closer to truth than baseline
+
+    date_ord = np.repeat(np.arange(n_dates), n_cells)
+    mask = np.ones(n_dates * n_cells, dtype=bool)
+
+    pred = model.ravel()
+    truth_r = truth.ravel()
+    base = baseline.ravel()
+
+    model_rmse, baseline_rmse, ci_lo, ci_hi, n_blocks, block_len = _compute_rmse_diff_ci(
+        pred, truth_r, base, date_ord, mask, n_boot=2000, seed=7, block_days=14,
+    )
+
+    # Model is consistently better → CI should exclude zero (ci_hi < 0).
+    assert ci_hi < 0.0, (
+        f"Block CI should exclude zero (ci_hi < 0), got [{ci_lo}, {ci_hi}]"
+    )
+    assert model_rmse < baseline_rmse

@@ -294,60 +294,93 @@ def _rmse(pred: np.ndarray, truth: np.ndarray, mask: np.ndarray) -> float:
     return float(np.sqrt(np.mean(diff ** 2))) if len(diff) > 0 else float("nan")
 
 
+def _rmse_daily_mean(
+    pred: np.ndarray, truth: np.ndarray, mask: np.ndarray, date_ordinal: np.ndarray,
+) -> float:
+    """Mean of daily RMSEs: RMSE computed per date, then averaged across dates.
+
+    This is a secondary statistic, labelled as such.  The gate and its CI use
+    the pooled RMSE (all VIZ cells across all test days), not this daily mean.
+    """
+    m = mask & np.isfinite(pred) & np.isfinite(truth)
+    if m.sum() == 0:
+        return float("nan")
+    p = pred[m]
+    t = truth[m]
+    d = date_ordinal[m].astype(np.int64)
+    unique_days = np.unique(d)
+    daily_rmses = []
+    for day in unique_days:
+        day_mask = d == day
+        diff = p[day_mask] - t[day_mask]
+        daily_rmses.append(float(np.sqrt(np.mean(diff ** 2))))
+    if not daily_rmses:
+        return float("nan")
+    return float(np.mean(daily_rmses))
+
+
 def _compute_rmse_diff_ci(
     pred: np.ndarray,
     truth: np.ndarray,
     baseline: np.ndarray,
-    month: np.ndarray,
+    date_ordinal: np.ndarray,
     mask: np.ndarray,
-    n_boot: int = 200,
+    n_boot: int = 2000,
     seed: int = 26059,
-) -> Tuple[float, float, float, float]:
-    """Bootstrap (block-by-month) CI of (RMSE_model - RMSE_baseline).
+    block_days: int = 14,
+) -> Tuple[float, float, float, float, int, int]:
+    """Bootstrap CI of (RMSE_model - RMSE_baseline) using date blocks.
 
-    Returns (model_rmse, baseline_rmse, ci_lo, ci_hi).
+    Blocks are contiguous spans of at least block_days days, so that cells on
+    the same day (strongly correlated through weather systems) are always
+    resampled together. Never pools individual grid cells.
+
+    Returns (model_rmse, baseline_rmse, ci_lo, ci_hi, n_blocks, block_length_days).
     """
     m = mask
     if m.sum() == 0:
-        return float("nan"), float("nan"), float("nan"), float("nan")
+        return float("nan"), float("nan"), float("nan"), float("nan"), 0, block_days
 
     p = pred[m]
     t = truth[m]
     b = baseline[m]
-    months = month[m].astype(int)
+    doy = date_ordinal[m].astype(np.int64)
 
     model_rmse = _rmse(p, t, np.ones(len(p), dtype=bool))
     baseline_rmse = _rmse(b, t, np.ones(len(p), dtype=bool))
     point_diff = model_rmse - baseline_rmse
 
-    unique_months = sorted(set(months))
-    if len(unique_months) < 2:
-        return model_rmse, baseline_rmse, point_diff, point_diff
+    # Build date blocks of at least block_days days.
+    first_day = int(doy.min())
+    block_ids = (doy - first_day) // block_days
+    unique_blocks = sorted(set(block_ids.tolist()))
 
-    blocks_p = [p[months == mk] for mk in unique_months]
-    blocks_t = [t[months == mk] for mk in unique_months]
-    blocks_b = [b[months == mk] for mk in unique_months]
+    if len(unique_blocks) < 2:
+        return model_rmse, baseline_rmse, point_diff, point_diff, len(unique_blocks), block_days
+
+    # Precompute per-block sum of squared errors and counts for fast bootstrap.
+    blocks_sse_p = [float(np.sum((p[block_ids == bid] - t[block_ids == bid]) ** 2)) for bid in unique_blocks]
+    blocks_sse_b = [float(np.sum((b[block_ids == bid] - t[block_ids == bid]) ** 2)) for bid in unique_blocks]
+    blocks_n = [int((block_ids == bid).sum()) for bid in unique_blocks]
 
     rng = np.random.default_rng(seed)
-    n_blocks = len(unique_months)
+    n_blocks = len(unique_blocks)
     idx = rng.integers(0, n_blocks, size=(n_boot, n_blocks))
     boot_diffs = np.empty(n_boot)
     for i in range(n_boot):
         sel = idx[i]
-        bp = np.concatenate([blocks_p[j] for j in sel])
-        bt = np.concatenate([blocks_t[j] for j in sel])
-        bb = np.concatenate([blocks_b[j] for j in sel])
-        if len(bt) == 0:
+        total_n = sum(blocks_n[j] for j in sel)
+        if total_n == 0:
             boot_diffs[i] = point_diff
             continue
-        rm_p = float(np.sqrt(np.mean((bp - bt) ** 2)))
-        rm_b = float(np.sqrt(np.mean((bb - bt) ** 2)))
+        rm_p = float(np.sqrt(sum(blocks_sse_p[j] for j in sel) / total_n))
+        rm_b = float(np.sqrt(sum(blocks_sse_b[j] for j in sel) / total_n))
         boot_diffs[i] = rm_p - rm_b
 
     alpha = PROMOTION_CI_ALPHA
     ci_lo = float(np.percentile(boot_diffs, 100 * alpha / 2.0))
     ci_hi = float(np.percentile(boot_diffs, 100 * (1.0 - alpha / 2.0)))
-    return model_rmse, baseline_rmse, ci_lo, ci_hi
+    return model_rmse, baseline_rmse, ci_lo, ci_hi, n_blocks, block_days
 
 
 @dataclass
@@ -566,11 +599,15 @@ class RealSICForecaster:
         return lo, hi
 
     def evaluate(
-        self, ds: RealSICSplit, n_boot: int = 200, seed: int = 26059,
+        self, ds: RealSICSplit, n_boot: int = 2000, seed: int = 26059,
     ) -> Dict[str, Any]:
         """Full evaluation with promotion-gate logic and coverage metrics."""
         full_pred = self.predict_full(ds)
         truth = ds.truth
+
+        date_ord = getattr(ds, "target_date_ordinal", None)
+        if date_ord is None:
+            date_ord = np.arange(len(truth), dtype=np.int64)
 
         def score_block(mask: np.ndarray) -> Dict[str, Any]:
             m = mask & np.isfinite(full_pred) & np.isfinite(truth)
@@ -585,21 +622,44 @@ class RealSICForecaster:
             p = full_pred[m]
             b = ds.baseline[m]
             pers = ds.persistence[m]
-            mo = _compute_rmse_diff_ci(
-                full_pred, truth, ds.baseline, ds.month, m, n_boot, seed,
+            mo_rmse, base_rmse, ci_lo, ci_hi, n_blocks, block_len = _compute_rmse_diff_ci(
+                full_pred, truth, ds.baseline, date_ord, m, n_boot, seed,
             )
             model_rmse = _rmse(p, t, np.ones(len(t), dtype=bool))
             baseline_rmse = _rmse(b, t, np.ones(len(t), dtype=bool))
             pers_rmse = _rmse(pers, t, np.ones(len(t), dtype=bool))
+            # Daily mean RMSE (secondary statistic, not used by gate).
+            model_daily_mean = _rmse_daily_mean(p, t, np.ones(len(t), dtype=bool), date_ord[m])
+            baseline_daily_mean = _rmse_daily_mean(b, t, np.ones(len(t), dtype=bool), date_ord[m])
+            # Point difference between model and baseline RMSE.
+            point_diff = model_rmse - baseline_rmse
+            # Check the point difference lies inside its own CI.
+            ci_contains_point = bool(ci_lo <= point_diff <= ci_hi)
+            # Block-length sensitivity: CI at block lengths 7, 14, 28, 56 days.
+            block_sensitivity = {}
+            for bl in (7, 14, 28, 56):
+                _, _, ci_lo_bl, ci_hi_bl, _, _ = _compute_rmse_diff_ci(
+                    full_pred, truth, ds.baseline, date_ord, m, n_boot, seed, block_days=bl,
+                )
+                block_sensitivity[str(bl)] = {
+                    "ci_lo": round(ci_lo_bl, 5),
+                    "ci_hi": round(ci_hi_bl, 5),
+                    "excludes_zero": bool(ci_lo_bl > 0.0 or ci_hi_bl < 0.0),
+                }
             return {
                 "n_samples": int(m.sum()),
                 "model_rmse": round(model_rmse, 5),
                 "baseline_rmse": round(baseline_rmse, 5),
+                "model_rmse_daily_mean": round(model_daily_mean, 5),
+                "baseline_rmse_daily_mean": round(baseline_daily_mean, 5),
                 "persistence_rmse": round(pers_rmse, 5),
+                "point_rmse_diff": round(point_diff, 5),
+                "ci_contains_point_diff": ci_contains_point,
                 "skill_vs_baseline": round(1.0 - model_rmse / baseline_rmse, 5)
                     if baseline_rmse > 0 else float("nan"),
-                "rmse_diff_ci": [round(mo[2], 5), round(mo[3], 5)],
-                "rmse_diff_ci_excludes_zero": bool(mo[2] > 0.0 or mo[3] < 0.0),
+                "rmse_diff_ci": [round(ci_lo, 5), round(ci_hi, 5)],
+                "rmse_diff_ci_excludes_zero": bool(ci_lo > 0.0 or ci_hi < 0.0),
+                "block_length_sensitivity": block_sensitivity,
             }
 
         per_lead: List[Dict[str, Any]] = []
@@ -618,15 +678,15 @@ class RealSICForecaster:
             novmar_viz_mask = viz_mask & np.isin(ds.month, novmar_months)
 
             # All-season VIZ CI.
-            _, _, ci_lo_viz, ci_hi_viz = _compute_rmse_diff_ci(
-                full_pred, truth, ds.baseline, ds.month, viz_mask, n_boot, seed + 1,
+            _, _, ci_lo_viz, ci_hi_viz, n_blocks, block_len = _compute_rmse_diff_ci(
+                full_pred, truth, ds.baseline, date_ord, viz_mask, n_boot, seed + 1,
             )
             all_season_excludes = bool(ci_lo_viz > 0.0 or ci_hi_viz < 0.0)
 
             # Nov-Mar VIZ CI.
             if np.any(novmar_viz_mask):
-                _, _, ci_lo_nm, ci_hi_nm = _compute_rmse_diff_ci(
-                    full_pred, truth, ds.baseline, ds.month,
+                _, _, ci_lo_nm, ci_hi_nm, _, _ = _compute_rmse_diff_ci(
+                    full_pred, truth, ds.baseline, date_ord,
                     novmar_viz_mask, n_boot, seed + 2,
                 )
                 novmar_excludes = bool(ci_lo_nm > 0.0 or ci_hi_nm < 0.0)
@@ -659,14 +719,25 @@ class RealSICForecaster:
                 baseline_rmse_viz_nm = float("nan")
                 viz_nov_mar_n = 0
 
+            # Block-length sensitivity on VIZ mask (informational; does not change promoted).
+            viz_block_sensitivity = {}
+            for bl in (7, 14, 28, 56):
+                _, _, ci_lo_bl, ci_hi_bl, n_blocks_bl, _ = _compute_rmse_diff_ci(
+                    full_pred, truth, ds.baseline, date_ord, viz_mask,
+                    n_boot, seed + 3, block_days=bl,
+                )
+                viz_block_sensitivity[str(bl)] = {
+                    "n_date_blocks": int(n_blocks_bl),
+                    "ci_lo": round(ci_lo_bl, 5),
+                    "ci_hi": round(ci_hi_bl, 5),
+                    "excludes_zero": bool(ci_lo_bl > 0.0 or ci_hi_bl < 0.0),
+                }
+
             # IIEE at 15% threshold (Goessling et al. 2016), area-weighted,
             # per forecast day then mean over days, on VIZ cells from train
             # climatology only. Computed for both model and damped-baseline.
             areas = getattr(ds, "cell_areas", np.ones(len(truth)))
             viz_areas = areas[viz_mask]
-            date_ord = getattr(ds, "target_date_ordinal", None)
-            if date_ord is None:
-                date_ord = np.arange(len(truth), dtype=np.int64)
             if np.any(viz_mask) and len(viz_areas) == int(viz_mask.sum()):
                 model_detail = _compute_iiee_area_per_day(
                     full_pred[viz_mask], truth[viz_mask], viz_areas,
@@ -735,6 +806,10 @@ class RealSICForecaster:
             ]
             block["viz_rmse_diff_ci_excludes_zero_all_season"] = all_season_excludes
             block["viz_rmse_diff_ci_excludes_zero_nov_mar"] = novmar_excludes
+            block["n_date_blocks"] = int(n_blocks)
+            block["block_length_days"] = int(block_len)
+            block["n_bootstrap_resamples"] = int(n_boot)
+            block["viz_block_length_sensitivity"] = viz_block_sensitivity
             block["iiee_15_pct"] = round(iiee_all, 4) if np.isfinite(iiee_all) else float("nan")
             block["iiee_15_pct_nov_mar"] = round(iiee_nm, 4) if np.isfinite(iiee_nm) else float("nan")
             block["iiee_15_pct_baseline"] = round(iiee_all_base, 4) if np.isfinite(iiee_all_base) else float("nan")
