@@ -426,7 +426,7 @@ def test_route_optimize_api_returns_contract_fields():
 
 
 def test_route_optimize_api_accepts_replay_request(tmp_path, monkeypatch):
-    make_fixture_ice_grid(tmp_path, ny=40, nx=80, observation_date_str="2024-01-15")
+    make_fixture_ice_grid(tmp_path, ny=40, nx=80, observation_date_str="2022-01-15")
     monkeypatch.setenv("ICEFLOW_NSIDC_CACHE_DIR", str(tmp_path))
     r = client.post(
         "/api/v1/route/optimize",
@@ -437,8 +437,8 @@ def test_route_optimize_api_accepts_replay_request(tmp_path, monkeypatch):
             "dest_lon": 76.0,
             "ice_class": "PC5",
             "environment_mode": "replay",
-            "replay_date": "2024-01-15",
-            "departure_iso": "2024-01-15T00:00:00+00:00",
+            "replay_date": "2022-01-15",
+            "departure_iso": "2022-01-15T00:00:00+00:00",
         },
     )
     assert r.status_code == 200
