@@ -35,4 +35,9 @@ frontend/test-results/
 data/*.db
 data/*.db-wal
 data/*.db-shm
+data/raw/iceberg/era5_wind/
+data/raw/iceberg/glorys/
+*.zip
+*.nc
+Archive.zip
 .kilo/

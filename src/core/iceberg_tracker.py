@@ -477,6 +477,7 @@ def predict_iceberg_drift(
     apply_melt: bool = True,
     environment: Optional[EnvironmentProvider] = None,
     seed: int = ENSEMBLE_SEED,
+    initial_velocity_ms: Optional[Tuple[float, float]] = None,
 ) -> IcebergForecastResult:
     """
     Forecast an iceberg track.
