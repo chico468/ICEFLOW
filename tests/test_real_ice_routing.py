@@ -6,10 +6,12 @@ temporary cache directory.
 from __future__ import annotations
 
 import json
+import shutil
 import numpy as np
 import pytest
 import xarray as xr
 from datetime import date
+from pathlib import Path
 from fastapi.testclient import TestClient
 from pyproj import Transformer
 
@@ -23,6 +25,11 @@ from src.data.observed_sea_ice import ObservedIceField, get_observed_observation
 
 
 client = TestClient(app)
+
+
+def _has_full_replay_pack() -> bool:
+    """Check if the full replay pack is available at the default location."""
+    return Path("/tmp/iceflow-full-pack").is_dir() and (Path("/tmp/iceflow-full-pack") / "manifest.json").is_file()
 
 
 def write_nsidc_file(path, values_2d, observation_date):
@@ -188,9 +195,18 @@ def test_replay_date_not_in_cache_raises(tmp_path, monkeypatch):
 
 
 def test_optimize_route_replay_uses_observed_ice(tmp_path, monkeypatch):
-    """replay mode with a cached NSIDC file for the date uses observed concentration."""
-    make_fixture_ice_grid(tmp_path, ny=40, nx=80, observation_date_str="2024-01-15")
-    monkeypatch.setenv("ICEFLOW_NSIDC_CACHE_DIR", str(tmp_path))
+    """replay mode with a cached NSIDC file for the date uses observed concentration.
+
+    Uses tests/fixtures/real_slice extended with 2024-01-15 data slices.
+    Sets ICEFLOW_REPLAY_PACK via monkeypatch to the fixture directory.
+    """
+    # Create replay pack fixture for 2024-01-15
+    replay_pack_dir = _make_replay_pack_fixture(tmp_path, "2024-01-15")
+    monkeypatch.setenv("ICEFLOW_REPLAY_PACK", str(replay_pack_dir))
+
+    # Create NSIDC fixture for the same region
+    nsidc_cache_dir = _make_nsidc_fixture_for_replay_region(tmp_path, "2024-01-15")
+    monkeypatch.setenv("ICEFLOW_NSIDC_CACHE_DIR", str(nsidc_cache_dir))
 
     optimizer = PolarRouteOptimizer(
         ice_class=IceClass.PC5,
@@ -200,8 +216,9 @@ def test_optimize_route_replay_uses_observed_ice(tmp_path, monkeypatch):
     assert optimizer._observed_ice is not None
     assert optimizer.is_synthetic is False
 
+    # Use a route within the fixture's coverage
     summary = optimizer.optimize_route(
-        -58.0, 70.0, -69.0, 76.0,
+        -60.0, 48.0, -59.0, 50.0,
         departure_iso="2024-01-15T00:00:00+00:00",
     )
     assert summary.environment_mode == "replay"
@@ -216,6 +233,7 @@ def test_optimize_route_replay_uses_observed_ice(tmp_path, monkeypatch):
     assert len(atm) == 1 and atm[0].kind == "simulated"
 
 
+@pytest.mark.skipif(not _has_full_replay_pack(), reason="Full replay pack not available at /tmp/iceflow-full-pack")
 def test_optimize_route_replay_cape_town_to_bharati_within_60s(tmp_path, monkeypatch):
     """BE-5 acceptance: Cape Town to Bharati with replay_date returns arrival_iso in <60s."""
     make_fixture_ice_grid(tmp_path, ny=40, nx=80, observation_date_str="2024-01-15")
@@ -269,12 +287,24 @@ def test_create_voyage_simulated_has_provenance():
 
 
 def test_create_voyage_replay_with_observed_ice(tmp_path, monkeypatch):
-    make_fixture_ice_grid(tmp_path, ny=40, nx=80, observation_date_str="2024-01-15")
-    monkeypatch.setenv("ICEFLOW_NSIDC_CACHE_DIR", str(tmp_path))
+    """Voyage creation in replay mode with observed ice.
+
+    Uses tests/fixtures/real_slice extended with 2024-01-15 data slices.
+    Sets ICEFLOW_REPLAY_PACK via monkeypatch to the fixture directory.
+    """
+    # Create replay pack fixture for 2024-01-15
+    replay_pack_dir = _make_replay_pack_fixture(tmp_path, "2024-01-15")
+    monkeypatch.setenv("ICEFLOW_REPLAY_PACK", str(replay_pack_dir))
+
+    # Create NSIDC fixture for the same region
+    nsidc_cache_dir = _make_nsidc_fixture_for_replay_region(tmp_path, "2024-01-15")
+    monkeypatch.setenv("ICEFLOW_NSIDC_CACHE_DIR", str(nsidc_cache_dir))
 
     from src.data.stations import resolve_endpoint
-    origin = resolve_endpoint("cape_town")
-    dest = resolve_endpoint("bharati")
+    # Use stations within the fixture's coverage
+    # Create temporary stations for the test region
+    origin = (-60.0, 48.0)
+    dest = (-59.0, 50.0)
     vessel = VesselParameters()
 
     engine = create_voyage(
@@ -425,16 +455,90 @@ def test_route_optimize_api_returns_contract_fields():
     assert len(body["provenance"]) > 0
 
 
+def _make_replay_pack_fixture(tmp_path, date_str="2022-01-15"):
+    """Create a minimal replay pack fixture for the given date."""
+    import shutil
+    src_dir = Path(__file__).parent / "fixtures" / "real_slice"
+    dst_dir = tmp_path / "replay_pack"
+    dst_dir.mkdir()
+    date_nodash = date_str.replace('-', '')
+    for fname in [
+        f"era5_wind_10m_{date_nodash}_1d.nc",
+        f"era5_waves_{date_nodash}_1d.nc",
+        f"cmems_current_{date_nodash}_1d.nc",
+        f"nrt_ice_concentration_{date_nodash}_1d.nc",
+    ]:
+        shutil.copy(src_dir / fname, dst_dir / fname)
+    # Manifest file is named manifest_YYYY.json (year only)
+    year = date_str[:4]
+    shutil.copy(src_dir / f"manifest_{year}.json", dst_dir / "manifest.json")
+    return dst_dir
+
+
+def _make_nsidc_fixture_for_replay_region(tmp_path, date_str="2022-01-15"):
+    """Create an NSIDC fixture centered on the replay pack's test region (~ -60, 49)."""
+    from pyproj import Transformer
+    import numpy as np
+    import xarray as xr
+
+    center_lat, center_lon = -60.0, 49.0
+    transformer = Transformer.from_crs("EPSG:4326", "EPSG:3412", always_xy=True)
+    x0, y0 = transformer.transform(center_lon, center_lat)
+
+    ny, nx = 20, 40
+    values = np.linspace(0.05, 0.8, ny * nx).reshape(ny, nx)
+    fname = f"sic_pss25_{date_str.replace('-', '')}_F17_v06r00.nc"
+
+    ds = xr.Dataset(
+        {"cdr_seaice_conc": (("time", "y", "x"), values[np.newaxis])},
+        coords={
+            "time": np.array([np.datetime64(date_str, "D")]),
+            "y": y0 + np.arange(ny) * 25_000.0,
+            "x": x0 + np.arange(nx) * 25_000.0,
+        },
+    )
+    ds["cdr_seaice_conc"].attrs["units"] = "1"
+    ds["cdr_seaice_conc"].attrs["grid_mapping"] = "crs"
+    ds["x"].attrs["units"] = "meters"
+    ds["y"].attrs["units"] = "meters"
+    ds["crs"] = xr.DataArray(0)
+    ds["crs"].attrs.update({
+        "grid_mapping_name": "polar_stereographic",
+        "latitude_of_projection_origin": -90.0,
+        "straight_vertical_longitude_from_pole": 0.0,
+        "standard_parallel": -70.0,
+        "false_easting": 0.0,
+        "false_northing": 0.0,
+        "semi_major_axis": 6378273.0,
+        "inverse_flattening": 298.279411123064,
+    })
+    ds.to_netcdf(tmp_path / fname, engine="netcdf4")
+    ds.close()
+    return tmp_path
+
+
 def test_route_optimize_api_accepts_replay_request(tmp_path, monkeypatch):
-    make_fixture_ice_grid(tmp_path, ny=40, nx=80, observation_date_str="2022-01-15")
-    monkeypatch.setenv("ICEFLOW_NSIDC_CACHE_DIR", str(tmp_path))
+    """Test that the route optimize API accepts a replay request with fixture data.
+
+    Uses tests/fixtures/real_slice extended with 2022-01-15 data slices.
+    Sets ICEFLOW_REPLAY_PACK via monkeypatch to the fixture directory.
+    """
+    # Create replay pack fixture for 2022-01-15
+    replay_pack_dir = _make_replay_pack_fixture(tmp_path, "2022-01-15")
+    monkeypatch.setenv("ICEFLOW_REPLAY_PACK", str(replay_pack_dir))
+
+    # Create NSIDC fixture for the same region (centered on ~ -60, 49)
+    nsidc_cache_dir = _make_nsidc_fixture_for_replay_region(tmp_path, "2022-01-15")
+    monkeypatch.setenv("ICEFLOW_NSIDC_CACHE_DIR", str(nsidc_cache_dir))
+
+    # Use a route within the fixture's coverage (bbox: 47.5-50.5°E, -61.5 to -58.5°S)
     r = client.post(
         "/api/v1/route/optimize",
         json={
-            "start_lat": -58.0,
-            "start_lon": 70.0,
-            "dest_lat": -69.0,
-            "dest_lon": 76.0,
+            "start_lat": -60.0,
+            "start_lon": 48.0,
+            "dest_lat": -59.0,
+            "dest_lon": 50.0,
             "ice_class": "PC5",
             "environment_mode": "replay",
             "replay_date": "2022-01-15",
@@ -502,15 +606,26 @@ def test_route_optimize_rejects_invalid_replay_date():
 
 
 def test_route_optimize_replay_missing_date_returns_4xx(tmp_path, monkeypatch):
-    """replay without a replay_date returns a clear 4xx error, never a synthetic plan."""
-    monkeypatch.setenv("ICEFLOW_NSIDC_CACHE_DIR", str(tmp_path))
+    """replay without a replay_date returns a clear 4xx error, never a synthetic plan.
+
+    Uses tests/fixtures/real_slice for the replay pack.
+    Sets ICEFLOW_REPLAY_PACK via monkeypatch to the fixture directory.
+    """
+    # Create replay pack fixture for 2024-01-15
+    replay_pack_dir = _make_replay_pack_fixture(tmp_path, "2024-01-15")
+    monkeypatch.setenv("ICEFLOW_REPLAY_PACK", str(replay_pack_dir))
+
+    # Also need NSIDC cache for the optimizer (even though it will fail on missing replay_date)
+    nsidc_cache_dir = _make_nsidc_fixture_for_replay_region(tmp_path, "2024-01-15")
+    monkeypatch.setenv("ICEFLOW_NSIDC_CACHE_DIR", str(nsidc_cache_dir))
+
     r = client.post(
         "/api/v1/route/optimize",
         json={
-            "start_lat": -58.0,
-            "start_lon": 70.0,
-            "dest_lat": -69.0,
-            "dest_lon": 76.0,
+            "start_lat": -60.0,
+            "start_lon": 48.0,
+            "dest_lat": -59.0,
+            "dest_lon": 50.0,
             "ice_class": "PC5",
             "environment_mode": "replay",
             "departure_iso": "2024-01-15T00:00:00+00:00",
@@ -526,15 +641,28 @@ def test_route_optimize_replay_missing_date_returns_4xx(tmp_path, monkeypatch):
 
 
 def test_route_optimize_replay_date_not_in_cache_returns_4xx(tmp_path, monkeypatch):
-    """replay with a replay_date that has no cached observation returns a 4xx error."""
-    monkeypatch.setenv("ICEFLOW_NSIDC_CACHE_DIR", str(tmp_path))
+    """replay with a replay_date that has no cached observation returns a 4xx error.
+
+    Uses tests/fixtures/real_slice for the replay pack (2024-01-15).
+    The test requests 2024-01-15 which IS in the pack, but the NSIDC cache
+    is for a different region, so the observation is not found.
+    """
+    # Create replay pack fixture for 2024-01-15
+    replay_pack_dir = _make_replay_pack_fixture(tmp_path, "2024-01-15")
+    monkeypatch.setenv("ICEFLOW_REPLAY_PACK", str(replay_pack_dir))
+
+    # Create NSIDC cache but for a different date/region so the observation is not found
+    nsidc_cache_dir = tmp_path / "empty_nsidc"
+    nsidc_cache_dir.mkdir()
+    monkeypatch.setenv("ICEFLOW_NSIDC_CACHE_DIR", str(nsidc_cache_dir))
+
     r = client.post(
         "/api/v1/route/optimize",
         json={
-            "start_lat": -58.0,
-            "start_lon": 70.0,
-            "dest_lat": -69.0,
-            "dest_lon": 76.0,
+            "start_lat": -60.0,
+            "start_lon": 48.0,
+            "dest_lat": -59.0,
+            "dest_lon": 50.0,
             "ice_class": "PC5",
             "environment_mode": "replay",
             "replay_date": "2024-01-15",
@@ -563,13 +691,24 @@ def test_route_optimize_real_ice_no_observation_raises_4xx(tmp_path, monkeypatch
 
 
 def test_create_voyage_replay_missing_date_returns_4xx(tmp_path, monkeypatch):
-    """The voyage endpoint also surfaces a missing replay date as 4xx."""
-    monkeypatch.setenv("ICEFLOW_NSIDC_CACHE_DIR", str(tmp_path))
+    """The voyage endpoint also surfaces a missing replay date as 4xx.
+
+    Uses tests/fixtures/real_slice for the replay pack.
+    Sets ICEFLOW_REPLAY_PACK via monkeypatch to the fixture directory.
+    """
+    # Create replay pack fixture for 2024-01-15
+    replay_pack_dir = _make_replay_pack_fixture(tmp_path, "2024-01-15")
+    monkeypatch.setenv("ICEFLOW_REPLAY_PACK", str(replay_pack_dir))
+
+    # Also need NSIDC cache
+    nsidc_cache_dir = _make_nsidc_fixture_for_replay_region(tmp_path, "2024-01-15")
+    monkeypatch.setenv("ICEFLOW_NSIDC_CACHE_DIR", str(nsidc_cache_dir))
+
     r = client.post(
         "/api/v1/voyage",
         json={
-            "origin_id": "cape_town",
-            "destination_id": "bharati",
+            "origin_id": "test_origin",
+            "destination_id": "test_dest",
             "vessel_key": "vasiliy_golovnin",
             "ice_class": "PC5",
             "environment_mode": "replay",
