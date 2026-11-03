@@ -22,7 +22,7 @@ Everything is seeded and vectorised over NumPy.
 from __future__ import annotations
 
 import math
-from typing import Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 import numpy as np
 from pydantic import BaseModel, Field
@@ -60,26 +60,30 @@ class EnvSample(BaseModel):
     lon: float
     valid_time_hours: float
 
-    u10: float = Field(description="10 m eastward wind component, m/s")
-    v10: float = Field(description="10 m northward wind component, m/s")
-    wind_speed_ms: float
-    wind_dir_from_deg: float = Field(description="Meteorological convention: direction wind blows FROM")
-    wind_gust_ms: float
+    u10: float | None = Field(default=None, description="10 m eastward wind component, m/s")
+    v10: float | None = Field(default=None, description="10 m northward wind component, m/s")
+    wind_speed_ms: float | None = None
+    wind_dir_from_deg: float | None = Field(default=None, description="Meteorological convention: direction wind blows FROM")
+    wind_gust_ms: float | None = None
 
-    uo: float = Field(description="Surface eastward current, m/s")
-    vo: float = Field(description="Surface northward current, m/s")
-    current_speed_ms: float
-    current_dir_to_deg: float = Field(description="Direction the current sets TOWARD")
+    uo: float | None = Field(default=None, description="Surface eastward current, m/s")
+    vo: float | None = Field(default=None, description="Surface northward current, m/s")
+    current_speed_ms: float | None = None
+    current_dir_to_deg: float | None = Field(default=None, description="Direction the current sets TOWARD")
 
-    sst_c: float
-    t2m_c: float
-    msl_hpa: float
-    sig_wave_height_m: float
-    visibility_km: float
-    katabatic_component_ms: float
+    sst_c: float | None = None
+    t2m_c: float | None = None
+    msl_hpa: float | None = None
+    sig_wave_height_m: float | None = None
+    visibility_km: float | None = None
+    katabatic_component_ms: float | None = None
 
     is_synthetic: bool = True
     source: str = "synthetic; stands in for ECMWF ERA5/HRES + Copernicus Marine CMEMS"
+    provenance_by_variable: dict[str, dict[str, Any]] = Field(default_factory=dict)
+
+
+EnvSample.model_rebuild()
 
 
 class EnvironmentModel:
